@@ -28,6 +28,7 @@ class CreateNewUser implements CreatesNewUsers
             'name' => $input['name'],
             'email' => $input['email'],
             'password' => $input['password'],
+            'role'     => 'villager', // default role for new users is 'villager'
         ]);
     }
 }

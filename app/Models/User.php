@@ -28,6 +28,7 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'role', // add role to fillable attributes
     ];
 
     /**
@@ -55,4 +56,9 @@ class User extends Authenticatable
             'two_factor_confirmed_at' => 'datetime',
         ];
     }
+
+    // Helper methods (very handy in blade/inertia)
+    public function isAdmin(): bool      { return $this->role === 'admin'; }
+    public function isModerator(): bool  { return $this->role === 'moderator'; }
+    public function isVillager(): bool   { return $this->role === 'villager'; }
 }

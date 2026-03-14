@@ -2,6 +2,7 @@ export type User = {
     id: number;
     name: string;
     email: string;
+    role: 'admin' | 'moderator' | 'villager';
     avatar?: string;
     email_verified_at: string | null;
     two_factor_enabled?: boolean;
@@ -11,7 +12,7 @@ export type User = {
 };
 
 export type Auth = {
-    user: User;
+    user: User | null;
 };
 
 export type TwoFactorSetupData = {
@@ -22,3 +23,10 @@ export type TwoFactorSetupData = {
 export type TwoFactorSecretKey = {
     secretKey: string;
 };
+
+export interface SharedData {
+    name: string;
+    auth: Auth;
+    sidebarOpen: boolean;
+    [key: string]: unknown;
+}
