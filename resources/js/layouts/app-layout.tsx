@@ -1,3 +1,4 @@
+// resources/js/layouts/app-layout.tsx — for admin layout
 import AppLayoutTemplate from '@/layouts/app/app-sidebar-layout';
 import type { AppLayoutProps } from '@/types';
 
