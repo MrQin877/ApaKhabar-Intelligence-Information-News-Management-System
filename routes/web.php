@@ -32,8 +32,9 @@ Route::prefix('admin')
     ->middleware(['auth', 'verified', 'role:admin,moderator'])
     ->group(function () {
         Route::inertia('/dashboard', 'admin/dashboard')->name('dashboard');
-        Route::inertia('/users', 'admin/users/index')->name('users.index');
-        Route::inertia('/news', 'admin/news/index')->name('news.index');
+        //Route::inertia('/users', 'admin/users/index')->name('users.index');
+        //Route::inertia('/news', 'admin/news/index')->name('news.index');
+        Route::inertia('/broadcasting', 'admin/broadcasting/index')->name('broadcasting.index');
     });
 
 //Post-login redirect — Fortify lands here, bounce by role
