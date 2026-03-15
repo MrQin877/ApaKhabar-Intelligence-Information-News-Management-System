@@ -17,7 +17,6 @@ class ProfileUpdateRequest extends FormRequest
      */
     public function rules(): array
     {
-        dd((string) $this->user()->getAuthIdentifier(), $this->user()->id);
         return $this->profileRules((string) $this->user()->getAuthIdentifier());
     }
 }
