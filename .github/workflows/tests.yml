@@ -2,17 +2,9 @@ name: tests
 
 on:
   push:
-    branches:
-      - develop
-      - main
-      - master
-      - workos
+    branches: [develop, main, master, workos]
   pull_request:
-    branches:
-      - develop
-      - main
-      - master
-      - workos
+    branches: [develop, main, master, workos]
 
 jobs:
   ci:
@@ -26,7 +18,12 @@ jobs:
         image: mongo:7
         ports:
           - 27017:27017
-        options: --health-cmd "mongosh --eval 'db.runCommand({ping:1})'" --health-interval 10s --health-timeout 5s --health-retries 5
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ping:1})'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
 
     steps:
       - name: Checkout code
