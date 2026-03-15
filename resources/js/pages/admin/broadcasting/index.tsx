@@ -1,9 +1,9 @@
 // resources/js/pages/admin/broadcasting/broadcast.tsx
-import { Head, Link } from '@inertiajs/react';
+import { Head} from '@inertiajs/react';
+import { Megaphone, Siren, Search, Radio, Send, MailOpen } from 'lucide-react';
+import { useState } from 'react';
 import AppLayout from '@/layouts/app-layout';
 import type { BreadcrumbItem } from '@/types';
-import { useState } from 'react';
-import { Megaphone, Siren, Search, Radio, Send, MailOpen } from 'lucide-react';
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Penyiaran', href: '/admin/broadcasting' },
@@ -41,6 +41,7 @@ function TypeIcon({ type }: { type: BroadcastType }) {
             </div>
         );
     }
+
     return (
         <div className="flex h-8 w-8 items-center justify-center rounded-md bg-green-200 text-white text-sm">
             <Megaphone color='green'/>
@@ -59,6 +60,7 @@ function StatusBadge({ status }: { status: BroadcastStatus }) {
         Terjadwal: 'bg-yellow-500',
         Tertunda:     'bg-red-300',
     };
+
     return (
         <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${styles[status]}`}>
             <span className={`h-1.5 w-1.5 rounded-full ${dots[status]}`} />
@@ -80,6 +82,7 @@ export default function BroadcastPage() {
             (typeFilter === 'Daurat' && b.type === 'daurat') ||
             (typeFilter === 'Pengumuman' && b.type === 'pengumuman');
         const matchStatus = statusFilter === 'Status' || b.status === statusFilter;
+
         return matchSearch && matchType && matchStatus;
     });
 
