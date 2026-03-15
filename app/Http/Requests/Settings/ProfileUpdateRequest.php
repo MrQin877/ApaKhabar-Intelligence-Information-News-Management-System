@@ -17,6 +17,13 @@ class ProfileUpdateRequest extends FormRequest
      */
     public function rules(): array
     {
+
+        $userId = (string) $this->user()->getAuthIdentifier();
+        $userEmail = $this->user()->email;
+        $inputEmail = $this->input('email');
+        
+        logger("userId: $userId | userEmail: $userEmail | inputEmail: $inputEmail");
+        
         return $this->profileRules((string) $this->user()->getAuthIdentifier());
     }
 }
