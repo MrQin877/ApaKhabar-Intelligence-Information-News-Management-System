@@ -1,6 +1,6 @@
 // resources/js/pages/dashboard.tsx
-import { useEffect } from 'react';
 import { router, usePage } from '@inertiajs/react';
+import { useEffect } from 'react';
 import type { SharedData } from '@/types';
 
 export default function Dashboard() {
@@ -9,6 +9,7 @@ export default function Dashboard() {
     useEffect(() => {
         if (!auth.user) {
             router.visit('/', { replace: true });
+
             return;
         }
 
@@ -17,7 +18,7 @@ export default function Dashboard() {
         } else {
             router.visit('/', { replace: true });
         }
-    }, []);
+    }, [auth.user]);
 
     return null;
 }

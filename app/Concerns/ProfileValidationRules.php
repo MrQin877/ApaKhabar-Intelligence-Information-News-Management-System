@@ -12,7 +12,7 @@ trait ProfileValidationRules
      *
      * @return array<string, array<int, \Illuminate\Contracts\Validation\Rule|array<mixed>|string>>
      */
-    protected function profileRules(?int $userId = null): array
+    protected function profileRules(string|int|null $userId = null): array
     {
         return [
             'name' => $this->nameRules(),
@@ -35,16 +35,18 @@ trait ProfileValidationRules
      *
      * @return array<int, \Illuminate\Contracts\Validation\Rule|array<mixed>|string>
      */
-    protected function emailRules(?int $userId = null): array
+    protected function emailRules(string|int|null $userId = null): array
     {
         return [
             'required',
             'string',
             'email',
             'max:255',
-            $userId === null
-                ? Rule::unique(User::class)
-                : Rule::unique(User::class)->ignore($userId),
+            Rule::unique(User::class, 'email')->where(function ($query) use ($userId) {
+                if ($userId !== null) {
+                    $query->where('_id', '!=', $userId);
+                }
+            }),
         ];
     }
 }

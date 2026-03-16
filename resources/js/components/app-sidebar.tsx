@@ -14,29 +14,30 @@ import {
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { dashboard } from '@/routes';
+import adminRoutes from '@/routes/admin';
 import type { NavItem } from '@/types';
 
 const mainNavItems: NavItem[] = [
     {
-        title: 'Dashboard',
+        title: 'Dasbor',
         href: dashboard(),
         icon: LayoutGrid,
     },
     
     {
-        title: 'News Generator',
+        title: 'Pembuat Berita',
         href: dashboard(),
         icon: Newspaper,
     },
 
     {
-        title: 'Broadcast',
-        href: dashboard(),
+        title: 'Siaran',
+        href: adminRoutes.broadcasting.index(),
         icon: Radio,
     },
 
     {
-        title: 'Analytics',
+        title: 'Analisis',
         href: dashboard(),
         icon: ChartNoAxesCombined,
     },
