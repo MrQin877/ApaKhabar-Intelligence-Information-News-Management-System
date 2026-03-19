@@ -20,6 +20,11 @@ Route::middleware(['auth', 'role:villager'])->group(function () {
     Route::post('/news/{post}/like', [App\Http\Controllers\PostLikeController::class, 'store'])->name('news.like');
     Route::post('/news/{post}/comment', [App\Http\Controllers\CommentController::class, 'store'])->name('news.comment');
     Route::get('/profile', fn () => inertia('villager/profile'))->name('villager.profile');
+
+    // Notifications
+    Route::get('/notifications', [App\Http\Controllers\Villager\NotificationController::class, 'index'])->name('notifications.index');
+    Route::patch('/notifications/{notification}/read', [App\Http\Controllers\Villager\NotificationController::class, 'markRead'])->name('notifications.read');
+    Route::patch('/notifications/read-all', [App\Http\Controllers\Villager\NotificationController::class, 'markAllRead'])->name('notifications.read-all');
 });
 
 //Admin portal — admin and moderator only

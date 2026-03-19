@@ -73,7 +73,7 @@ const columnLabels: Record<string, string> = {
   select: "Pilih",
   type: "Jenis",
   title: "Judul",
-  audience: "Penonton",
+  audience: "Penerima",
   status: "Status",
   sent_time: "Waktu Terkirim",
   actions: "Aksi",
@@ -257,7 +257,7 @@ export function DataTable<TData, TValue>({
               size="sm"
               className={`h-9 gap-1.5 text-sm ${audienceFilter.length > 0 ? "border-green-500 text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-950/30" : ""}`}
             >
-              Penonton
+              Penerima
               {audienceFilter.length > 0 && (
                 <Badge variant="secondary" className="ml-0.5 h-4 px-1 text-[10px]">
                   {audienceFilter.length}
@@ -267,7 +267,7 @@ export function DataTable<TData, TValue>({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-44">
-            <DropdownMenuLabel className="text-xs">Filter Penonton</DropdownMenuLabel>
+            <DropdownMenuLabel className="text-xs">Filter Penerima</DropdownMenuLabel>
             <DropdownMenuSeparator />
             {(["Semua Pengguna", "Karyawan"] as const).map((a) => (
               <DropdownMenuCheckboxItem

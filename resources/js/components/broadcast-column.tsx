@@ -133,7 +133,7 @@ export const columns: ColumnDef<Broadcast>[] = [
         className="-ml-3 h-8 px-3 text-xs font-semibold uppercase tracking-wider text-neutral-500"
         onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
       >
-        Penonton
+        Penerima
         <ArrowUpDown className="ml-1.5 h-3 w-3" />
       </Button>
     ),
