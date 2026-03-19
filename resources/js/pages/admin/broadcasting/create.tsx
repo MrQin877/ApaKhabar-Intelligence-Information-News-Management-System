@@ -1,7 +1,7 @@
 import { Head } from '@inertiajs/react'
+import { BroadcastComposeForm } from '@/components/broadcast-compose-form'
 import AppLayout from '@/layouts/app-layout'
 import type { BreadcrumbItem } from '@/types'
-import { BroadcastComposeForm } from '@/components/broadcast-compose-form'
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Penyiaran', href: '/admin/broadcasting' },

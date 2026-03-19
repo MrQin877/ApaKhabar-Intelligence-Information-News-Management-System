@@ -1,14 +1,14 @@
 import { Head } from '@inertiajs/react'
-import { useState } from 'react'
 import {
     Bell, Siren, Megaphone, CheckCheck,
-    Check, Clock, Filter, BellOff,
+    Check, Clock, BellOff,
 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { useState } from 'react'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
-import { cn } from '@/lib/utils'
 import AppLayout from '@/layouts/app-layout'
+import { cn } from '@/lib/utils'
 import type { BreadcrumbItem } from '@/types'
 
 // ── Types ─────────────────────────────────────────────────
@@ -115,8 +115,13 @@ function NotificationItem({
                 "hover:bg-neutral-50 dark:hover:bg-neutral-800/50"
             )}
             onClick={() => {
-                if (!notif.is_read) onMarkRead(notif.id)
-                if (isLong) setExpanded(e => !e)
+                if (!notif.is_read) {
+onMarkRead(notif.id)
+}
+
+                if (isLong) {
+setExpanded(e => !e)
+}
             }}
         >
             {/* Unread dot */}
@@ -165,7 +170,9 @@ function NotificationItem({
                     {/* Mark read button */}
                     {!notif.is_read && (
                         <button
-                            onClick={e => { e.stopPropagation(); onMarkRead(notif.id) }}
+                            onClick={e => {
+ e.stopPropagation(); onMarkRead(notif.id) 
+}}
                             className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
                             title="Tandai sebagai dibaca"
                         >
@@ -228,9 +235,18 @@ export default function NotificationsPage() {
     }
 
     const filtered = notifications.filter(n => {
-        if (activeFilter === 'darurat')      return n.type === 'darurat'
-        if (activeFilter === 'pengumuman')   return n.type === 'pengumuman'
-        if (activeFilter === 'belum-dibaca') return !n.is_read
+        if (activeFilter === 'darurat')      {
+return n.type === 'darurat'
+}
+
+        if (activeFilter === 'pengumuman')   {
+return n.type === 'pengumuman'
+}
+
+        if (activeFilter === 'belum-dibaca') {
+return !n.is_read
+}
+
         return true
     })
 

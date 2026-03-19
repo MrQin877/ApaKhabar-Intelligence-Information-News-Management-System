@@ -1,10 +1,9 @@
 "use client"
 
-import { ColumnDef } from "@tanstack/react-table"
+import type { ColumnDef } from "@tanstack/react-table"
 import { ArrowUpDown, MoreHorizontal, Megaphone, Siren, Eye, Pencil, Trash2, Send } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Badge } from "@/components/ui/badge"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,6 +34,7 @@ function TypeIcon({ type }: { type: Broadcast['type'] }) {
       </div>
     )
   }
+
   return (
     <div className="flex items-center gap-2">
       <div className="flex h-7 w-7 items-center justify-center rounded-md bg-green-100 dark:bg-green-900/30">
@@ -53,6 +53,7 @@ function StatusBadge({ status }: { status: Broadcast['status'] }) {
     Tertunda:  { className: "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-800", dot: "bg-red-400" },
   }
   const { className, dot } = map[status]
+
   return (
     <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${className}`}>
       <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />
@@ -188,6 +189,7 @@ export const columns: ColumnDef<Broadcast>[] = [
     enableHiding: false,
     cell: ({ row }) => {
       const broadcast = row.original
+
       return (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

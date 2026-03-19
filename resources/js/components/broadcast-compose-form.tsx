@@ -1,20 +1,20 @@
 "use client"
 
-import { useState } from "react"
+import { router } from '@inertiajs/react'
 import {
   Megaphone, Siren, Send, MessageSquare,
   Smartphone, Radio, Users, User,
   Clock, CalendarDays, Sparkles,
 } from "lucide-react"
+import { useState } from "react"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
-import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
+import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
-import { router } from '@inertiajs/react'
 
 // ── Types ──────────────────────────────────────────────────
 type Category = "pengumuman" | "darurat"
@@ -43,6 +43,7 @@ function CategoryCard({
     },
   }
   const { icon, label, desc, active, iconBg } = cfg[value]
+
   return (
     <button
       type="button"
@@ -78,6 +79,7 @@ function ChannelButton({
     aplikasi: { icon: <Radio className="h-4 w-4" />,          label: "Aplikasi" },
   }
   const { icon, label } = cfg[value]
+
   return (
     <button
       type="button"
@@ -103,6 +105,7 @@ function AudienceButton({
     karyawan: { icon: <User  className="h-4 w-4" />, label: "Karyawan",       sub: "Internal saja"   },
   }
   const { icon, label, sub } = cfg[value]
+
   return (
     <button
       type="button"
@@ -152,7 +155,10 @@ export function BroadcastComposeForm() {
   }
 
   function handleSubmit() {
-      if (!canSubmit) return
+      if (!canSubmit) {
+return
+}
+
       router.post('/admin/broadcasting', {
           title,
           message,

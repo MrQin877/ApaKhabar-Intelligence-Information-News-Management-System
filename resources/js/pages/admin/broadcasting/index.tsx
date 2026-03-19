@@ -1,10 +1,11 @@
 import { Head } from '@inertiajs/react';
-import { Radio, Send, MailOpen } from 'lucide-react'; // ✅ remove Megaphone, Siren, Search
+import { router } from '@inertiajs/react'
+import { Radio} from 'lucide-react'; // ✅ remove Megaphone, Siren, Search
+import type { Broadcast} from '@/components/broadcast-column';
+import { columns } from '@/components/broadcast-column';
+import { DataTable } from '@/components/broadcast-datatable';
 import AppLayout from '@/layouts/app-layout';
 import type { BreadcrumbItem } from '@/types';
-import { DataTable } from '@/components/broadcast-datatable';
-import { Broadcast, columns } from '@/components/broadcast-column';
-import { router } from '@inertiajs/react'
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Penyiaran', href: '/admin/broadcasting' },
