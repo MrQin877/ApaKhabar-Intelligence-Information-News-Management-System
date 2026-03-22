@@ -1,6 +1,17 @@
 import { Head, Link, usePage } from '@inertiajs/react';
 import { login, register } from '@/routes'; // ← remove dashboard() import
 import type { SharedData } from '@/types';  // ← add this
+//import VillagerLayout from '@/layouts/villager-layout';
+
+/*
+export default function Dashboard() {
+    return (
+        <VillagerLayout breadcrumbs={[{ title: 'Dashboard', href: '/dashboard' }]}>
+            <h1>Dashboard Page</h1>
+        </VillagerLayout>
+    );
+}
+*/
 
 export default function Welcome({
     canRegister = true,
