@@ -20,6 +20,11 @@ Route::middleware(['auth', 'role:villager'])->group(function () {
     Route::post('/news/{post}/like', [App\Http\Controllers\PostLikeController::class, 'store'])->name('news.like');
     Route::post('/news/{post}/comment', [App\Http\Controllers\CommentController::class, 'store'])->name('news.comment');
     Route::get('/profile', fn () => inertia('villager/profile'))->name('villager.profile');
+
+    // Notifications
+    Route::get('/notifications', [App\Http\Controllers\Villager\NotificationController::class, 'index'])->name('notifications.index');
+    Route::patch('/notifications/{notification}/read', [App\Http\Controllers\Villager\NotificationController::class, 'markRead'])->name('notifications.read');
+    Route::patch('/notifications/read-all', [App\Http\Controllers\Villager\NotificationController::class, 'markAllRead'])->name('notifications.read-all');
 });
 
 //Admin portal — admin and moderator only
@@ -32,9 +37,12 @@ Route::prefix('admin')
     ->middleware(['auth', 'verified', 'role:admin,moderator'])
     ->group(function () {
         Route::inertia('/dashboard', 'admin/dashboard')->name('dashboard');
-        //Route::inertia('/users', 'admin/users/index')->name('users.index');
-        //Route::inertia('/news', 'admin/news/index')->name('news.index');
+
+        // Broadcasting
         Route::inertia('/broadcasting', 'admin/broadcasting/index')->name('broadcasting.index');
+        Route::inertia('/broadcasting/create', 'admin/broadcasting/create')->name('broadcasting.create');
+        Route::post('/broadcasting', [App\Http\Controllers\Admin\BroadcastController::class, 'store'])->name('broadcasting.store');
+        Route::delete('/broadcasting/{broadcast}', [App\Http\Controllers\Admin\BroadcastController::class, 'destroy'])->name('broadcasting.destroy');
     });
 
 //Post-login redirect — Fortify lands here, bounce by role
