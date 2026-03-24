@@ -1,6 +1,6 @@
 import { Head } from '@inertiajs/react';
 import { router } from '@inertiajs/react'
-import { Radio} from 'lucide-react'; // ✅ remove Megaphone, Siren, Search
+import { Radio} from 'lucide-react'; 
 import type { Broadcast} from '@/components/broadcast-column';
 import { columns } from '@/components/broadcast-column';
 import { DataTable } from '@/components/broadcast-datatable';
@@ -8,7 +8,7 @@ import AppLayout from '@/layouts/app-layout';
 import type { BreadcrumbItem } from '@/types';
 
 const breadcrumbs: BreadcrumbItem[] = [
-    { title: 'Penyiaran', href: '/admin/broadcasting' },
+    { title: 'Pesan', href: '/admin/broadcasting' },
 ];
 
 const broadcastData: Broadcast[] = [
@@ -19,7 +19,7 @@ const broadcastData: Broadcast[] = [
     { id: '5', type: 'pengumuman', title: 'Pembaruan Database Terjadwal',     audience: 'Semua Pengguna', status: 'Tertunda',  sent_time: '7:00 PM'  },
 ];
 
-export default function BroadcastPage() {
+export default function BroadcastPage({/* { broadcasts }: { broadcasts: Broadcast[] }*/}) {
     return (
         <>
             <Head title="Manajemen Siaran" />
@@ -36,7 +36,7 @@ export default function BroadcastPage() {
                             </div>
                             <div>
                                 <h1 className="text-xl font-bold text-neutral-900 dark:text-neutral-100">
-                                    Manajemen Siaran
+                                    Manajemen Pesan
                                 </h1>
                                 <p className="text-sm text-neutral-500 dark:text-neutral-400">
                                     Kirim pengumuman dan peringatan darurat kepada pengguna Anda.
@@ -46,13 +46,14 @@ export default function BroadcastPage() {
                         <button
                             onClick={() => router.visit('/admin/broadcasting/create')} 
                             className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 transition-colors">
-                            + Siaran Baru
+                            + Pesan Baru
                         </button>
                     </div>
 
                     {/* ✅ Table — DataTable now owns filtering, sorting, and pagination */}
                     <div className="overflow-hidden rounded-xl border border-sidebar-border/70 dark:border-sidebar-border bg-white dark:bg-neutral-900 p-4">
                         <DataTable columns={columns} data={broadcastData} />
+                        {/* <DataTable columns={columns} data={broadcasts} /> */}
                     </div>
                 </div>
 

@@ -20,7 +20,7 @@ import {
   Megaphone,
   X,
   SlidersHorizontal,
-  Trash2,
+  Archive,
   Send,
   XCircle,
 } from "lucide-react"
@@ -63,6 +63,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+
+//import { router } from '@inertiajs/react'
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[]
@@ -146,11 +148,22 @@ export function DataTable<TData, TValue>({
   const selectedIds = table
     .getFilteredSelectedRowModel()
     .rows.map((row) => (row.original as { id: string }).id)
-
+/*
   function handleBulkDelete() {
     // TODO: router.delete or axios call with selectedIds
     console.log("Delete IDs:", selectedIds)
     table.resetRowSelection()
+  }
+*/
+  function handleBulkArchive() {
+      // TODO: router.post('/admin/broadcasting/archive', { ids: selectedIds })
+      console.log("Archive IDs:", selectedIds)
+      table.resetRowSelection()
+
+      //router.post(route('admin.broadcasting.archive'), { ids: selectedIds }, {
+        //preserveScroll: true,
+        //onSuccess: () => table.resetRowSelection(),
+    //})
   }
 
   function handleBulkResend() {
@@ -365,27 +378,29 @@ export function DataTable<TData, TValue>({
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-8 gap-1.5 text-xs border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40"
+                  onClick={handleBulkArchive}
+                  className="h-8 gap-1.5 text-xs border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  Hapus
+                  <Archive className="h-3.5 w-3.5" />
+                  Arsipkan
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>Hapus {selectedCount} siaran?</AlertDialogTitle>
+                  <AlertDialogTitle>Arsipkan {selectedCount} siaran?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    Tindakan ini tidak dapat dibatalkan. {selectedCount} siaran yang dipilih
-                    akan dihapus secara permanen dari sistem.
+                    Siaran yang diarsipkan tidak akan ditampilkan dalam senarai utama,
+                    tetapi masih boleh dipulihkan bila-bila masa dari halaman Arsip.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Batal</AlertDialogCancel>
                   <AlertDialogAction
-                    onClick={handleBulkDelete}
+                    onClick={handleBulkArchive}
                     className="bg-red-600 hover:bg-red-700 text-white"
                   >
-                    Ya, Hapus Semua
+                    <Archive className="h-3.5 w-3.5 mr-1.5" />
+                    Ya, Arsipkan
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>

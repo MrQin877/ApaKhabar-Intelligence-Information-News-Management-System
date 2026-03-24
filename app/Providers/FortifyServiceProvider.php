@@ -88,6 +88,10 @@ class FortifyServiceProvider extends ServiceProvider
 
             return Limit::perMinute(5)->by($throttleKey);
         });
+
+        RateLimiter::for('verification', function (Request $request) {
+            return Limit::perMinute(3)->by($request->user()?->id ?: $request->ip());
+        });
         
     }
 
@@ -100,6 +104,13 @@ class FortifyServiceProvider extends ServiceProvider
                 default              => url()->previous() !== url()->current()
                                         ? url()->previous()
                                         : route('home'),
+            };
+        });
+
+        Fortify::redirects('email-verification', function () {
+            return match(auth()->user()->role) {
+                'admin', 'moderator' => route('admin.dashboard'),
+                default              => route('home'),
             };
         });
     }

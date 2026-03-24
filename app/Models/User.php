@@ -2,17 +2,18 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
+use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 // use Illuminate\Foundation\Auth\User as Authenticatable;
 use MongoDB\Laravel\Auth\User as Authenticatable; // Use the MongoDB User model instead of the default Eloquent User model
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Auth\Notifications\VerifyEmail;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 
 
 
-class User extends Authenticatable
+class User extends Authenticatable implements MustVerifyEmail
 {
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable, TwoFactorAuthenticatable;
@@ -55,6 +56,23 @@ class User extends Authenticatable
             'password' => 'hashed',
             'two_factor_confirmed_at' => 'datetime',
         ];
+    }
+
+     public function getKey()
+    {
+        return (string) $this->_id;
+    }
+
+    // ✅ Explicitly send verification notification
+    public function sendEmailVerificationNotification(): void
+    {
+        $this->notify(new VerifyEmail);
+    }
+
+    // ✅ Fix signed URL generation for MongoDB ObjectId
+    public function getEmailForVerification(): string
+    {
+        return $this->email;
     }
 
     // Helper methods (very handy in blade/inertia)
