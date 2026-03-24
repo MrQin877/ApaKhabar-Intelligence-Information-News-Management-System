@@ -1,5 +1,5 @@
-import { AnalyticsStats }  from "./analytics/broadcast-analytic-stats";
 import { AnalyticsChart }  from "./analytics/broadcast-analytic-chart";
+import { AnalyticsStats }  from "./analytics/broadcast-analytic-stats";
 import { AnalyticsRecent } from "./analytics/broadcast-analytics-recent";
 
 export function AnalyticsSidebar() {

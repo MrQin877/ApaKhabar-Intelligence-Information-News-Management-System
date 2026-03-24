@@ -1,12 +1,12 @@
 import { Head } from '@inertiajs/react';
 import { router } from '@inertiajs/react'
-import { MailOpen, Radio, Send} from 'lucide-react'; 
+import { Radio} from 'lucide-react'; 
+import { AnalyticsSidebar } from "@/components/broadcast-analytics";
 import type { Broadcast} from '@/components/broadcast-column';
 import { columns } from '@/components/broadcast-column';
 import { DataTable } from '@/components/broadcast-datatable';
 import AppLayout from '@/layouts/app-layout';
 import type { BreadcrumbItem } from '@/types';
-import { AnalyticsSidebar } from "@/components/broadcast-analytics";
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Pesan', href: '/admin/broadcasting' },
@@ -20,7 +20,7 @@ const broadcastData: Broadcast[] = [
     { id: '5', type: 'pengumuman', title: 'Pembaruan Database Terjadwal',     audience: 'Semua Pengguna', status: 'Tertunda',  sent_time: '7:00 PM'  },
 ];
 
-export default function BroadcastPage({/* { broadcasts }: { broadcasts: Broadcast[] }*/}) {
+export default function BroadcastPage(/* { broadcasts }: { broadcasts: Broadcast[] }*/) {
     return (
         <>
             <Head title="Manajemen Siaran" />

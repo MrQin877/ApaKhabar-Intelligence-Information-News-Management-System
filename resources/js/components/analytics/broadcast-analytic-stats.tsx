@@ -1,6 +1,6 @@
+import { Radio, Send, MailOpen } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { Radio, Send, MailOpen } from "lucide-react";
 
 const stats = [
   { label: "Total Siaran", value: "53", icon: <Radio className="h-4 w-4" /> },

@@ -1,8 +1,8 @@
 import { Head, Link, usePage } from '@inertiajs/react';
-import { login, register } from '@/routes';
-import type { SharedData } from '@/types';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
+import { login, register } from '@/routes';
+import type { SharedData } from '@/types';
 
 const featuredNews = {
     title: 'Bali Perpanjang Siaga Bencana Cuaca Ekstrem 2026',
