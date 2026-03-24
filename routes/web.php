@@ -10,21 +10,22 @@ Route::inertia('/', 'welcome', [
 ])->name('home');
 
 Route::inertia('/news', 'villager/news/index')->name('news.index');
-Route::inertia('/news/{post}', 'villager/news/show')->name('news.show');
+
+Route::get('/news/{id}', [App\Http\Controllers\NewsController::class, 'show'])->name('news.show');
 
 
 //Villager authenticated routes — login required for engagement
 
-
 Route::middleware(['auth', 'verified', 'role:villager'])->group(function () {
-    Route::post('/news/{post}/like', [App\Http\Controllers\PostLikeController::class, 'store'])->name('news.like');
-    Route::post('/news/{post}/comment', [App\Http\Controllers\CommentController::class, 'store'])->name('news.comment');
+    Route::post('/news/{id}/like', [App\Http\Controllers\PostLikeController::class, 'store'])->name('news.like');
+    Route::post('/news/{id}/comment', [App\Http\Controllers\CommentController::class, 'store'])->name('news.comment');
+    Route::post('/comments/{id}/replies', [App\Http\Controllers\CommentController::class, 'reply'])->name('comments.reply');
     Route::get('/profile', fn () => inertia('villager/profile'))->name('villager.profile');
 
     // Notifications
     Route::get('/notifications', [App\Http\Controllers\Villager\NotificationController::class, 'index'])->name('notifications.index');
+    Route::patch('/notifications/read-all', [App\Http\Controllers\Villager\NotificationController::class, 'markAllRead'])->name('notifications.read-all');   // 👈 moved up
     Route::patch('/notifications/{notification}/read', [App\Http\Controllers\Villager\NotificationController::class, 'markRead'])->name('notifications.read');
-    Route::patch('/notifications/read-all', [App\Http\Controllers\Villager\NotificationController::class, 'markAllRead'])->name('notifications.read-all');
 });
 
 //Admin portal — admin and moderator only
