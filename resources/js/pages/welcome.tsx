@@ -59,62 +59,36 @@ export default function Welcome({
 
             <div className="min-h-screen bg-white">
 
-                {/* ✅ Standalone Navbar — safe for public/unauthenticated users */}
+                {/* Navbar */}
                 <nav className="border-b border-gray-200 bg-white px-4 py-3">
                     <div className="mx-auto flex max-w-7xl items-center justify-between">
-
-                        {/* Logo */}
                         <div className="flex items-center">
-                            <img
-                                src="/logo_w_name.svg"
-                                alt="ApaKhabar"
-                                className="h-10 w-auto"
-                            />
+                            <img src="/logo_w_name.svg" alt="ApaKhabar" className="h-10 w-auto" />
                         </div>
-
-                        {/* Nav Links */}
                         <div className="hidden items-center space-x-6 text-sm font-medium text-gray-700 md:flex">
                             <Link href="#" className="hover:text-green-600">Beranda</Link>
                             <Link href="#" className="hover:text-green-600">Lingkungan</Link>
                             <Link href="#" className="hover:text-green-600">Pengumuman</Link>
                             <Link href="#" className="hover:text-green-600">Kecemasan</Link>
                         </div>
-
-                        {/* Auth Buttons */}
                         <div className="flex items-center space-x-2">
                             {auth.user ? (
                                 <>
                                     {(auth.user.role === 'admin' || auth.user.role === 'moderator') && (
-                                        <Link
-                                            href="/admin/dashboard"
-                                            className="rounded-sm border border-gray-300 px-4 py-1.5 text-sm font-medium hover:bg-gray-100"
-                                        >
+                                        <Link href="/admin/dashboard" className="rounded-sm border border-gray-300 px-4 py-1.5 text-sm font-medium hover:bg-gray-100">
                                             Dashboard
                                         </Link>
                                     )}
-                                    <Link
-                                        href="/logout"
-                                        method="post"
-                                        as="button"
-                                        className="rounded-sm border border-gray-300 px-4 py-1.5 text-sm font-medium hover:bg-gray-100"
-                                    >
-                                        Log out
+                                    <Link href="/logout" method="post" as="button" className="rounded-sm border border-gray-300 px-4 py-1.5 text-sm font-medium hover:bg-gray-100">
+                                        Keluar
                                     </Link>
                                 </>
                             ) : (
                                 <>
-                                    <Link
-                                        href={login()}
-                                        className="text-sm font-medium text-gray-700 hover:text-black"
-                                    >
-                                        Log in
-                                    </Link>
+                                    <Link href={login()} className="text-sm font-medium text-gray-700 hover:text-black">Masuk</Link>
                                     {canRegister && (
-                                        <Link
-                                            href={register()}
-                                            className="rounded-sm bg-green-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-green-700"
-                                        >
-                                            Register
+                                        <Link href={register()} className="rounded-sm bg-green-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-green-700">
+                                            Daftar
                                         </Link>
                                     )}
                                 </>
@@ -142,7 +116,7 @@ export default function Welcome({
                             </span>
                         </span>
                     </div>
-                </div>        
+                </div>
 
                 <main className="mx-auto max-w-7xl px-4 py-8">
 
@@ -166,7 +140,10 @@ export default function Welcome({
                             <p className="text-gray-600 text-sm mb-4 leading-relaxed">
                                 {featuredNews.excerpt}
                             </p>
-                            <Link href="#" className="text-sm font-medium hover:underline">
+                            <Link
+                                href="/news/69c2b47fb592801f7a0a9b52"
+                                className="text-sm font-medium hover:underline"
+                            >
                                 Baca Selengkapnya →
                             </Link>
                         </CardContent>
@@ -174,8 +151,8 @@ export default function Welcome({
 
                     {/* News Grid */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        {newsList.map((news, index) => (
-                            <Card key={index} className="overflow-hidden shadow-sm">
+                        {newsList.map((news) => (
+                            <Card key={news.id} className="overflow-hidden shadow-sm">
                                 <img
                                     src={news.image}
                                     alt={news.title}
@@ -194,7 +171,10 @@ export default function Welcome({
                                     <p className="text-xs text-gray-600 mb-3 leading-relaxed">
                                         {news.excerpt}
                                     </p>
-                                    <Link href="#" className="text-xs font-medium hover:underline">
+                                    <Link
+                                        href="/news/69c2b47fb592801f7a0a9b52"
+                                        className="text-xs font-medium hover:underline"
+                                    >
                                         Baca Selengkapnya →
                                     </Link>
                                 </CardContent>

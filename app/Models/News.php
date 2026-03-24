@@ -2,16 +2,36 @@
 
 namespace App\Models;
 
-use MongoDB\Laravel\Eloquent\Model; // THIS is important
+use MongoDB\Laravel\Eloquent\Model;
 
 class News extends Model
 {
-    // Use the MongoDB connection
     protected $connection = 'mongodb';
-
-    // Collection name
     protected $collection = 'news';
 
-    // Mass assignable fields
-    protected $fillable = ['title', 'content'];
+    protected $fillable = [
+        'title',
+        'content',
+        'excerpt',
+        'image',
+        'category',
+        'date',
+        'views',
+        'likes_count',
+    ];
+
+    protected $attributes = [
+        'views'       => 0,
+        'likes_count' => 0,
+    ];
+
+    public function comments()
+    {
+        return $this->hasMany(Comment::class, 'news_id');
+    }
+
+    public function likes()
+    {
+        return $this->hasMany(Like::class, 'news_id');
+    }
 }
