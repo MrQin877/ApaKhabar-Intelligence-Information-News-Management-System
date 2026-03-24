@@ -4,8 +4,8 @@ import AppLayout from '@/layouts/app-layout'
 import type { BreadcrumbItem } from '@/types'
 
 const breadcrumbs: BreadcrumbItem[] = [
-    { title: 'Penyiaran', href: '/admin/broadcasting' },
-    { title: 'Siaran Baru', href: '/admin/broadcasting/create' },
+    { title: 'Pesan', href: '/admin/broadcasting' },
+    { title: 'Pesan Baru', href: '/admin/broadcasting/create' },
 ]
 
 export default function BroadcastCreatePage() {

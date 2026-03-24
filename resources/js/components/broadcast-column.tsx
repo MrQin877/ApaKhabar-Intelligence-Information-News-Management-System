@@ -30,7 +30,10 @@ function TypeIcon({ type }: { type: Broadcast['type'] }) {
         <div className="flex h-7 w-7 items-center justify-center rounded-md bg-red-100 dark:bg-red-900/30">
           <Siren className="h-4 w-4 text-red-500" />
         </div>
-        <span className="text-sm font-medium text-red-600 dark:text-red-400">Darurat</span>
+        {/* Hide label on mobile, show on sm+ */}
+        <span className="hidden sm:block text-sm font-medium text-red-600 dark:text-red-400">
+          Darurat
+        </span>
       </div>
     )
   }
@@ -40,7 +43,10 @@ function TypeIcon({ type }: { type: Broadcast['type'] }) {
       <div className="flex h-7 w-7 items-center justify-center rounded-md bg-green-100 dark:bg-green-900/30">
         <Megaphone className="h-4 w-4 text-green-600" />
       </div>
-      <span className="text-sm font-medium text-green-700 dark:text-green-400">Pengumuman</span>
+      {/* Hide label on mobile, show on sm+ */}
+      <span className="hidden sm:block text-sm font-medium text-green-700 dark:text-green-400">
+        Pengumuman
+      </span>
     </div>
   )
 }

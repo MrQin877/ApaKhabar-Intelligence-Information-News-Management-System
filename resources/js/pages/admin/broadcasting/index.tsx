@@ -1,11 +1,12 @@
 import { Head } from '@inertiajs/react';
 import { router } from '@inertiajs/react'
-import { Radio} from 'lucide-react'; 
+import { MailOpen, Radio, Send} from 'lucide-react'; 
 import type { Broadcast} from '@/components/broadcast-column';
 import { columns } from '@/components/broadcast-column';
 import { DataTable } from '@/components/broadcast-datatable';
 import AppLayout from '@/layouts/app-layout';
 import type { BreadcrumbItem } from '@/types';
+import { AnalyticsSidebar } from "@/components/broadcast-analytics";
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Pesan', href: '/admin/broadcasting' },
@@ -23,7 +24,7 @@ export default function BroadcastPage({/* { broadcasts }: { broadcasts: Broadcas
     return (
         <>
             <Head title="Manajemen Siaran" />
-            <div className="flex h-full flex-1 overflow-hidden p-4 gap-4">
+            <div className="flex h-full flex-1 overflow-auto p-4 gap-4 flex-col lg:flex-row">
 
                 {/* ── Left: Main content ── */}
                 <div className="flex flex-1 flex-col gap-4 min-w-0">
@@ -58,8 +59,10 @@ export default function BroadcastPage({/* { broadcasts }: { broadcasts: Broadcas
                 </div>
 
                 {/* ── Right: Analytics sidebar ── */}
-                {/* ... unchanged ... */}
-
+                <div className="w-full lg:w-64 lg:shrink-0">
+                        <AnalyticsSidebar />
+                
+                </div>
             </div>
         </>
     );
