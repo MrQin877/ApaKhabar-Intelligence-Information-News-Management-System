@@ -56,7 +56,7 @@ export default function Welcome({
                 />
             </Head>
 
-            <div className="min-h-screen bg-gray-50 dark:bg-neutral-950">
+            <div className="min-h-screen bg-white dark:bg-neutral-900">
 
                 {/* Navbar */}
                 <nav className="border-b border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-4 py-3 sticky top-0 z-40">
@@ -124,18 +124,18 @@ export default function Welcome({
                         }}
                     >
                         <span className="inline-flex items-center gap-3 px-8">
-                            <span className="bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400 text-xs font-bold px-2 py-1 rounded inline-flex items-center gap-1 border border-red-300 dark:border-red-700">
+                            <span className="bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400 text-sm font-bold px-2 py-1 rounded inline-flex items-center gap-1 border border-red-300 dark:border-red-700">
                                 <span className="h-2 w-2 rounded-full bg-red-500 inline-block animate-pulse"></span>
                                 BREAKING
                             </span>
-                            <span className="text-sm text-red-600 dark:text-red-400">
+                            <span className="text-base text-red-600 dark:text-red-400">
                                 Banjir besar melanda Jakarta pagi ini, ribuan warga dievakuasi, pemerintah siaga darurat dan tim penyelamat dikerahkan ke lokasi.
                             </span>
                         </span>
                     </div>
                 </div>
 
-                <main className="mx-auto max-w-7xl px-20 md:px-28 pt-26 pb-8">
+                <main className="mx-auto max-w-7xl px-16 md:px-24 pt-26 pb-8">
 
                     {/* Featured News */}
                     <div className="mb-8 flex flex-col md:flex-row items-stretch overflow-hidden rounded-md bg-white dark:bg-neutral-900">
@@ -146,12 +146,12 @@ export default function Welcome({
                         />
                         <div className="w-full md:w-1/2 flex flex-col justify-start pt-4 pb-6 px-6">
                             <div className="flex items-center gap-2 mb-3">
-                                <span className="text-sm text-gray-500 dark:text-gray-400">{featuredNews.date}</span>
-                                <Badge className="bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 hover:bg-green-100 text-sm">
+                                <span className="text-xs text-gray-500 dark:text-gray-400">{featuredNews.date}</span>
+                                <Badge className="bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 hover:bg-green-100 text-xs">
                                     {featuredNews.category}
                                 </Badge>
                             </div>
-                            <h2 className="text-2xl font-bold mb-3 leading-snug text-gray-900 dark:text-white text-justify">
+                            <h2 className="text-xl font-bold mb-3 leading-snug text-gray-900 dark:text-white text-justify">
                                 {featuredNews.title}
                             </h2>
                             <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 leading-relaxed text-justify">
@@ -180,8 +180,8 @@ export default function Welcome({
                                 {/* flex-1 so content area fills remaining height */}
                                 <div className="flex flex-col flex-1 px-0 pt-3 pb-4">
                                     <div className="flex items-center gap-2 mb-2">
-                                        <span className="text-sm text-gray-500 dark:text-gray-400">{news.date}</span>
-                                        <Badge className="bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 hover:bg-green-100 text-sm">
+                                        <span className="text-xs text-gray-500 dark:text-gray-400">{news.date}</span>
+                                        <Badge className="bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 hover:bg-green-100 text-xs">
                                             {news.category}
                                         </Badge>
                                     </div>
