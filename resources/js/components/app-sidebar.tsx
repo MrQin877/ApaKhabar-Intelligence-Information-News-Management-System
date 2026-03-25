@@ -31,7 +31,7 @@ const mainNavItems: NavItem[] = [
     },
 
     {
-        title: 'Siaran/Bersan',
+        title: 'Pesan',
         href: adminRoutes.broadcasting.index(),
         icon: Radio,
     },

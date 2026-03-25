@@ -1,9 +1,9 @@
 import { Head, Link, usePage, router } from '@inertiajs/react';
+import { Eye, Heart, Lock, MessageCircle, ThumbsUp, ChevronUp, ChevronDown } from 'lucide-react';
+import { useState } from 'react';
+import { Badge } from '@/components/ui/badge';
 import { login, register } from '@/routes';
 import type { SharedData } from '@/types';
-import { Badge } from '@/components/ui/badge';
-import { useState } from 'react';
-import { Eye, Heart, Lock, MessageCircle, ThumbsUp, ChevronUp, ChevronDown } from 'lucide-react';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -103,13 +103,18 @@ function CommentItem({
     const handleReplyClick = () => {
         if (!isAuthenticated) {
             onAuthRequired('membalas komentar');
+
             return;
         }
+
         setShowReplyBox(!showReplyBox);
     };
 
     const handleSubmitReply = () => {
-        if (!replyText.trim()) return;
+        if (!replyText.trim()) {
+return;
+}
+
         router.post(`/comments/${comment.id}/replies`, { content: replyText });
         setReplyText('');
         setShowReplyBox(false);
@@ -231,8 +236,10 @@ export default function Show({ news, comments = [], canRegister = true }: Props)
     const handleLike = () => {
         if (!isAuthenticated) {
             setAuthPrompt('menyukai berita ini');
+
             return;
         }
+
         router.post(`/news/${news.id}/like`, {}, {
             preserveScroll: true,
             onSuccess: () => {
@@ -245,9 +252,14 @@ export default function Show({ news, comments = [], canRegister = true }: Props)
     const handleComment = () => {
         if (!isAuthenticated) {
             setAuthPrompt('menulis komentar');
+
             return;
         }
-        if (!commentText.trim()) return;
+
+        if (!commentText.trim()) {
+return;
+}
+
         router.post(`/news/${news.id}/comments`, { content: commentText }, {
             preserveScroll: true,
             onSuccess: () => setCommentText(''),

@@ -20,7 +20,7 @@ import {
   Megaphone,
   X,
   SlidersHorizontal,
-  Trash2,
+  Archive,
   Send,
   XCircle,
 } from "lucide-react"
@@ -63,6 +63,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+
+//import { router } from '@inertiajs/react'
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[]
@@ -146,11 +148,22 @@ export function DataTable<TData, TValue>({
   const selectedIds = table
     .getFilteredSelectedRowModel()
     .rows.map((row) => (row.original as { id: string }).id)
-
+/*
   function handleBulkDelete() {
     // TODO: router.delete or axios call with selectedIds
     console.log("Delete IDs:", selectedIds)
     table.resetRowSelection()
+  }
+*/
+  function handleBulkArchive() {
+      // TODO: router.post('/admin/broadcasting/archive', { ids: selectedIds })
+      console.log("Archive IDs:", selectedIds)
+      table.resetRowSelection()
+
+      //router.post(route('admin.broadcasting.archive'), { ids: selectedIds }, {
+        //preserveScroll: true,
+        //onSuccess: () => table.resetRowSelection(),
+    //})
   }
 
   function handleBulkResend() {
@@ -328,83 +341,77 @@ export function DataTable<TData, TValue>({
         </DropdownMenu>
       </div>
 
-      {/* ── Bulk Action Bar (appears when rows selected) ── */}
+      {/* ── Bulk Action Bar ── */}
       {selectedCount > 0 && (
-        <div className="flex items-center gap-3 rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/30 px-4 py-2.5">
-          <span className="text-sm font-medium text-green-700 dark:text-green-400">
-            {selectedCount} siaran dipilih
-          </span>
-          <div className="h-4 w-px bg-green-200 dark:bg-green-800" />
-          <div className="flex items-center gap-2">
-
-            {/* Resend */}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleBulkResend}
-              className="h-8 gap-1.5 text-xs border-green-200 dark:border-green-800 text-green-700 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/40"
-            >
-              <Send className="h-3.5 w-3.5" />
-              Kirim Ulang
-            </Button>
-
-            {/* Cancel */}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleBulkCancel}
-              className="h-8 gap-1.5 text-xs border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-            >
-              <XCircle className="h-3.5 w-3.5" />
-              Batalkan
-            </Button>
-
-            {/* Delete with confirmation */}
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 gap-1.5 text-xs border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  Hapus
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Hapus {selectedCount} siaran?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Tindakan ini tidak dapat dibatalkan. {selectedCount} siaran yang dipilih
-                    akan dihapus secara permanen dari sistem.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Batal</AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={handleBulkDelete}
-                    className="bg-red-600 hover:bg-red-700 text-white"
-                  >
-                    Ya, Hapus Semua
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-
+        <>
+          {/* Mobile: sticky bottom bar */}
+          <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/95 backdrop-blur px-4 py-3 flex items-center gap-2 shadow-lg">
+            <span className="text-sm font-medium text-green-700 dark:text-green-400 shrink-0">
+              {selectedCount} dipilih
+            </span>
+            <div className="flex items-center gap-2 flex-1">
+              <Button variant="outline" size="sm" onClick={handleBulkResend}
+                className="h-8 gap-1.5 text-xs flex-1 border-green-200 dark:border-green-800 text-green-700 dark:text-green-400">
+                <Send className="h-3.5 w-3.5" /> Kirim Ulang
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleBulkCancel}
+                className="h-8 gap-1.5 text-xs flex-1">
+                <XCircle className="h-3.5 w-3.5" /> Batalkan
+              </Button>
+              <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0"
+                onClick={() => table.resetRowSelection()}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
 
-          {/* Spacer + deselect */}
-          <div className="flex-1" />
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => table.resetRowSelection()}
-            className="h-8 gap-1 text-xs text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
-          >
-            <X className="h-3.5 w-3.5" />
-            Batal Pilih
-          </Button>
-        </div>
+          {/* Desktop: inline bar (original, unchanged) */}
+          <div className="hidden md:flex items-center gap-3 rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/30 px-4 py-2.5">
+            <span className="text-sm font-medium text-green-700 dark:text-green-400">
+              {selectedCount} siaran dipilih
+            </span>
+            <div className="h-4 w-px bg-green-200 dark:bg-green-800" />
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={handleBulkResend}
+                className="h-8 gap-1.5 text-xs border-green-200 dark:border-green-800 text-green-700 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/40">
+                <Send className="h-3.5 w-3.5" /> Kirim Ulang
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleBulkCancel}
+                className="h-8 gap-1.5 text-xs">
+                <XCircle className="h-3.5 w-3.5" /> Batalkan
+              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="outline" size="sm"
+                    className="h-8 gap-1.5 text-xs">
+                    <Archive className="h-3.5 w-3.5" /> Arsipkan
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Arsipkan {selectedCount} siaran?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Siaran yang diarsipkan tidak akan ditampilkan dalam senarai utama,
+                      tetapi masih boleh dipulihkan dari halaman Arsip.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Batal</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleBulkArchive}
+                      className="bg-red-600 hover:bg-red-700 text-white">
+                      <Archive className="h-3.5 w-3.5 mr-1.5" /> Ya, Arsipkan
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
+            <div className="flex-1" />
+            <Button variant="ghost" size="sm" onClick={() => table.resetRowSelection()}
+              className="h-8 gap-1 text-xs text-neutral-500">
+              <X className="h-3.5 w-3.5" /> Batal Pilih
+            </Button>
+          </div>
+        </>
       )}
 
       {/* ── Table ── */}
