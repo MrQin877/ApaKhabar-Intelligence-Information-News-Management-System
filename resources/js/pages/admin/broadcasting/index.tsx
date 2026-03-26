@@ -51,7 +51,7 @@ export default function BroadcastPage(/* { broadcasts }: { broadcasts: Broadcast
                         </button>
                     </div>
 
-                    {/* ✅ Table — DataTable now owns filtering, sorting, and pagination */}
+                    {/* Table — DataTable now owns filtering, sorting, and pagination */}
                     <div className="overflow-hidden rounded-xl border border-sidebar-border/70 dark:border-sidebar-border bg-white dark:bg-neutral-900 p-4">
                         <DataTable columns={columns} data={broadcastData} />
                         {/* <DataTable columns={columns} data={broadcasts} /> */}
