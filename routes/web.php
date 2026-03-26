@@ -7,7 +7,7 @@ use Laravel\Fortify\Features;
 
 Route::get('/', [App\Http\Controllers\WelcomeController::class, 'index'])->name('home');
 
-Route::inertia('/news', 'villager/news/index')->name('news.index');
+Route::get('/news', [App\Http\Controllers\NewsController::class, 'index'])->name('news.index');
 
 Route::get('/news/{id}', [App\Http\Controllers\NewsController::class, 'show'])->name('news.show');
 
