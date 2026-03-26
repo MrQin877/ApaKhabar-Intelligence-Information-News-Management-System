@@ -28,5 +28,6 @@ export interface SharedData {
     name: string;
     auth: Auth;
     sidebarOpen: boolean;
+    categories: string[];
     [key: string]: unknown;
 }
