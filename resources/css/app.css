@@ -61,12 +61,13 @@
     --color-sidebar-ring: var(--sidebar-ring);
 
     --animate-marquee: marquee 15s linear infinite;
+}
 
    @keyframes marquee {
         0%   { transform: translateX(100vw); }
         100% { transform: translateX(calc(-50% - 90vw)); }
     }
-}
+
 
 :root {
     --background: oklch(1 0 0);

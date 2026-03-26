@@ -5,9 +5,37 @@ namespace App\Http\Controllers;
 use App\Models\News;
 use App\Models\Like;
 use Inertia\Inertia;
+use Illuminate\Http\Request;
 
 class NewsController extends Controller
 {
+    public function index(Request $request)
+    {
+        $category = $request->query('category');
+
+        $query = News::latest();
+
+        if ($category) {
+            $query->where('category', $category);
+        }
+
+        $news = $query->get()->map(function ($item) {
+            return [
+                'id'       => (string) $item->_id,
+                'title'    => $item->title,
+                'excerpt'  => $item->excerpt ?? '',
+                'image'    => $item->image ?? 'https://placehold.co/600x400',
+                'date'     => optional($item->created_at)->format('d F Y') ?? '-',
+                'category' => $item->category ?? 'Umum',
+            ];
+        });
+
+        return Inertia::render('newscategory', [
+            'newsList'       => $news,
+            'activeCategory' => $category ?? 'Semua',
+        ]);
+    }
+
     public function show($id)
     {
         $news = News::find($id);
