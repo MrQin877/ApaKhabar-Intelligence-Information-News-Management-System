@@ -1,7 +1,7 @@
 "use client"
 
 import type { ColumnDef } from "@tanstack/react-table"
-import { ArrowUpDown, MoreHorizontal, Megaphone, Siren, Eye, Pencil, Trash2, Send } from "lucide-react"
+import { ArrowUpDown, MoreHorizontal, Megaphone, Siren, Eye, Pencil, Send, Archive } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -214,18 +214,20 @@ export const columns: ColumnDef<Broadcast>[] = [
               <Eye className="h-3.5 w-3.5" />
               Lihat Detail
             </DropdownMenuItem>
+            {/* 
             <DropdownMenuItem className="gap-2 cursor-pointer">
               <Pencil className="h-3.5 w-3.5" />
               Edit Siaran
             </DropdownMenuItem>
+            */}
             <DropdownMenuItem className="gap-2 cursor-pointer">
               <Send className="h-3.5 w-3.5" />
               Kirim Ulang
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="gap-2 cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-950">
-              <Trash2 className="h-3.5 w-3.5" />
-              Hapus
+            <DropdownMenuItem className="gap-2 cursor-pointer text-yellow-600 focus:text-yellow-600 focus:bg-yellow-50 dark:focus:bg-yellow-950">
+              <Archive className="h-3.5 w-3.5" />
+              Arsipkan
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
