@@ -17,11 +17,14 @@ class ProfileController extends Controller
     /**
      * Show the user's profile settings page.
      */
-    public function edit(Request $request): Response
+    public function edit(Request $request)
     {
         return Inertia::render('settings/profile', [
             'mustVerifyEmail' => $request->user() instanceof MustVerifyEmail,
-            'status' => $request->session()->get('status'),
+            'status'          => session('status'),
+            'phone'           => $request->user()->phone,
+            'phoneVerified'   => $request->user()->hasVerifiedPhone(), 
+            'otpSent'         => session('status') === 'otp-sent',  
         ]);
     }
 

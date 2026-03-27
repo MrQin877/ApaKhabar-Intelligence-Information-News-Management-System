@@ -15,10 +15,7 @@ class BroadcastNotification extends Notification
     /**
      * Create a new notification instance.
      */
-    public function __construct(public Broadcast $broadcast)
-    {
-        //
-    }
+    public function __construct(public Broadcast $broadcast) {}
 
     /**
      * Get the notification's delivery channels.
@@ -27,8 +24,18 @@ class BroadcastNotification extends Notification
      */
     public function via(object $notifiable): array
     {
-        return ['mongodb'];
-        //return ['database'];
+        $channels = ['mongodb'];  // always in-app
+
+        // Add SMS only if broadcast has sms channel
+        // and user has verified phone number
+        if (in_array('sms', $this->broadcast->channels ?? [])
+            && $notifiable->phone
+            && $notifiable->hasVerifiedPhone()
+        ) {
+            $channels[] = 'vonage';
+        }
+
+        return $channels;
     }
 
     /*
@@ -48,6 +55,8 @@ class BroadcastNotification extends Notification
      *
      * @return array<string, mixed>
      */
+
+    // ── MongoDB in-app notification ────────────────────────
     public function toArray(object $notifiable): array
     {
         return [
@@ -58,5 +67,13 @@ class BroadcastNotification extends Notification
             'channel'      => implode(', ', $this->broadcast->channels ?? []),
             'audience'     => $this->broadcast->audience,
         ];
+    }
+
+    // ── Vonage SMS ─────────────────────────────────────────
+    public function toVonage(object $notifiable): VonageMessage
+    {
+        return (new VonageMessage)
+            ->clientReference((string) $notifiable->id)  // track per user
+            ->content("[{$this->broadcast->category}] {$this->broadcast->title}: {$this->broadcast->message}");
     }
 }

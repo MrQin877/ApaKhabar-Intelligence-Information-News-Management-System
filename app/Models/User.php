@@ -9,6 +9,8 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use MongoDB\Laravel\Auth\User as Authenticatable; // Use the MongoDB User model instead of the default Eloquent User model
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Auth\Notifications\VerifyEmail;
+use App\Models\Notification as MongoNotification;
+use Illuminate\Notifications\Notification;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 
 
@@ -29,7 +31,11 @@ class User extends Authenticatable implements MustVerifyEmail
         'name',
         'email',
         'password',
-        'role', // add role to fillable attributes
+        'role',
+        'phone',              // ← add
+        'phone_verified_at',  // ← add
+        'phone_otp',          // ← add (temporary OTP storage)
+        'phone_otp_expires_at', // ← add
     ];
 
     /**
@@ -46,7 +52,7 @@ class User extends Authenticatable implements MustVerifyEmail
     // Remove if using SQL
     public function notifications()
     {
-        return $this->morphMany(Notification::class, 'notifiable')
+        return $this->morphMany(MongoNotification::class, 'notifiable')
                     ->orderBy('created_at', 'desc');
     }
     
@@ -70,8 +76,10 @@ class User extends Authenticatable implements MustVerifyEmail
     protected function casts(): array
     {
         return [
-            'email_verified_at' => 'datetime',
-            'password' => 'hashed',
+            'email_verified_at'    => 'datetime',
+            'phone_verified_at'    => 'datetime',  // ← add
+            'phone_otp_expires_at' => 'datetime',  // ← add
+            'password'             => 'hashed',
             'two_factor_confirmed_at' => 'datetime',
         ];
     }
@@ -93,8 +101,14 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->email;
     }
 
+    public function routeNotificationForVonage(Notification $notification): string
+    {
+        return $this->phone ?? '';
+    }
+
     // Helper methods (very handy in blade/inertia)
-    public function isAdmin(): bool      { return $this->role === 'admin'; }
-    public function isModerator(): bool  { return $this->role === 'moderator'; }
-    public function isVillager(): bool   { return $this->role === 'villager'; }
+    public function isAdmin(): bool { return $this->role === 'admin'; }
+    public function isModerator(): bool { return $this->role === 'moderator'; }
+    public function isVillager(): bool { return $this->role === 'villager'; }
+    public function hasVerifiedPhone(): bool { return !is_null($this->phone_verified_at); }
 }

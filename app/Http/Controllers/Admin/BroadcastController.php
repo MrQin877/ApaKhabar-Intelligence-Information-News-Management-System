@@ -4,16 +4,16 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Broadcast;
-use App\Models\User;
 use App\Models\Notification;
+use App\Models\User;
 use App\Notifications\BroadcastNotification;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
-
 
 class BroadcastController extends Controller
 {
+    // ── No constructor needed — no injected service ────────
+
     // GET /admin/broadcasting
     public function index()
     {
@@ -25,7 +25,7 @@ class BroadcastController extends Controller
                 'id'        => (string) $b->id,
                 'type'      => $b->category,
                 'title'     => $b->title,
-                'audience' => match($b->audience) {
+                'audience'  => match($b->audience) {
                     'semua'    => 'Semua Pengguna',
                     'karyawan' => 'Karyawan',
                     default    => $b->audience,
@@ -86,7 +86,6 @@ class BroadcastController extends Controller
             'scheduled_at' => $scheduledAt,
         ]);
 
-        // ── Send notifications to target users immediately ──
         if ($validated['send_mode'] === 'now') {
             $this->sendToUsers($broadcast);
         }
@@ -100,36 +99,12 @@ class BroadcastController extends Controller
     {
         $broadcast->load('creator:id,name');
 
-        // ── Real stats from notifications table ──
         $broadcastId = (string) $broadcast->id;
 
-        // For SQL databases, you would typically query the notifications table like this:
-        // $totalSent = DB::table('notifications')
-        //     ->where('type', 'App\Notifications\BroadcastNotification')
-        //     ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(data, '$.broadcast_id')) = ?", [$broadcastId])
-        //     ->count();
-
-        // $totalRead = DB::table('notifications')
-        //     ->where('type', 'App\Notifications\BroadcastNotification')
-        //     ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(data, '$.broadcast_id')) = ?", [$broadcastId])
-        //     ->whereNotNull('read_at')
-        //     ->count();
-
-        // $readRate = $totalSent > 0
-        //     ? round(($totalRead / $totalSent) * 100)
-        //     : 0;
-
-        // for MongoDB, we can directly query the notifications collection using Eloquent since the data is stored as a BSON document:
-        $allNotifications = Notification::where(
-            'data.broadcast_id', $broadcastId
-        )->get();
-
+        $allNotifications = Notification::where('data.broadcast_id', $broadcastId)->get();
         $totalSent = $allNotifications->count();
         $totalRead = $allNotifications->whereNotNull('read_at')->count();
-        $readRate  = $totalSent > 0
-            ? round(($totalRead / $totalSent) * 100)
-            : 0;
-
+        $readRate  = $totalSent > 0 ? round(($totalRead / $totalSent) * 100) : 0;
 
         return Inertia::render('admin/broadcasting/show', [
             'broadcast' => [
@@ -165,7 +140,6 @@ class BroadcastController extends Controller
             'sent_at' => now(),
         ]);
 
-        // ── Resend notifications to all target users ──
         $this->sendToUsers($broadcast);
 
         return back()->with('success', 'Siaran berhasil dikirim ulang.');
@@ -175,7 +149,7 @@ class BroadcastController extends Controller
     public function archive(Request $request)
     {
         $request->validate([
-            'ids'   => 'required|array|min:1',
+            'ids' => 'required|array|min:1',
         ]);
 
         Broadcast::whereIn('id', $request->ids)
@@ -201,19 +175,24 @@ class BroadcastController extends Controller
         return back()->with('success', 'Siaran berhasil dipulihkan.');
     }
 
-    // ── Private helper — send to correct audience ──────────
+    // ── Private: send to target users ─────────────────────
     private function sendToUsers(Broadcast $broadcast): void
     {
-        $users = match($broadcast->audience) {
-            // Karyawan only — send to employees
-            'karyawan' => User::where('role', 'admin', 'moderator')->get(),
-
-            // Semua — send to ALL roles (villager + karyawan + moderator etc.)
-            default    => User::whereIn('role', ['villager', 'admin', 'moderator'])->get(),
-        };
+        $users = $this->getTargetUsers($broadcast->audience);
 
         foreach ($users as $user) {
+            // BroadcastNotification handles both:
+            // - MongoDB in-app (always)
+            // - Vonage SMS (if sms channel + verified phone)
             $user->notify(new BroadcastNotification($broadcast));
         }
+    }
+
+    private function getTargetUsers(string $audience)
+    {
+        return match($audience) {
+            'karyawan' => User::where('role', 'karyawan')->get(),
+            default    => User::whereIn('role', ['villager', 'karyawan'])->get(),
+        };
     }
 }

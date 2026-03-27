@@ -7,11 +7,14 @@ import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Separator } from '@/components/ui/separator'
 import { edit } from '@/routes/profile';
+import { PhoneVerification } from '@/components/phone-verification'
 import { send } from '@/routes/verification';
 import type { BreadcrumbItem } from '@/types';
 import { SettingsWrapper } from '@/layouts/settings/setting-wrapper';
- 
+
+
 const breadcrumbs: BreadcrumbItem[] = [
     {
         title: 'Tetapan Profil',
@@ -22,9 +25,15 @@ const breadcrumbs: BreadcrumbItem[] = [
 export default function Profile({
     mustVerifyEmail,
     status,
+    phone,          
+    phoneVerified,
+    otpSent, 
 }: {
     mustVerifyEmail: boolean;
     status?: string;
+    phone: string | null;
+    phoneVerified: boolean;
+    otpSent: boolean;
 }) {
     const { auth } = usePage().props;
  
@@ -113,6 +122,23 @@ export default function Profile({
                         </>
                     )}
                 </Form>
+            </div>
+
+            <Separator className="dark:bg-neutral-800" />
+
+            {/* ── Phone verification ── */}
+            <div className="space-y-4">
+                <Heading
+                    variant="small"
+                    title="Nombor Telefon"
+                    description="Tambah nombor telefon untuk menerima notifikasi SMS"
+                />
+                <PhoneVerification
+                    phone={phone}
+                    phoneVerified={phoneVerified}
+                    otpSent={otpSent}
+                    status={status}
+                />
             </div>
  
             <DeleteUser />
