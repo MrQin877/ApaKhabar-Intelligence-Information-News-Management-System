@@ -1,11 +1,11 @@
-import { useState } from 'react'
 import { Check, CheckCheck, Clock, ChevronDown, ChevronUp, Radio, Smartphone, MessageSquare } from 'lucide-react'
-import { Card, CardContent } from '@/components/ui/card'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { NotificationIcon } from './notification-icon'
-import { NotificationTypeBadge } from './notification-type-badge'
+import { Card, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 import type { Notification } from '@/types/notification'
+import { NotificationIcon } from './notification-icon'
+import { NotificationTypeBadge } from './notification-type-badge'
  
 interface NotificationCardProps {
     notif: Notification
@@ -14,8 +14,15 @@ interface NotificationCardProps {
  
 function ChannelIcon({ channel }: { channel: string }) {
     const lower = channel.toLowerCase()
-    if (lower.includes('whatsapp')) return <MessageSquare className="h-3 w-3" />
-    if (lower.includes('sms'))      return <Smartphone className="h-3 w-3" />
+
+    if (lower.includes('whatsapp')) {
+return <MessageSquare className="h-3 w-3" />
+}
+
+    if (lower.includes('sms'))      {
+return <Smartphone className="h-3 w-3" />
+}
+
     return <Radio className="h-3 w-3" />
 }
  

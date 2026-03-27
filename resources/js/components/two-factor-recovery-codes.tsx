@@ -31,7 +31,9 @@ export default function TwoFactorRecoveryCodes({
         if (!codesAreVisible && !recoveryCodesList.length) {
             await fetchRecoveryCodes();
         }
+
         setCodesAreVisible(!codesAreVisible);
+
         if (!codesAreVisible) {
             setTimeout(() => {
                 codesSectionRef.current?.scrollIntoView({

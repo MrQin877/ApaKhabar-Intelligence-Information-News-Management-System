@@ -1,6 +1,6 @@
 import { Head, Link } from '@inertiajs/react';
-import { Badge } from '@/components/ui/badge';
 import { HeaderBar } from '@/components/header-bar';
+import { Badge } from '@/components/ui/badge';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -17,7 +17,7 @@ interface Props {
     featuredNews: NewsItem | null;
     newsList: NewsItem[];
     breakingNews: string | null;
-    canRegister?: boolean;
+    // canRegister?: boolean;
 }
 
 // ─── Page ────────────────────────────────────────────────────────────────────
@@ -26,7 +26,7 @@ export default function Welcome({
     featuredNews,
     newsList = [],
     breakingNews,
-    canRegister = true,
+    // canRegister = true,
 }: Props) {
     return (
         <>

@@ -12,10 +12,10 @@ import TwoFactorSetupModal from '@/components/two-factor-setup-modal';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { useTwoFactorAuth } from '@/hooks/use-two-factor-auth';
+import { SettingsWrapper } from '@/layouts/settings/setting-wrapper';
 import { edit } from '@/routes/security';
 import { disable, enable } from '@/routes/two-factor';
 import type { BreadcrumbItem } from '@/types';
-import { SettingsWrapper } from '@/layouts/settings/setting-wrapper';
  
 type Props = {
     canManageTwoFactor?: boolean;
@@ -55,8 +55,13 @@ export default function Security({
                     resetOnError={['password', 'password_confirmation', 'current_password']}
                     resetOnSuccess
                     onError={(errors) => {
-                        if (errors.password) passwordInput.current?.focus();
-                        if (errors.current_password) currentPasswordInput.current?.focus();
+                        if (errors.password) {
+passwordInput.current?.focus();
+}
+
+                        if (errors.current_password) {
+currentPasswordInput.current?.focus();
+}
                     }}
                     className="space-y-6"
                 >

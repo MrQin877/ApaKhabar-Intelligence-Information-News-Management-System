@@ -13,13 +13,6 @@ const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Pesan', href: '/admin/broadcasting' },
 ];
 
-const broadcastData: Broadcast[] = [
-    { id: '1', type: 'daurat',     title: 'Pemeliharaan Sistem Mendesak',    audience: 'Semua Pengguna', status: 'Dikirim',   sent_time: '12:30 PM' },
-    { id: '2', type: 'pengumuman', title: 'Rilis Fitur Baru: Mode Gelap',     audience: 'Semua Pengguna', status: 'Terjadwal', sent_time: '7:00 PM'  },
-    { id: '3', type: 'pengumuman', title: 'Penutupan Kantor Libur',           audience: 'Semua Pengguna', status: 'Tertunda',  sent_time: '10:30 AM' },
-    { id: '4', type: 'daurat',     title: 'Peringatan Cuaca Ekstrem',         audience: 'Karyawan',       status: 'Tertunda',  sent_time: '8:20 AM'  },
-    { id: '5', type: 'pengumuman', title: 'Pembaruan Database Terjadwal',     audience: 'Semua Pengguna', status: 'Tertunda',  sent_time: '7:00 PM'  },
-];
 
 export default function BroadcastPage({ broadcasts }: { broadcasts: Broadcast[] }) {
     return (

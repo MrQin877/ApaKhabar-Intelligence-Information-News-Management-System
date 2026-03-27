@@ -1,12 +1,12 @@
 import { Link, usePage } from '@inertiajs/react';
+import { Bell } from 'lucide-react';
+import { useInitials } from '@/hooks/use-initials';
 import { login, register } from '@/routes';
 import type { SharedData } from '@/types';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from './ui/dropdown-menu';
-import { UserMenuContent } from './user-menu-content';
-import { Button } from './ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
-import { useInitials } from '@/hooks/use-initials';
-import { Bell } from 'lucide-react';
+import { Button } from './ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from './ui/dropdown-menu';
+//import { UserMenuContent } from './user-menu-content';
 import { VillagerUserMenuContent } from './villager-user-menu-content';
 
 export function HeaderBar() {

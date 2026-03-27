@@ -5,9 +5,6 @@ import {
     Radio, CalendarDays, CheckCheck, BarChart2,
     MailOpen, AlertTriangle,
 } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Separator } from '@/components/ui/separator'
 import {
     AlertDialog,
     AlertDialogAction,
@@ -19,6 +16,9 @@ import {
     AlertDialogTitle,
     AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Separator } from '@/components/ui/separator'
 import AppLayout from '@/layouts/app-layout'
 import { cn } from '@/lib/utils'
 import type { BreadcrumbItem } from '@/types'
@@ -64,10 +64,7 @@ const channelMap: Record<string, { icon: React.ReactNode; label: string }> = {
  
 // ── Main Page ──────────────────────────────────────────────
 export default function BroadcastShowPage({ broadcast }: Props) {
-    const breadcrumbs: BreadcrumbItem[] = [
-        { title: 'Pesan',       href: '/admin/broadcasting' },
-        { title: broadcast.title, href: `/admin/broadcasting/${broadcast.id}` },
-    ]
+
  
     const status = statusMap[broadcast.status]
     const isDarurat = broadcast.category === 'darurat'
@@ -350,7 +347,13 @@ export default function BroadcastShowPage({ broadcast }: Props) {
     )
 }
  
-BroadcastShowPage.layout = (page: React.ReactNode) => {
-    // breadcrumbs are set dynamically above, pass empty to avoid TS issues
-    return <AppLayout breadcrumbs={[]}>{page}</AppLayout>
+BroadcastShowPage.layout = (page: React.ReactElement) => {
+    const { broadcast } = page.props as Props
+
+    const breadcrumbs: BreadcrumbItem[] = [
+        { title: 'Pesan',           href: '/admin/broadcasting' },
+        { title: broadcast.title,   href: '#' },
+    ]
+
+    return <AppLayout breadcrumbs={breadcrumbs}>{page}</AppLayout>
 }

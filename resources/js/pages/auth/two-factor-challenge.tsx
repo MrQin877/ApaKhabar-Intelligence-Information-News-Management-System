@@ -25,6 +25,7 @@ export default function TwoFactorChallenge() {
                 toggleText: 'log masuk menggunakan kod pengesahan',
             };
         }
+
         return {
             title: 'Kod pengesahan',
             description: 'Masukkan kod pengesahan yang disediakan oleh aplikasi pengesah anda.',

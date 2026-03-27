@@ -226,6 +226,7 @@ export default function TwoFactorSetupModal({
                 buttonText: 'Tutup',
             };
         }
+
         if (showVerificationStep) {
             return {
                 title: 'Sahkan kod pengesahan',
@@ -233,6 +234,7 @@ export default function TwoFactorSetupModal({
                 buttonText: 'Teruskan',
             };
         }
+
         return {
             title: 'Dayakan pengesahan dua faktor',
             description: 'Untuk menyelesaikan pengaktifan pengesahan dua faktor, imbas kod QR atau masukkan kunci persediaan dalam aplikasi pengesah anda',
@@ -243,14 +245,17 @@ export default function TwoFactorSetupModal({
     const handleModalNextStep = useCallback(() => {
         if (requiresConfirmation) {
             setShowVerificationStep(true);
+
             return;
         }
+
         clearSetupData();
         onClose();
     }, [requiresConfirmation, clearSetupData, onClose]);
  
     const resetModalState = useCallback(() => {
         setShowVerificationStep(false);
+
         if (twoFactorEnabled) {
             clearSetupData();
         }

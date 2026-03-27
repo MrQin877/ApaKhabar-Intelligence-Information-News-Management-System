@@ -1,17 +1,17 @@
 import { router } from '@inertiajs/react'
-import { useState } from 'react'
-import PhoneInput from 'react-phone-number-input'
-import 'react-phone-number-input/style.css'
 import {
     Phone, ShieldCheck, ShieldX,
     Send, RefreshCw, CheckCircle2,
 } from 'lucide-react'
+import { useState } from 'react'
+import { forwardRef } from 'react'
+import PhoneInput from 'react-phone-number-input'
+import 'react-phone-number-input/style.css'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import { forwardRef } from 'react'
 
 // ── Shadcn-styled input for PhoneInput ────────────────────
 const CustomInput = forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
@@ -47,7 +47,9 @@ export function PhoneVerification({
         setProcessing(true)
         router.post('/settings/phone', { phone }, {
             preserveScroll: true,
-            onSuccess: () => { setOtpSent(true); setProcessing(false) },
+            onSuccess: () => {
+ setOtpSent(true); setProcessing(false) 
+},
             onError:   () => setProcessing(false),
         })
     }
@@ -56,7 +58,9 @@ export function PhoneVerification({
         setProcessing(true)
         router.post('/settings/phone/verify', { otp }, {
             preserveScroll: true,
-            onSuccess: () => { setOtp(''); setProcessing(false) },
+            onSuccess: () => {
+ setOtp(''); setProcessing(false) 
+},
             onError:   () => setProcessing(false),
         })
     }

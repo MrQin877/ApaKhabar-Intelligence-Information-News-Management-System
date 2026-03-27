@@ -1,13 +1,13 @@
 // resources/js/layouts/settings/settings-wrapper.tsx
 import { Link, router, usePage } from '@inertiajs/react'
 import { ArrowLeft } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import AppLayout from '@/layouts/app-layout'
 import SettingsLayout from '@/layouts/settings/layout'
-import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { edit as editAppearance } from '@/routes/appearance'
 import { edit as editProfile } from '@/routes/profile'
 import { edit as editSecurity } from '@/routes/security'
-import { edit as editAppearance } from '@/routes/appearance'
 import type { BreadcrumbItem } from '@/types'
 
 type Props = {
@@ -24,6 +24,7 @@ const villagerTabs = [
 
 function VillagerSettingsTabs() {
     const { url } = usePage()
+
     return (
         <div className="flex gap-1 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-1">
             {villagerTabs.map(tab => (

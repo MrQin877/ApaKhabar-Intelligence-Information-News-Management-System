@@ -1,16 +1,16 @@
 import { Head, router, usePage } from '@inertiajs/react'
-import { useState } from 'react'
 import { Bell, BellOff, CheckCheck } from 'lucide-react'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
+import { useState } from 'react'
+import { HeaderBar } from '@/components/header-bar'  // your villager header
 import { NotificationCard } from '@/components/notifications/notification-card'
 import { NotificationSkeleton } from '@/components/notifications/notification-skeleton'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import AppLayout from '@/layouts/app-layout'
 import { cn } from '@/lib/utils'
 import type { BreadcrumbItem } from '@/types'
 import type { Notification, FilterTab } from '@/types/notification'
-import { HeaderBar } from '@/components/header-bar'  // your villager header
  
 type Props = {
     notifications: Notification[]
@@ -53,9 +53,18 @@ export default function NotificationsPage({ notifications: initial}: Props) {
  
     // ── Filter notifications ────────────────────────────────
     const filtered = notifications.filter(n => {
-        if (activeFilter === 'darurat')      return n.type === 'darurat'
-        if (activeFilter === 'pengumuman')   return n.type === 'pengumuman'
-        if (activeFilter === 'belum-dibaca') return !n.is_read
+        if (activeFilter === 'darurat')      {
+return n.type === 'darurat'
+}
+
+        if (activeFilter === 'pengumuman')   {
+return n.type === 'pengumuman'
+}
+
+        if (activeFilter === 'belum-dibaca') {
+return !n.is_read
+}
+
         return true
     })
  

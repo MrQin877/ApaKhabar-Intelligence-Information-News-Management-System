@@ -1,5 +1,6 @@
 "use client"
 
+import { router } from '@inertiajs/react'
 import type { ColumnDef } from "@tanstack/react-table"
 import { ArrowUpDown, MoreHorizontal, Megaphone, Siren, Eye, Send, Archive } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -12,7 +13,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { router } from '@inertiajs/react'
 
 export type Broadcast = {
   id: string

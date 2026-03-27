@@ -1,5 +1,6 @@
 "use client"
 
+import { router } from '@inertiajs/react'
 import type {
   ColumnDef,
   ColumnFiltersState,
@@ -64,7 +65,6 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-import { router } from '@inertiajs/react'
  
 
 interface DataTableProps<TData, TValue> {

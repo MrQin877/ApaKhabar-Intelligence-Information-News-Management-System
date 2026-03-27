@@ -15,6 +15,7 @@ export function NotificationTypeBadge({
     size = 'sm',
 }: NotificationTypeBadgeProps) {
     const isDarurat = type === 'darurat'
+
     return (
         <Badge
             variant="outline"
