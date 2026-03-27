@@ -11,13 +11,13 @@ import {
     CardTitle,
 } from '@/components/ui/card';
 import { regenerateRecoveryCodes } from '@/routes/two-factor';
-
+ 
 type Props = {
     recoveryCodesList: string[];
     fetchRecoveryCodes: () => Promise<void>;
     errors: string[];
 };
-
+ 
 export default function TwoFactorRecoveryCodes({
     recoveryCodesList,
     fetchRecoveryCodes,
@@ -26,14 +26,12 @@ export default function TwoFactorRecoveryCodes({
     const [codesAreVisible, setCodesAreVisible] = useState<boolean>(false);
     const codesSectionRef = useRef<HTMLDivElement | null>(null);
     const canRegenerateCodes = recoveryCodesList.length > 0 && codesAreVisible;
-
+ 
     const toggleCodesVisibility = useCallback(async () => {
         if (!codesAreVisible && !recoveryCodesList.length) {
             await fetchRecoveryCodes();
         }
-
         setCodesAreVisible(!codesAreVisible);
-
         if (!codesAreVisible) {
             setTimeout(() => {
                 codesSectionRef.current?.scrollIntoView({
@@ -43,25 +41,25 @@ export default function TwoFactorRecoveryCodes({
             });
         }
     }, [codesAreVisible, recoveryCodesList.length, fetchRecoveryCodes]);
-
+ 
     useEffect(() => {
         if (!recoveryCodesList.length) {
             fetchRecoveryCodes();
         }
     }, [recoveryCodesList.length, fetchRecoveryCodes]);
-
+ 
     const RecoveryCodeIconComponent = codesAreVisible ? EyeOff : Eye;
-
+ 
     return (
         <Card>
             <CardHeader>
                 <CardTitle className="flex gap-3">
                     <LockKeyhole className="size-4" aria-hidden="true" />
-                    2FA recovery codes
+                    Kod pemulihan 2FA
                 </CardTitle>
                 <CardDescription>
-                    Recovery codes let you regain access if you lose your 2FA
-                    device. Store them in a secure password manager.
+                    Kod pemulihan membolehkan anda mendapatkan semula akses jika anda kehilangan peranti 2FA.
+                    Simpan kod ini di tempat yang selamat.
                 </CardDescription>
             </CardHeader>
             <CardContent>
@@ -72,13 +70,10 @@ export default function TwoFactorRecoveryCodes({
                         aria-expanded={codesAreVisible}
                         aria-controls="recovery-codes-section"
                     >
-                        <RecoveryCodeIconComponent
-                            className="size-4"
-                            aria-hidden="true"
-                        />
-                        {codesAreVisible ? 'Hide' : 'View'} recovery codes
+                        <RecoveryCodeIconComponent className="size-4" aria-hidden="true" />
+                        {codesAreVisible ? 'Sembunyikan' : 'Lihat'} kod pemulihan
                     </Button>
-
+ 
                     {canRegenerateCodes && (
                         <Form
                             {...regenerateRecoveryCodes.form()}
@@ -92,12 +87,13 @@ export default function TwoFactorRecoveryCodes({
                                     disabled={processing}
                                     aria-describedby="regenerate-warning"
                                 >
-                                    <RefreshCw /> Regenerate codes
+                                    <RefreshCw /> Jana semula kod
                                 </Button>
                             )}
                         </Form>
                     )}
                 </div>
+ 
                 <div
                     id="recovery-codes-section"
                     className={`relative overflow-hidden transition-all duration-300 ${codesAreVisible ? 'h-auto opacity-100' : 'h-0 opacity-0'}`}
@@ -112,46 +108,32 @@ export default function TwoFactorRecoveryCodes({
                                     ref={codesSectionRef}
                                     className="grid gap-1 rounded-lg bg-muted p-4 font-mono text-sm"
                                     role="list"
-                                    aria-label="Recovery codes"
+                                    aria-label="Kod pemulihan"
                                 >
                                     {recoveryCodesList.length ? (
                                         recoveryCodesList.map((code, index) => (
-                                            <div
-                                                key={index}
-                                                role="listitem"
-                                                className="select-text"
-                                            >
+                                            <div key={index} role="listitem" className="select-text">
                                                 {code}
                                             </div>
                                         ))
                                     ) : (
-                                        <div
-                                            className="space-y-2"
-                                            aria-label="Loading recovery codes"
-                                        >
-                                            {Array.from(
-                                                { length: 8 },
-                                                (_, index) => (
-                                                    <div
-                                                        key={index}
-                                                        className="h-4 animate-pulse rounded bg-muted-foreground/20"
-                                                        aria-hidden="true"
-                                                    />
-                                                ),
-                                            )}
+                                        <div className="space-y-2" aria-label="Memuatkan kod pemulihan">
+                                            {Array.from({ length: 8 }, (_, index) => (
+                                                <div
+                                                    key={index}
+                                                    className="h-4 animate-pulse rounded bg-muted-foreground/20"
+                                                    aria-hidden="true"
+                                                />
+                                            ))}
                                         </div>
                                     )}
                                 </div>
-
+ 
                                 <div className="text-xs text-muted-foreground select-none">
                                     <p id="regenerate-warning">
-                                        Each recovery code can be used once to
-                                        access your account and will be removed
-                                        after use. If you need more, click{' '}
-                                        <span className="font-bold">
-                                            Regenerate codes
-                                        </span>{' '}
-                                        above.
+                                        Setiap kod pemulihan hanya boleh digunakan sekali untuk mengakses akaun anda
+                                        dan akan dipadam selepas digunakan. Jika anda memerlukan lebih, klik{' '}
+                                        <span className="font-bold">Jana semula kod</span> di atas.
                                     </p>
                                 </div>
                             </>

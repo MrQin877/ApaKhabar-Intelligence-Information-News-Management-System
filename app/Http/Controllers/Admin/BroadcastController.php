@@ -3,7 +3,14 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Broadcast;
+use App\Models\User;
+use App\Models\Notification;
+use App\Notifications\BroadcastNotification;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Inertia\Inertia;
+
 
 class BroadcastController extends Controller
 {
@@ -16,15 +23,21 @@ class BroadcastController extends Controller
             ->get()
             ->map(fn ($b) => [
                 'id'        => (string) $b->id,
-                'type'      => $b->category,        // maps to frontend 'type'
+                'type'      => $b->category,
                 'title'     => $b->title,
-                'audience'  => $b->audience === 'semua' ? 'Semua Pengguna' : 'Karyawan',
+                'audience' => match($b->audience) {
+                    'semua'    => 'Semua Pengguna',
+                    'karyawan' => 'Karyawan',
+                    default    => $b->audience,
+                },
                 'status'    => match($b->status) {
                     'dikirim'   => 'Dikirim',
                     'terjadwal' => 'Terjadwal',
                     default     => 'Tertunda',
                 },
-                'sent_time' => $b->sent_at?->format('h:i A') ?? $b->created_at->format('h:i A'),
+                'sent_time' => $b->sent_at?->format('h:i A')
+                            ?? $b->scheduled_at?->format('h:i A')
+                            ?? $b->created_at->format('h:i A'),
             ]);
 
         return Inertia::render('admin/broadcasting/index', [
@@ -43,7 +56,7 @@ class BroadcastController extends Controller
     {
         $validated = $request->validate([
             'title'          => 'required|string|max:255',
-            'message'        => 'required|string|max:300',
+            'message'        => 'required|string|max:500',
             'category'       => 'required|in:pengumuman,darurat',
             'channels'       => 'required|array|min:1',
             'channels.*'     => 'in:whatsapp,sms,aplikasi',
@@ -60,7 +73,7 @@ class BroadcastController extends Controller
             );
         }
 
-        Broadcast::create([
+        $broadcast = Broadcast::create([
             'created_by'   => auth()->id(),
             'title'        => $validated['title'],
             'message'      => $validated['message'],
@@ -73,16 +86,96 @@ class BroadcastController extends Controller
             'scheduled_at' => $scheduledAt,
         ]);
 
+        // ── Send notifications to target users immediately ──
+        if ($validated['send_mode'] === 'now') {
+            $this->sendToUsers($broadcast);
+        }
+
         return redirect()->route('admin.broadcasting.index')
             ->with('success', 'Siaran berhasil dibuat.');
     }
 
-    // POST /admin/broadcasting/archive
+    // GET /admin/broadcasting/{broadcast}
+    public function show(Broadcast $broadcast)
+    {
+        $broadcast->load('creator:id,name');
+
+        // ── Real stats from notifications table ──
+        $broadcastId = (string) $broadcast->id;
+
+        // For SQL databases, you would typically query the notifications table like this:
+        // $totalSent = DB::table('notifications')
+        //     ->where('type', 'App\Notifications\BroadcastNotification')
+        //     ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(data, '$.broadcast_id')) = ?", [$broadcastId])
+        //     ->count();
+
+        // $totalRead = DB::table('notifications')
+        //     ->where('type', 'App\Notifications\BroadcastNotification')
+        //     ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(data, '$.broadcast_id')) = ?", [$broadcastId])
+        //     ->whereNotNull('read_at')
+        //     ->count();
+
+        // $readRate = $totalSent > 0
+        //     ? round(($totalRead / $totalSent) * 100)
+        //     : 0;
+
+        // for MongoDB, we can directly query the notifications collection using Eloquent since the data is stored as a BSON document:
+        $allNotifications = Notification::where(
+            'data.broadcast_id', $broadcastId
+        )->get();
+
+        $totalSent = $allNotifications->count();
+        $totalRead = $allNotifications->whereNotNull('read_at')->count();
+        $readRate  = $totalSent > 0
+            ? round(($totalRead / $totalSent) * 100)
+            : 0;
+
+
+        return Inertia::render('admin/broadcasting/show', [
+            'broadcast' => [
+                'id'           => (string) $broadcast->id,
+                'title'        => $broadcast->title,
+                'message'      => $broadcast->message,
+                'category'     => $broadcast->category,
+                'channels'     => $broadcast->channels ?? [],
+                'audience'     => $broadcast->audience,
+                'status'       => $broadcast->status,
+                'send_mode'    => $broadcast->send_mode,
+                'scheduled_at' => $broadcast->scheduled_at?->translatedFormat('d M Y, H:i'),
+                'sent_at'      => $broadcast->sent_at?->translatedFormat('d M Y, H:i'),
+                'archived_at'  => $broadcast->archived_at,
+                'created_at'   => $broadcast->created_at->translatedFormat('d M Y, H:i'),
+                'creator'      => $broadcast->creator
+                    ? ['id' => (string) $broadcast->creator->id, 'name' => $broadcast->creator->name]
+                    : ['id' => null, 'name' => 'Admin'],
+                'stats'        => [
+                    'total_sent' => $totalSent,
+                    'total_read' => $totalRead,
+                    'read_rate'  => $readRate,
+                ],
+            ],
+        ]);
+    }
+
+    // POST /admin/broadcasting/{broadcast}/resend
+    public function resend(Broadcast $broadcast)
+    {
+        $broadcast->update([
+            'status'  => 'dikirim',
+            'sent_at' => now(),
+        ]);
+
+        // ── Resend notifications to all target users ──
+        $this->sendToUsers($broadcast);
+
+        return back()->with('success', 'Siaran berhasil dikirim ulang.');
+    }
+
+    // POST /admin/broadcasting/archive (bulk)
     public function archive(Request $request)
     {
         $request->validate([
             'ids'   => 'required|array|min:1',
-            'ids.*' => 'exists:broadcasts,id',
         ]);
 
         Broadcast::whereIn('id', $request->ids)
@@ -91,11 +184,36 @@ class BroadcastController extends Controller
         return back()->with('success', count($request->ids) . ' siaran berhasil diarsipkan.');
     }
 
+    // POST /admin/broadcasting/{broadcast}/archive (single)
+    public function archiveSingle(Broadcast $broadcast)
+    {
+        $broadcast->update(['archived_at' => now()]);
+
+        return redirect()->route('admin.broadcasting.index')
+            ->with('success', 'Siaran berhasil diarsipkan.');
+    }
+
     // POST /admin/broadcasting/{broadcast}/restore
     public function restore(Broadcast $broadcast)
     {
         $broadcast->update(['archived_at' => null]);
 
         return back()->with('success', 'Siaran berhasil dipulihkan.');
+    }
+
+    // ── Private helper — send to correct audience ──────────
+    private function sendToUsers(Broadcast $broadcast): void
+    {
+        $users = match($broadcast->audience) {
+            // Karyawan only — send to employees
+            'karyawan' => User::where('role', 'admin', 'moderator')->get(),
+
+            // Semua — send to ALL roles (villager + karyawan + moderator etc.)
+            default    => User::whereIn('role', ['villager', 'admin', 'moderator'])->get(),
+        };
+
+        foreach ($users as $user) {
+            $user->notify(new BroadcastNotification($broadcast));
+        }
     }
 }

@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/sidebar';
 import { dashboard } from '@/routes';
 import adminRoutes from '@/routes/admin';
+import notifications from '@/routes/notifications';
 import type { NavItem } from '@/types';
 
 const mainNavItems: NavItem[] = [
@@ -47,7 +48,7 @@ const footerNavItems: NavItem[] = [
 
     {
         title: 'Notifications',
-        href: '',
+        href: notifications.index(),
         icon: Bell,
     },
 ];

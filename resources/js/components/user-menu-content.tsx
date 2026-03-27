@@ -11,19 +11,19 @@ import { useMobileNavigation } from '@/hooks/use-mobile-navigation';
 import { logout } from '@/routes';
 import { edit } from '@/routes/profile';
 import type { User } from '@/types';
-
+ 
 type Props = {
     user: User;
 };
-
+ 
 export function UserMenuContent({ user }: Props) {
     const cleanup = useMobileNavigation();
-
+ 
     const handleLogout = () => {
         cleanup();
         router.flushAll();
     };
-
+ 
     return (
         <>
             <DropdownMenuLabel className="p-0 font-normal">
@@ -41,7 +41,7 @@ export function UserMenuContent({ user }: Props) {
                         onClick={cleanup}
                     >
                         <Settings className="mr-2" />
-                        Settings
+                        Tetapan
                     </Link>
                 </DropdownMenuItem>
             </DropdownMenuGroup>
@@ -55,7 +55,7 @@ export function UserMenuContent({ user }: Props) {
                     data-test="logout-button"
                 >
                     <LogOut className="mr-2" />
-                    Log out
+                    Log keluar
                 </Link>
             </DropdownMenuItem>
         </>

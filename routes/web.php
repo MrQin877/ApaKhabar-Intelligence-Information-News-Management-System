@@ -2,6 +2,10 @@
 
 use Illuminate\Support\Facades\Route;
 use Laravel\Fortify\Features;
+use App\Http\Controllers\Admin\BroadcastController;
+use App\Http\Controllers\Villager\NotificationController;
+use App\Http\Controllers\PostLikeController;
+use App\Http\Controllers\CommentController;
 
 //Public routes — no auth required
 
@@ -12,18 +16,25 @@ Route::get('/news', [App\Http\Controllers\NewsController::class, 'index'])->name
 Route::get('/news/{id}', [App\Http\Controllers\NewsController::class, 'show'])->name('news.show');
 
 
+//Authenticated routes — login required for all but shared between villager and admin
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::get('/notifications', [App\Http\Controllers\Villager\NotificationController::class, 'index'])
+        ->name('notifications.index');
+    Route::patch('/notifications/read-all', [App\Http\Controllers\Villager\NotificationController::class, 'markAllRead'])
+        ->name('notifications.read-all');
+    Route::patch('/notifications/{id}/read', [App\Http\Controllers\Villager\NotificationController::class, 'markRead'])
+        ->name('notifications.read');
+});
+
+
 //Villager authenticated routes — login required for engagement
 
 Route::middleware(['auth', 'verified', 'role:villager'])->group(function () {
-    Route::post('/news/{id}/like', [App\Http\Controllers\PostLikeController::class, 'store'])->name('news.like');
-    Route::post('/news/{id}/comment', [App\Http\Controllers\CommentController::class, 'store'])->name('news.comment');
-    Route::post('/comments/{id}/replies', [App\Http\Controllers\CommentController::class, 'reply'])->name('comments.reply');
+    Route::post('/news/{id}/like', [PostLikeController::class, 'store'])->name('news.like');
+    Route::post('/news/{id}/comment', [CommentController::class, 'store'])->name('news.comment');
+    Route::post('/comments/{id}/replies', [CommentController::class, 'reply'])->name('comments.reply');
     Route::get('/profile', fn () => inertia('villager/profile'))->name('villager.profile');
 
-    // Notifications
-    Route::get('/notifications', [App\Http\Controllers\Villager\NotificationController::class, 'index'])->name('notifications.index');
-    Route::patch('/notifications/read-all', [App\Http\Controllers\Villager\NotificationController::class, 'markAllRead'])->name('notifications.read-all');   // 👈 moved up
-    Route::patch('/notifications/{notification}/read', [App\Http\Controllers\Villager\NotificationController::class, 'markRead'])->name('notifications.read');
 });
 
 //Admin portal — admin and moderator only
@@ -36,19 +47,16 @@ Route::prefix('admin')
     ->middleware(['auth', 'verified', 'role:admin,moderator'])
     ->group(function () {
         Route::inertia('/dashboard', 'admin/dashboard')->name('dashboard');
-
-        // Broadcasting
-        Route::inertia('/broadcasting', 'admin/broadcasting/index')->name('broadcasting.index');
-        Route::inertia('/broadcasting/create', 'admin/broadcasting/create')->name('broadcasting.create');
-        Route::post('/broadcasting', [App\Http\Controllers\Admin\BroadcastController::class, 'store'])->name('broadcasting.store');
-        Route::delete('/broadcasting/{broadcast}', [App\Http\Controllers\Admin\BroadcastController::class, 'destroy'])->name('broadcasting.destroy');
-
-        /* Broadcasting
-        Route::get('/broadcasting',         [App\Http\Controllers\Admin\BroadcastController::class, 'index'])->name('broadcasting.index');
-        Route::get('/broadcasting/create',  [App\Http\Controllers\Admin\BroadcastController::class, 'create'])->name('broadcasting.create');
-        Route::post('/broadcasting',        [App\Http\Controllers\Admin\BroadcastController::class, 'store'])->name('broadcasting.store');
-        Route::post('/broadcasting/archive',[App\Http\Controllers\Admin\BroadcastController::class, 'archive'])->name('broadcasting.archive');
-        Route::post('/broadcasting/{broadcast}/restore', [App\Http\Controllers\Admin\BroadcastController::class, 'restore'])->name('broadcasting.restore');*/
+ 
+        // Broadcasting — full CRUD + archive/restore
+        Route::get('/broadcasting',                      [BroadcastController::class, 'index'])->name('broadcasting.index');
+        Route::get('/broadcasting/create',               [BroadcastController::class, 'create'])->name('broadcasting.create');
+        Route::post('/broadcasting',                     [BroadcastController::class, 'store'])->name('broadcasting.store');
+        Route::get('/broadcasting/{broadcast}',          [BroadcastController::class, 'show'])->name('broadcasting.show');
+        Route::post('/broadcasting/{broadcast}/resend',  [BroadcastController::class, 'resend'])->name('broadcasting.resend');
+        Route::post('/broadcasting/archive',             [BroadcastController::class, 'archive'])->name('broadcasting.archive');
+        Route::post('/broadcasting/{broadcast}/archive', [BroadcastController::class, 'archiveSingle'])->name('broadcasting.archive-single');
+        Route::post('/broadcasting/{broadcast}/restore', [BroadcastController::class, 'restore'])->name('broadcasting.restore');
     });
 
 //Post-login redirect — Fortify lands here, bounce by role

@@ -1,7 +1,7 @@
 "use client"
 
 import type { ColumnDef } from "@tanstack/react-table"
-import { ArrowUpDown, MoreHorizontal, Megaphone, Siren, Eye, Pencil, Send, Archive } from "lucide-react"
+import { ArrowUpDown, MoreHorizontal, Megaphone, Siren, Eye, Send, Archive } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -12,6 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { router } from '@inertiajs/react'
 
 export type Broadcast = {
   id: string
@@ -208,11 +209,11 @@ export const columns: ColumnDef<Broadcast>[] = [
             <DropdownMenuLabel>Aksi</DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              onClick={() => navigator.clipboard.writeText(broadcast.id)}
-              className="gap-2 cursor-pointer"
+                onClick={() => router.visit(`/admin/broadcasting/${broadcast.id}`)}
+                className="gap-2 cursor-pointer"
             >
-              <Eye className="h-3.5 w-3.5" />
-              Lihat Detail
+                <Eye className="h-3.5 w-3.5" />
+                Lihat Detail
             </DropdownMenuItem>
             {/* 
             <DropdownMenuItem className="gap-2 cursor-pointer">
@@ -225,9 +226,12 @@ export const columns: ColumnDef<Broadcast>[] = [
               Kirim Ulang
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="gap-2 cursor-pointer text-yellow-600 focus:text-yellow-600 focus:bg-yellow-50 dark:focus:bg-yellow-950">
-              <Archive className="h-3.5 w-3.5" />
-              Arsipkan
+            <DropdownMenuItem
+                onClick={() => router.post(`/admin/broadcasting/${broadcast.id}/archive`)}
+                className="gap-2 cursor-pointer text-yellow-600 focus:text-yellow-600 focus:bg-yellow-50 dark:focus:bg-yellow-950"
+            >
+                <Archive className="h-3.5 w-3.5" />
+                Arsipkan
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

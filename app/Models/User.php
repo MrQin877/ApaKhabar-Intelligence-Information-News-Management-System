@@ -43,6 +43,24 @@ class User extends Authenticatable implements MustVerifyEmail
         'two_factor_recovery_codes',
         'remember_token',
     ];
+    // Remove if using SQL
+    public function notifications()
+    {
+        return $this->morphMany(Notification::class, 'notifiable')
+                    ->orderBy('created_at', 'desc');
+    }
+    
+    // Remove if using SQL
+    public function unreadNotifications()
+    {
+        return $this->notifications()->whereNull('read_at');
+    }
+
+    // Remove if using SQL
+    public function readNotifications()
+    {
+        return $this->notifications()->whereNotNull('read_at');
+    }
 
     /**
      * Get the attributes that should be cast.
@@ -63,13 +81,13 @@ class User extends Authenticatable implements MustVerifyEmail
         return (string) $this->_id;
     }
 
-    // ✅ Explicitly send verification notification
+    // Explicitly send verification notification
     public function sendEmailVerificationNotification(): void
     {
         $this->notify(new VerifyEmail);
     }
 
-    // ✅ Fix signed URL generation for MongoDB ObjectId
+    // Fix signed URL generation for MongoDB ObjectId
     public function getEmailForVerification(): string
     {
         return $this->email;

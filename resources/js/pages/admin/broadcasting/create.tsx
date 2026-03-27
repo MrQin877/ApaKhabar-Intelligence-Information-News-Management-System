@@ -1,3 +1,4 @@
+// broadcasting/create.tsx
 import { Head } from '@inertiajs/react'
 import { BroadcastComposeForm } from '@/components/broadcast-compose-form'
 import AppLayout from '@/layouts/app-layout'

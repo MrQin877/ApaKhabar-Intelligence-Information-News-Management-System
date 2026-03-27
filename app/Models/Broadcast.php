@@ -1,11 +1,15 @@
 <?php
 
 namespace App\Models;
-
-use Illuminate\Database\Eloquent\Model;
+//use Illuminate\Database\Eloquent\Model; for Eloquent, Relational DB
+use MongoDB\Laravel\Eloquent\Model;      // Illuminate to MongoDB
+use Illuminate\Database\Eloquent\Builder;
 
 class Broadcast extends Model
 {
+    protected $connection = 'mongodb';   // ← add
+    protected $collection = 'broadcasts'; // ← add
+
     protected $fillable = [
         'created_by',
         'title',
@@ -21,19 +25,25 @@ class Broadcast extends Model
     ];
 
     protected $casts = [
-        'channels'     => 'array',   // auto encode/decode JSON
         'scheduled_at' => 'datetime',
         'sent_at'      => 'datetime',
         'archived_at'  => 'datetime',
     ];
 
-    // ── Relationships ──────────────────────────────────
-    public function creator()
+    //remove if use SQL, MongoDB sudah otomatis mengembalikan array untuk field JSON
+    public function getChannelsAttribute($value): array
     {
-        return $this->belongsTo(User::class, 'created_by');
+        if (is_array($value)) {
+            return $value; // MongoDB — already an array
+        }
+        return json_decode($value, true) ?? []; // SQL — decode JSON string
     }
 
-    // ── Scopes ─────────────────────────────────────────
+    public function creator()
+    {
+        return $this->belongsTo(User::class, 'created_by', '_id');
+    }
+
     public function scopeActive(Builder $query): Builder
     {
         return $query->whereNull('archived_at');
@@ -44,15 +54,6 @@ class Broadcast extends Model
         return $query->whereNotNull('archived_at');
     }
 
-    public function scopeForAudience(Builder $query, string $role): Builder
-    {
-        return $query->where(function ($q) use ($role) {
-            $q->where('audience', 'semua')
-              ->orWhere('audience', $role);
-        });
-    }
-
-    // ── Helpers ────────────────────────────────────────
     public function isArchived(): bool
     {
         return !is_null($this->archived_at);

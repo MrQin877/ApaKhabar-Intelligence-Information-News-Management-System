@@ -7,20 +7,20 @@ import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import AuthLayout from '@/layouts/auth-layout';
 import { update } from '@/routes/password';
-
+ 
 type Props = {
     token: string;
     email: string;
 };
-
+ 
 export default function ResetPassword({ token, email }: Props) {
     return (
         <AuthLayout
-            title="Reset password"
-            description="Please enter your new password below"
+            title="Tetapkan semula kata laluan"
+            description="Sila masukkan kata laluan baharu anda di bawah"
         >
-            <Head title="Reset password" />
-
+            <Head title="Tetapkan semula kata laluan" />
+ 
             <Form
                 {...update.form()}
                 transform={(data) => ({ ...data, token, email })}
@@ -29,7 +29,7 @@ export default function ResetPassword({ token, email }: Props) {
                 {({ processing, errors }) => (
                     <div className="grid gap-6">
                         <div className="grid gap-2">
-                            <Label htmlFor="email">Email</Label>
+                            <Label htmlFor="email">E-mel</Label>
                             <Input
                                 id="email"
                                 type="email"
@@ -39,42 +39,34 @@ export default function ResetPassword({ token, email }: Props) {
                                 className="mt-1 block w-full"
                                 readOnly
                             />
-                            <InputError
-                                message={errors.email}
-                                className="mt-2"
-                            />
+                            <InputError message={errors.email} className="mt-2" />
                         </div>
-
+ 
                         <div className="grid gap-2">
-                            <Label htmlFor="password">Password</Label>
+                            <Label htmlFor="password">Kata laluan</Label>
                             <PasswordInput
                                 id="password"
                                 name="password"
                                 autoComplete="new-password"
                                 className="mt-1 block w-full"
                                 autoFocus
-                                placeholder="Password"
+                                placeholder="Kata laluan"
                             />
                             <InputError message={errors.password} />
                         </div>
-
+ 
                         <div className="grid gap-2">
-                            <Label htmlFor="password_confirmation">
-                                Confirm password
-                            </Label>
+                            <Label htmlFor="password_confirmation">Sahkan kata laluan</Label>
                             <PasswordInput
                                 id="password_confirmation"
                                 name="password_confirmation"
                                 autoComplete="new-password"
                                 className="mt-1 block w-full"
-                                placeholder="Confirm password"
+                                placeholder="Sahkan kata laluan"
                             />
-                            <InputError
-                                message={errors.password_confirmation}
-                                className="mt-2"
-                            />
+                            <InputError message={errors.password_confirmation} className="mt-2" />
                         </div>
-
+ 
                         <Button
                             type="submit"
                             className="mt-4 w-full"
@@ -82,7 +74,7 @@ export default function ResetPassword({ token, email }: Props) {
                             data-test="reset-password-button"
                         >
                             {processing && <Spinner />}
-                            Reset password
+                            Tetapkan semula kata laluan
                         </Button>
                     </div>
                 )}
