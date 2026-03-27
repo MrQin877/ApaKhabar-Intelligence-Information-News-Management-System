@@ -2,16 +2,16 @@ name: tests
 
 on:
   push:
-    branches: [develop, main, master, workos, Broadcasting-Message]
+    branches: [develop, main, master, workos]
   pull_request:
-    branches: [develop, main, master, workos, Broadcasting-Message]
+    branches: [develop, main, master, workos]
 
 jobs:
   ci:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        php-version: ['8.4', '8.5']
+        php-version: ['8.2'] 
 
     steps:
       - name: Checkout code
