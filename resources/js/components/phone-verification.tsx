@@ -3,7 +3,7 @@ import {
     Phone, ShieldCheck, ShieldX,
     Send, RefreshCw, CheckCircle2,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'  
 import { forwardRef } from 'react'
 import PhoneInput from 'react-phone-number-input'
 import 'react-phone-number-input/style.css'
@@ -38,19 +38,34 @@ export function PhoneVerification({
     otpSent: initialOtpSent,
     status,
 }: PhoneVerificationProps) {
-    const [phone,      setPhone]      = useState<string>(initialPhone ?? '')
-    const [otp,        setOtp]        = useState('')
-    const [otpSent,    setOtpSent]    = useState(initialOtpSent)
-    const [processing, setProcessing] = useState(false)
+    const [phone,       setPhone]       = useState<string>(initialPhone ?? '')
+    const [otp,         setOtp]         = useState('')
+    const [otpSent,     setOtpSent]     = useState(initialOtpSent || status === 'otp-sent')
+    const [processing,  setProcessing]  = useState(false)
+    const [showSuccess, setShowSuccess] = useState(status === 'phone-verified')
+
+    // ── Only use useEffect for the timer (external side effect) ──
+    useEffect(() => {
+        if (!showSuccess) {
+return
+}
+
+        const timer = setTimeout(() => {
+            setShowSuccess(false)
+        }, 3000)
+
+        return () => clearTimeout(timer)
+    }, [showSuccess])  // ← depends on showSuccess, not status
 
     function handleSendOtp() {
         setProcessing(true)
         router.post('/settings/phone', { phone }, {
             preserveScroll: true,
             onSuccess: () => {
- setOtpSent(true); setProcessing(false) 
-},
-            onError:   () => setProcessing(false),
+                setOtpSent(true)
+                setProcessing(false)
+            },
+            onError: () => setProcessing(false),
         })
     }
 
@@ -59,9 +74,12 @@ export function PhoneVerification({
         router.post('/settings/phone/verify', { otp }, {
             preserveScroll: true,
             onSuccess: () => {
- setOtp(''); setProcessing(false) 
-},
-            onError:   () => setProcessing(false),
+                setOtp('')
+                setOtpSent(false)
+                setShowSuccess(true)  // ← trigger success + timer
+                setProcessing(false)
+            },
+            onError: () => setProcessing(false),
         })
     }
 
@@ -69,8 +87,11 @@ export function PhoneVerification({
         setProcessing(true)
         router.post('/settings/phone/resend', {}, {
             preserveScroll: true,
-            onSuccess: () => setProcessing(false),
-            onError:   () => setProcessing(false),
+            onSuccess: () => {
+                setOtpSent(true)
+                setProcessing(false)
+            },
+            onError: () => setProcessing(false),
         })
     }
 
@@ -102,12 +123,22 @@ export function PhoneVerification({
             </div>
 
             {/* ── Success verified message ── */}
-            {status === 'phone-verified' && (
-                <div className="flex items-center gap-2 rounded-lg bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 px-3 py-2">
-                    <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
-                    <p className="text-sm text-green-700 dark:text-green-400">
-                        Nombor telefon berjaya disahkan!
-                    </p>
+            {showSuccess && (
+                <div className="flex items-center justify-between gap-2 rounded-lg bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 px-3 py-2">
+                    <div className="flex items-center gap-2">
+                        <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
+                        <p className="text-sm text-green-700 dark:text-green-400">
+                            Nombor telefon berjaya disahkan!
+                        </p>
+                    </div>
+                    {/* Close button */}
+                    <button
+                        type="button"
+                        onClick={() => setShowSuccess(false)}
+                        className="text-green-600 hover:text-green-800 dark:hover:text-green-300 text-sm shrink-0"
+                    >
+                        ✕
+                    </button>
                 </div>
             )}
 
@@ -136,6 +167,13 @@ export function PhoneVerification({
                     {phoneVerified ? 'Tukar Nombor' : 'Hantar OTP'}
                 </Button>
             </div>
+
+            {/* ── Phone error message ── */}
+            {errors?.phone && (
+                <p className="text-xs text-red-500 -mt-2">
+                    {errors.phone}
+                </p>
+            )}
 
             <p className="text-xs text-neutral-400">
                 Pilih kod negara dan masukkan nombor telefon anda.

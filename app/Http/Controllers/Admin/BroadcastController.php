@@ -40,8 +40,72 @@ class BroadcastController extends Controller
                             ?? $b->created_at->format('h:i A'),
             ]);
 
+        // ── Analytics ──────────────────────────────────────────
+        $totalPesan     = Broadcast::active()->count();
+        $dikirimHariIni = Broadcast::active()
+                            ->whereDate('sent_at', today())
+                            ->count();
+
+        $allNotifications = \App\Models\Notification::all();
+        $totalSent        = $allNotifications->count();
+        $totalRead        = $allNotifications->whereNotNull('read_at')->count();
+        $rateTerbuka      = $totalSent > 0
+                            ? round(($totalRead / $totalSent) * 100)
+                            : 0;
+
+        // ── Chart data — last 6 months ─────────────────────────
+        $chartData = collect(range(5, 0))->map(function ($monthsAgo) {
+            $date  = now()->subMonths($monthsAgo);
+            $start = $date->copy()->startOfMonth();
+            $end   = $date->copy()->endOfMonth();
+
+            return [
+                'month'       => $date->format('M'),
+                'pengumuman'  => Broadcast::active()
+                                    ->where('category', 'pengumuman')
+                                    ->whereBetween('created_at', [$start, $end])
+                                    ->count(),
+                'darurat'     => Broadcast::active()
+                                    ->where('category', 'darurat')
+                                    ->whereBetween('created_at', [$start, $end])
+                                    ->count(),
+            ];
+        })->values();
+
+        // ── Recent broadcasts ──────────────────────────────────
+        $recentBroadcasts = Broadcast::active()
+            ->where('status', 'dikirim')
+            ->latest('sent_at')
+            ->take(3)
+            ->get()
+            ->map(function ($b) {
+                $broadcastId = (string) $b->id;
+                $notifs      = \App\Models\Notification::where('data.broadcast_id', $broadcastId)->get();
+                $sent        = $notifs->count();
+                $read        = $notifs->whereNotNull('read_at')->count();
+                $rate        = $sent > 0 ? round(($read / $sent) * 100) : 0;
+
+                return [
+                    'id'       => $broadcastId,
+                    'title'    => $b->title,
+                    'category' => $b->category,
+                    'audience' => $b->audience === 'semua' ? 'Semua Pengguna' : 'Karyawan',
+                    'sent_at'  => $b->sent_at?->format('H:i'),
+                    'sent'     => $sent,
+                    'read'     => $read,
+                    'rate'     => $rate,
+                ];
+            });
+
         return Inertia::render('admin/broadcasting/index', [
             'broadcasts' => $broadcasts,
+            'analytics'  => [
+                'total_pesan'      => $totalPesan,
+                'dikirim_hari_ini' => $dikirimHariIni,
+                'rate_terbuka'     => $rateTerbuka,
+                'chart_data'       => $chartData,
+                'recent'           => $recentBroadcasts,
+            ],
         ]);
     }
 
@@ -98,12 +162,15 @@ class BroadcastController extends Controller
     public function show(Broadcast $broadcast)
     {
         $broadcast->load('creator:id,name');
-
         $broadcastId = (string) $broadcast->id;
 
-        $allNotifications = Notification::where('data.broadcast_id', $broadcastId)->get();
+        // ── Use regex since data is stored as JSON string ──
+        $allNotifications = \App\Models\Notification::whereRaw([
+            'data' => ['$regex' => $broadcastId, '$options' => 'i']
+        ])->get();
+
         $totalSent = $allNotifications->count();
-        $totalRead = $allNotifications->whereNotNull('read_at')->count();
+        $totalRead = $allNotifications->filter(fn ($n) => !is_null($n->read_at))->count();
         $readRate  = $totalSent > 0 ? round(($totalRead / $totalSent) * 100) : 0;
 
         return Inertia::render('admin/broadcasting/show', [
@@ -167,6 +234,38 @@ class BroadcastController extends Controller
             ->with('success', 'Siaran berhasil diarsipkan.');
     }
 
+    // GET /admin/broadcasting/archived
+    public function archived()
+    {
+        $broadcasts = Broadcast::where('archived_at', '!=', null)
+            ->with('creator:id,name')
+            ->latest('archived_at')
+            ->get()
+            ->map(fn ($b) => [
+                'id'          => (string) $b->id,
+                'type'        => $b->category,
+                'title'       => $b->title,
+                'audience'    => match($b->audience) {
+                    'semua'    => 'Semua Pengguna',
+                    'karyawan' => 'Karyawan',
+                    default    => $b->audience,
+                },
+                'status'      => match($b->status) {
+                    'dikirim'   => 'Dikirim',
+                    'terjadwal' => 'Terjadwal',
+                    default     => 'Tertunda',
+                },
+                'sent_time'   => $b->sent_at?->format('h:i A')
+                            ?? $b->scheduled_at?->format('h:i A')
+                            ?? $b->created_at->format('h:i A'),
+                'archived_at' => $b->archived_at?->translatedFormat('d M Y, H:i'),
+            ]);
+
+        return Inertia::render('admin/broadcasting/archived', [
+            'broadcasts' => $broadcasts,
+        ]);
+    }
+
     // POST /admin/broadcasting/{broadcast}/restore
     public function restore(Broadcast $broadcast)
     {
@@ -191,8 +290,8 @@ class BroadcastController extends Controller
     private function getTargetUsers(string $audience)
     {
         return match($audience) {
-            'karyawan' => User::where('role', 'karyawan')->get(),
-            default    => User::whereIn('role', ['villager', 'karyawan'])->get(),
+            'karyawan' => User::whereIn('role', ['admin', 'moderator'])->get(),
+            default    => User::whereIn('role', ['villager', 'admin', 'moderator'])->get(),
         };
     }
 }

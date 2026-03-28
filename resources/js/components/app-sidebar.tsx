@@ -1,5 +1,5 @@
 import { Link } from '@inertiajs/react';
-import { LayoutGrid, Newspaper, Radio, ChartNoAxesCombined, Bell } from 'lucide-react';
+import { LayoutGrid, Newspaper, Radio, ChartNoAxesCombined, Bell, Archive } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
 import { NavFooter } from '@/components/nav-footer';
 import { NavMain } from '@/components/nav-main';
@@ -33,8 +33,19 @@ const mainNavItems: NavItem[] = [
 
     {
         title: 'Pesan',
-        href: adminRoutes.broadcasting.index(),
         icon: Radio,
+        items: [
+            {
+                title: 'Semua Pesan',
+                icon: Radio,
+                href: adminRoutes.broadcasting.index(),
+            },
+            {
+                title: 'Arkib',
+                icon: Archive,
+                href: adminRoutes.broadcasting.archived(),  // ← use route helper
+            },
+        ],
     },
 
     {

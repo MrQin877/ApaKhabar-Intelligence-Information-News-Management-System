@@ -3,18 +3,38 @@ import { Head } from '@inertiajs/react';
 import { router } from '@inertiajs/react'
 import { Radio} from 'lucide-react'; 
 import { AnalyticsSidebar } from "@/components/broadcast-analytics";
-import type { Broadcast} from '@/components/broadcast-column';
 import { columns } from '@/components/broadcast-column';
+import type { Broadcast } from '@/components/broadcast-column'
 import { DataTable } from '@/components/broadcast-datatable';
 import AppLayout from '@/layouts/app-layout';
 import type { BreadcrumbItem } from '@/types';
+
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Pesan', href: '/admin/broadcasting' },
 ];
 
+type Props = {
+    broadcasts: Broadcast[]  
+    analytics: {
+        total_pesan: number
+        dikirim_hari_ini: number
+        rate_terbuka: number
+        chart_data: { month: string; pengumuman: number; darurat: number }[]
+        recent: {
+            id: string
+            title: string
+            category: string
+            audience: string
+            sent_at: string
+            sent: number
+            read: number
+            rate: number
+        }[]
+    }
+}
 
-export default function BroadcastPage({ broadcasts }: { broadcasts: Broadcast[] }) {
+export default function BroadcastPage({ broadcasts, analytics }: Props) {
     return (
         <>
             <Head title="Manajemen Siaran" />
@@ -53,7 +73,7 @@ export default function BroadcastPage({ broadcasts }: { broadcasts: Broadcast[] 
 
                 {/* ── Right: Analytics sidebar ── */}
                 <div className="w-full lg:w-64 lg:shrink-0">
-                        <AnalyticsSidebar />
+                        <AnalyticsSidebar analytics={analytics} />
                 
                 </div>
             </div>

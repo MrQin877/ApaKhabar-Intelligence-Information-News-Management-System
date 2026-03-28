@@ -15,10 +15,22 @@ class PhoneVerificationController extends Controller
             'phone' => 'required|string|regex:/^\+[1-9]\d{1,14}$/',
         ]);
 
-        \Log::info('Sending OTP to', ['phone' => $request->phone]);
-
         $user = auth()->user();
-        $otp  = rand(100000, 999999);
+
+        // ── Check if phone already used by another user ──
+        $existingUser = \App\Models\User::where('phone', $request->phone)
+            ->where('_id', '!=', (string) $user->id)  // exclude current user
+            ->first();
+
+        if ($existingUser) {
+            return back()->withErrors([
+                'phone' => 'Nombor telefon ini telah didaftarkan oleh pengguna lain.',
+            ]);
+        }
+
+        $otp = rand(100000, 999999);
+
+        \Log::info('Sending OTP to', ['phone' => $request->phone]);
 
         $user->update([
             'phone'                => $request->phone,
@@ -42,22 +54,16 @@ class PhoneVerificationController extends Controller
     // POST /settings/phone/verify
     public function verify(Request $request)
     {
-        $request->validate([
-            'otp' => 'required|string|size:6',
-        ]);
+        $request->validate(['otp' => 'required|string|size:6']);
 
         $user = auth()->user();
 
         if (now()->isAfter($user->phone_otp_expires_at)) {
-            return back()->withErrors([
-                'otp' => 'Kod OTP telah tamat tempoh. Sila minta semula.',
-            ]);
+            return back()->withErrors(['otp' => 'Kod OTP telah tamat tempoh. Sila minta semula.']);
         }
 
         if ($request->otp !== (string) $user->phone_otp) {
-            return back()->withErrors([
-                'otp' => 'Kod OTP tidak sah.',
-            ]);
+            return back()->withErrors(['otp' => 'Kod OTP tidak sah.']);
         }
 
         $user->update([
@@ -75,9 +81,7 @@ class PhoneVerificationController extends Controller
         $user = auth()->user();
 
         if (!$user->phone) {
-            return back()->withErrors([
-                'phone' => 'Tiada nombor telefon didaftarkan.',
-            ]);
+            return back()->withErrors(['phone' => 'Tiada nombor telefon didaftarkan.']);
         }
 
         $otp = rand(100000, 999999);

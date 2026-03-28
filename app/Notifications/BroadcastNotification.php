@@ -26,13 +26,11 @@ class BroadcastNotification extends Notification
     {
         $channels = ['mongodb'];  // always in-app
 
-        // Add SMS only if broadcast has sms channel
-        // and user has verified phone number
         if (in_array('sms', $this->broadcast->channels ?? [])
             && $notifiable->phone
             && $notifiable->hasVerifiedPhone()
         ) {
-            $channels[] = 'vonage';
+            $channels[] = 'bulk360';  // ← use bulk360 instead of vonage
         }
 
         return $channels;
@@ -70,10 +68,11 @@ class BroadcastNotification extends Notification
     }
 
     // ── Vonage SMS ─────────────────────────────────────────
-    public function toVonage(object $notifiable): VonageMessage
+    public function toBulk360(object $notifiable): array
     {
-        return (new VonageMessage)
-            ->clientReference((string) $notifiable->id)  // track per user
-            ->content("[{$this->broadcast->category}] {$this->broadcast->title}: {$this->broadcast->message}");
+        return [
+            'to'      => $notifiable->phone,
+            'message' => "[{$this->broadcast->category}] {$this->broadcast->title}: {$this->broadcast->message}",
+        ];
     }
 }

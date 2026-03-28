@@ -52,6 +52,7 @@ Route::prefix('admin')
         Route::get('/broadcasting',                      [BroadcastController::class, 'index'])->name('broadcasting.index');
         Route::get('/broadcasting/create',               [BroadcastController::class, 'create'])->name('broadcasting.create');
         Route::post('/broadcasting',                     [BroadcastController::class, 'store'])->name('broadcasting.store');
+        Route::get('/broadcasting/archived',             [BroadcastController::class, 'archived'])->name('broadcasting.archived');
         Route::get('/broadcasting/{broadcast}',          [BroadcastController::class, 'show'])->name('broadcasting.show');
         Route::post('/broadcasting/{broadcast}/resend',  [BroadcastController::class, 'resend'])->name('broadcasting.resend');
         Route::post('/broadcasting/archive',             [BroadcastController::class, 'archive'])->name('broadcasting.archive');
