@@ -3,7 +3,6 @@
 namespace App\Notifications;
 
 use Illuminate\Bus\Queueable;
-use Illuminate\Notifications\Messages\VonageMessage;
 use Illuminate\Notifications\Notification;
 
 class OtpNotification extends Notification
@@ -14,12 +13,14 @@ class OtpNotification extends Notification
 
     public function via(object $notifiable): array
     {
-        return ['vonage'];
+        return ['bulk360'];
     }
 
-    public function toVonage(object $notifiable): VonageMessage
+    public function toBulk360(object $notifiable): array
     {
-        return (new VonageMessage)
-            ->content("ApaKhabar: Kod pengesahan anda ialah {$this->otp}. Sah selama 10 minit.");
+        return [
+            'to'      => $notifiable->phone,
+            'message' => "ApaKhabar: Kod pengesahan anda ialah {$this->otp}. Sah selama 10 minit.",
+        ];
     }
 }

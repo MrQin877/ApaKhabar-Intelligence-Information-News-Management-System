@@ -2,8 +2,11 @@
 
 namespace App\Providers;
 
+use App\Notifications\Channels\Bulk360Channel;
 use App\Notifications\Channels\MongoDBDatabaseChannel;
+use App\Services\SmsService;
 use Carbon\CarbonImmutable;
+use Illuminate\Notifications\ChannelManager;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
@@ -12,17 +15,11 @@ use Illuminate\Validation\Rules\Password;
 
 class AppServiceProvider extends ServiceProvider
 {
-    /**
-     * Register any application services.
-     */
     public function register(): void
     {
         //
     }
 
-    /**
-     * Bootstrap any application services.
-     */
     public function boot(): void
     {
         $this->configureDefaults();
@@ -32,16 +29,21 @@ class AppServiceProvider extends ServiceProvider
     // ── Register custom notification channels ──────────
     protected function configureNotificationChannels(): void
     {
-        Notification::resolved(function ($service) {
+        Notification::resolved(function (ChannelManager $service) {
+            // ── MongoDB in-app channel ──
             $service->extend('mongodb', function ($app) {
                 return new MongoDBDatabaseChannel();
+            });
+
+            // ── Bulk360 SMS channel ──
+            $service->extend('bulk360', function ($app) {
+                return new Bulk360Channel(
+                    $app->make(SmsService::class)
+                );
             });
         });
     }
 
-    /**
-     * Configure default behaviors for production-ready applications.
-     */
     protected function configureDefaults(): void
     {
         Date::use(CarbonImmutable::class);

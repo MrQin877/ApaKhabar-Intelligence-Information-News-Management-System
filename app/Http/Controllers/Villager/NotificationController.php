@@ -75,11 +75,11 @@ class NotificationController extends Controller
     {
         $notification = auth()->user()
             ->notifications()
-            ->where('id', $id)
+            ->where('_id', $id)  // ← use _id for MongoDB
             ->first();
 
         if ($notification) {
-            $notification->markAsRead();
+            $notification->update(['read_at' => now()]);  // ← direct update instead of markAsRead()
         }
 
         return back();
@@ -88,10 +88,11 @@ class NotificationController extends Controller
     public function markAllRead()
     {
         auth()->user()
-            ->unreadNotifications()
-            ->update(['read_at' => now()]);
+            ->notifications()
+            ->whereNull('read_at')
+            ->update(['read_at' => now()]);  // ← direct update
 
         return back();
     }
-    }
+}
 

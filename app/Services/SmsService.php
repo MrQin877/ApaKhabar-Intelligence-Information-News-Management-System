@@ -2,37 +2,41 @@
 
 namespace App\Services;
 
+use bulk360\client;
 use Illuminate\Support\Facades\Log;
-use Vonage\Client;
-use Vonage\Client\Credentials\Basic;
-use Vonage\SMS\Message\SMS;
 
 class SmsService
 {
-    protected Client $client;
+    protected client $client;
 
     public function __construct()
     {
-        $this->client = new Client(
-            new Basic(
-                config('services.vonage.key'),
-                config('services.vonage.secret')
-            )
+        $this->client = new client(
+            config('services.bulk360.app_key'),
+            config('services.bulk360.app_secret')
         );
     }
 
     public function sendSms(string $to, string $message): bool
     {
         try {
-            $this->client->sms()->send(
-                new SMS($to, config('services.vonage.from'), $message)
-            );
+            $to = ltrim($to, '+');
 
-            Log::info('SMS sent via Vonage', ['to' => $to]);
+            $response = $this->client->send([
+                'from' => config('services.bulk360.from'),
+                'to'   => $to,
+                'text' => $message,
+            ]);
+
+            Log::info('SMS sent via Bulk360', [
+                'to'       => $to,
+                'response' => $response,
+            ]);
+
             return true;
 
         } catch (\Exception $e) {
-            Log::error('SMS failed via Vonage', [
+            Log::error('SMS failed via Bulk360', [
                 'to'    => $to,
                 'error' => $e->getMessage(),
             ]);

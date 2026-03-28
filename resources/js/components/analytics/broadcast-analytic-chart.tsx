@@ -10,7 +10,7 @@ import {
   ChartLegend,
   ChartLegendContent,
 } from "@/components/ui/chart";
-
+/*
 const chartData = [
   { month: "Jan", pengumuman: 40, darurat: 20 },
   { month: "Feb", pengumuman: 65, darurat: 30 },
@@ -19,6 +19,7 @@ const chartData = [
   { month: "May", pengumuman: 50, darurat: 60 },
   { month: "Jun", pengumuman: 70, darurat: 35 },
 ];
+*/
 
 const chartConfig = {
   pengumuman: {
@@ -33,7 +34,11 @@ const chartConfig = {
   },
 } satisfies ChartConfig;
 
-export function AnalyticsChart() {
+type ChartProps = {
+    chartData: { month: string; pengumuman: number; darurat: number }[]
+}
+
+export function AnalyticsChart({ chartData }: ChartProps) {
   return (
     <Card>
       <CardHeader className="pb-2">

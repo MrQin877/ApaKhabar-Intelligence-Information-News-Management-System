@@ -13,8 +13,36 @@ const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Pesan', href: '/admin/broadcasting' },
 ];
 
+type BroadcastRow = {
+    id: string
+    type: string
+    title: string
+    audience: string
+    status: string
+    sent_time: string
+}
 
-export default function BroadcastPage({ broadcasts }: { broadcasts: Broadcast[] }) {
+type Props = {
+    broadcasts: BroadcastRow[]
+    analytics: {
+        total_pesan: number
+        dikirim_hari_ini: number
+        rate_terbuka: number
+        chart_data: { month: string; pengumuman: number; darurat: number }[]
+        recent: {
+            id: string
+            title: string
+            category: string
+            audience: string
+            sent_at: string
+            sent: number
+            read: number
+            rate: number
+        }[]
+    }
+}
+
+export default function BroadcastPage({ broadcasts, analytics }: Props) {
     return (
         <>
             <Head title="Manajemen Siaran" />
@@ -53,7 +81,7 @@ export default function BroadcastPage({ broadcasts }: { broadcasts: Broadcast[] 
 
                 {/* ── Right: Analytics sidebar ── */}
                 <div className="w-full lg:w-64 lg:shrink-0">
-                        <AnalyticsSidebar />
+                        <AnalyticsSidebar analytics={analytics} />
                 
                 </div>
             </div>
