@@ -277,13 +277,33 @@ class BroadcastController extends Controller
     // ── Private: send to target users ─────────────────────
     private function sendToUsers(Broadcast $broadcast): void
     {
-        $users = $this->getTargetUsers($broadcast->audience);
+        $users    = $this->getTargetUsers($broadcast->audience);
+        $channels = $broadcast->channels ?? [];
+        $message  = "[{$broadcast->category}] {$broadcast->title}\n\n{$broadcast->message}";
 
         foreach ($users as $user) {
-            // BroadcastNotification handles both:
-            // - MongoDB in-app (always)
-            // - Vonage SMS (if sms channel + verified phone)
+            // ── In-app always ──
             $user->notify(new BroadcastNotification($broadcast));
+
+            // ── SMS via Bulk360 ──
+            if (in_array('sms', $channels)
+                && $user->phone
+                && $user->hasVerifiedPhone()
+            ) {
+                app(\App\Services\SmsService::class)->sendSms($user->phone, $message);
+            }
+        }
+
+        // ── WhatsApp Group — send ONCE to group, not per user ──
+        if (in_array('whatsapp', $channels)) {
+            $groupId = match($broadcast->audience) {
+                'karyawan' => config('services.whapi.employee_group'),
+                default    => config('services.whapi.villager_group'),
+            };
+
+            if ($groupId) {
+                app(\App\Services\SmsService::class)->sendWhatsAppGroup($groupId, $message);
+            }
         }
     }
 

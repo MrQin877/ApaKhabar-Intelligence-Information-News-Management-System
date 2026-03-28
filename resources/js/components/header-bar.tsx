@@ -11,7 +11,7 @@ import { VillagerUserMenuContent } from './villager-user-menu-content';
 
 export function HeaderBar() {
     const getInitials = useInitials();
-    const { auth, categories = [] } = usePage<SharedData>().props;
+    const { auth, categories = [], unreadNotifications } = usePage<SharedData>().props;
 
     return (
         <nav className="border-b border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-4 py-3 sticky top-0 z-40">
@@ -53,16 +53,17 @@ export function HeaderBar() {
                                 </Link>
                             )}
 
+                            {/* ── Bell with unread badge ── */}
                             <Link href="/notifications">
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="relative h-9 w-9"
-                                    >
-                                        <Bell className="h-5 w-5 text-gray-600 dark:text-gray-300" />
-                                        {/* Unread dot — replace hardcoded true with real unread count later */}
-                                    </Button>
-                                </Link>
+                                <Button variant="ghost" size="icon" className="relative h-9 w-9">
+                                    <Bell className="h-5 w-5 text-gray-600 dark:text-gray-300" />
+                                    {unreadNotifications > 0 && (
+                                        <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-green-500 text-[9px] font-bold text-white ring-2 ring-white dark:ring-neutral-900">
+                                            {unreadNotifications > 9 ? '9+' : unreadNotifications}
+                                        </span>
+                                    )}
+                                </Button>
+                            </Link>
 
                             <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
