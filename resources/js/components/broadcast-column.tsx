@@ -15,12 +15,12 @@ import {
 } from "@/components/ui/dropdown-menu"
 
 export type Broadcast = {
-  id: string
-  type: 'daurat' | 'pengumuman'
-  title: string
-  audience: 'Semua Pengguna' | 'Karyawan'
-  status: 'Dikirim' | 'Terjadwal' | 'Tertunda'
-  sent_time: string
+    id:         string
+    type:       string
+    title:      string
+    audience:   string  
+    status:     string    
+    sent_time:  string
 }
 
 // --- Type Icon ---
@@ -59,7 +59,10 @@ function StatusBadge({ status }: { status: Broadcast['status'] }) {
     Terjadwal: { className: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800", dot: "bg-yellow-500" },
     Tertunda:  { className: "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-800", dot: "bg-red-400" },
   }
-  const { className, dot } = map[status]
+  const { className, dot } = map[status] ?? { 
+        className: "bg-neutral-100 text-neutral-600 border-neutral-200", 
+        dot: "bg-neutral-400" 
+    }
 
   return (
     <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${className}`}>

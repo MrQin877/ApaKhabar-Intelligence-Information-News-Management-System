@@ -1,4 +1,4 @@
-import { router, usePage } from '@inertiajs/react'
+import { router } from '@inertiajs/react'
 import {
     Phone, ShieldCheck, ShieldX,
     Send, RefreshCw, CheckCircle2,
@@ -38,37 +38,31 @@ export function PhoneVerification({
     otpSent: initialOtpSent,
     status,
 }: PhoneVerificationProps) {
-    const [phone,      setPhone]      = useState<string>(initialPhone ?? '')
-    const [otp,        setOtp]        = useState('')
-    const [otpSent,    setOtpSent]    = useState(initialOtpSent)
-    const [processing, setProcessing] = useState(false)
-    const [showSuccess, setShowSuccess] = useState(false)
-    const { errors } = usePage().props as any
-    // ── Sync state when status changes ────────────────────
+    const [phone,       setPhone]       = useState<string>(initialPhone ?? '')
+    const [otp,         setOtp]         = useState('')
+    const [otpSent,     setOtpSent]     = useState(initialOtpSent || status === 'otp-sent')
+    const [processing,  setProcessing]  = useState(false)
+    const [showSuccess, setShowSuccess] = useState(status === 'phone-verified')
+
+    // ── Only use useEffect for the timer (external side effect) ──
     useEffect(() => {
-        if (status === 'otp-sent') {
-            setOtpSent(true)
-        }
-        if (status === 'phone-verified') {
-            setShowSuccess(true)
-            setOtpSent(false)
-            setOtp('')
+        if (!showSuccess) {
+return
+}
 
-            // Auto hide after 3 seconds
-            const timer = setTimeout(() => {
-                setShowSuccess(false)
-            }, 3000)
+        const timer = setTimeout(() => {
+            setShowSuccess(false)
+        }, 3000)
 
-            return () => clearTimeout(timer)
-        }
-    }, [status])
+        return () => clearTimeout(timer)
+    }, [showSuccess])  // ← depends on showSuccess, not status
 
     function handleSendOtp() {
         setProcessing(true)
         router.post('/settings/phone', { phone }, {
             preserveScroll: true,
             onSuccess: () => {
-                setOtpSent(true)    // ← force true
+                setOtpSent(true)
                 setProcessing(false)
             },
             onError: () => setProcessing(false),
@@ -81,7 +75,8 @@ export function PhoneVerification({
             preserveScroll: true,
             onSuccess: () => {
                 setOtp('')
-                setOtpSent(false)   // ← hide after verified
+                setOtpSent(false)
+                setShowSuccess(true)  // ← trigger success + timer
                 setProcessing(false)
             },
             onError: () => setProcessing(false),
@@ -93,7 +88,7 @@ export function PhoneVerification({
         router.post('/settings/phone/resend', {}, {
             preserveScroll: true,
             onSuccess: () => {
-                setOtpSent(true)    // ← keep visible after resend
+                setOtpSent(true)
                 setProcessing(false)
             },
             onError: () => setProcessing(false),

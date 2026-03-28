@@ -3,27 +3,19 @@ import { Head } from '@inertiajs/react';
 import { router } from '@inertiajs/react'
 import { Radio} from 'lucide-react'; 
 import { AnalyticsSidebar } from "@/components/broadcast-analytics";
-import type { Broadcast} from '@/components/broadcast-column';
 import { columns } from '@/components/broadcast-column';
+import type { Broadcast } from '@/components/broadcast-column'
 import { DataTable } from '@/components/broadcast-datatable';
 import AppLayout from '@/layouts/app-layout';
 import type { BreadcrumbItem } from '@/types';
+
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Pesan', href: '/admin/broadcasting' },
 ];
 
-type BroadcastRow = {
-    id: string
-    type: string
-    title: string
-    audience: string
-    status: string
-    sent_time: string
-}
-
 type Props = {
-    broadcasts: BroadcastRow[]
+    broadcasts: Broadcast[]  
     analytics: {
         total_pesan: number
         dikirim_hari_ini: number

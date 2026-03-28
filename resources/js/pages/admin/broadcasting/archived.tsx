@@ -1,7 +1,7 @@
 import { Head, router } from '@inertiajs/react'
 import { Archive, ArrowLeft, ArchiveRestore } from 'lucide-react'
-import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import AppLayout from '@/layouts/app-layout'
 import type { BreadcrumbItem } from '@/types'
 
