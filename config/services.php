@@ -54,4 +54,10 @@ return [
         'from'       => env('BULK360_FROM', '68068'),
     ],
 
+    'whapi' => [
+        'token'          => env('WHAPI_TOKEN'),
+        'villager_group' => env('WHAPI_VILLAGER_GROUP'),
+        'employee_group' => env('WHAPI_EMPLOYEE_GROUP'),
+    ],
+
 ];

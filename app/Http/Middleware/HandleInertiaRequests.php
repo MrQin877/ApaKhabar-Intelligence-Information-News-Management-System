@@ -28,7 +28,12 @@ class HandleInertiaRequests extends Middleware
             // ↓ Share unique categories from DB to all pages
             'categories' => News::all()->pluck('category')->unique()->filter()->sort()->values(),
 
-            
+            'unreadNotifications' => function () use ($request) {
+                if (!$request->user()) return 0;
+                return \App\Models\Notification::where('notifiable_id', (string) $request->user()->id)
+                    ->whereNull('read_at')
+                    ->count();
+            }
         ];
     }
 }

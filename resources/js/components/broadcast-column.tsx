@@ -25,7 +25,7 @@ export type Broadcast = {
 
 // --- Type Icon ---
 function TypeIcon({ type }: { type: Broadcast['type'] }) {
-  if (type === 'daurat') {
+  if (type === 'darurat') {
     return (
       <div className="flex items-center gap-2">
         <div className="flex h-7 w-7 items-center justify-center rounded-md bg-red-100 dark:bg-red-900/30">
