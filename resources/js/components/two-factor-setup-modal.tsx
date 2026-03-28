@@ -12,35 +12,25 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
-import {
-    InputOTP,
-    InputOTPGroup,
-    InputOTPSlot,
-} from '@/components/ui/input-otp';
+import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import { Spinner } from '@/components/ui/spinner';
 import { useAppearance } from '@/hooks/use-appearance';
 import { useClipboard } from '@/hooks/use-clipboard';
 import { OTP_MAX_LENGTH } from '@/hooks/use-two-factor-auth';
 import { confirm } from '@/routes/two-factor';
-
+ 
 function GridScanIcon() {
     return (
         <div className="mb-3 rounded-full border border-border bg-card p-0.5 shadow-sm">
             <div className="relative overflow-hidden rounded-full border border-border bg-muted p-2.5">
                 <div className="absolute inset-0 grid grid-cols-5 opacity-50">
                     {Array.from({ length: 5 }, (_, i) => (
-                        <div
-                            key={`col-${i + 1}`}
-                            className="border-r border-border last:border-r-0"
-                        />
+                        <div key={`col-${i + 1}`} className="border-r border-border last:border-r-0" />
                     ))}
                 </div>
                 <div className="absolute inset-0 grid grid-rows-5 opacity-50">
                     {Array.from({ length: 5 }, (_, i) => (
-                        <div
-                            key={`row-${i + 1}`}
-                            className="border-b border-border last:border-b-0"
-                        />
+                        <div key={`row-${i + 1}`} className="border-b border-border last:border-b-0" />
                     ))}
                 </div>
                 <ScanLine className="relative z-20 size-6 text-foreground" />
@@ -48,7 +38,7 @@ function GridScanIcon() {
         </div>
     );
 }
-
+ 
 function TwoFactorSetupStep({
     qrCodeSvg,
     manualSetupKey,
@@ -65,7 +55,7 @@ function TwoFactorSetupStep({
     const { resolvedAppearance } = useAppearance();
     const [copiedText, copy] = useClipboard();
     const IconComponent = copiedText === manualSetupKey ? Check : Copy;
-
+ 
     return (
         <>
             {errors?.length ? (
@@ -78,14 +68,11 @@ function TwoFactorSetupStep({
                                 {qrCodeSvg ? (
                                     <div
                                         className="aspect-square w-full rounded-lg bg-white p-2 [&_svg]:size-full"
-                                        dangerouslySetInnerHTML={{
-                                            __html: qrCodeSvg,
-                                        }}
+                                        dangerouslySetInnerHTML={{ __html: qrCodeSvg }}
                                         style={{
-                                            filter:
-                                                resolvedAppearance === 'dark'
-                                                    ? 'invert(1) brightness(1.5)'
-                                                    : undefined,
+                                            filter: resolvedAppearance === 'dark'
+                                                ? 'invert(1) brightness(1.5)'
+                                                : undefined,
                                         }}
                                     />
                                 ) : (
@@ -94,20 +81,20 @@ function TwoFactorSetupStep({
                             </div>
                         </div>
                     </div>
-
+ 
                     <div className="flex w-full space-x-5">
                         <Button className="w-full" onClick={onNextStep}>
                             {buttonText}
                         </Button>
                     </div>
-
+ 
                     <div className="relative flex w-full items-center justify-center">
                         <div className="absolute inset-0 top-1/2 h-px w-full bg-border" />
                         <span className="relative bg-card px-2 py-1">
-                            or, enter the code manually
+                            atau, masukkan kod secara manual
                         </span>
                     </div>
-
+ 
                     <div className="flex w-full space-x-2">
                         <div className="flex w-full items-stretch overflow-hidden rounded-xl border border-border">
                             {!manualSetupKey ? (
@@ -137,7 +124,7 @@ function TwoFactorSetupStep({
         </>
     );
 }
-
+ 
 function TwoFactorVerificationStep({
     onClose,
     onBack,
@@ -147,32 +134,18 @@ function TwoFactorVerificationStep({
 }) {
     const [code, setCode] = useState<string>('');
     const pinInputContainerRef = useRef<HTMLDivElement>(null);
-
+ 
     useEffect(() => {
         setTimeout(() => {
             pinInputContainerRef.current?.querySelector('input')?.focus();
         }, 0);
     }, []);
-
+ 
     return (
-        <Form
-            {...confirm.form()}
-            onSuccess={() => onClose()}
-            resetOnError
-            resetOnSuccess
-        >
-            {({
-                processing,
-                errors,
-            }: {
-                processing: boolean;
-                errors?: { confirmTwoFactorAuthentication?: { code?: string } };
-            }) => (
+        <Form {...confirm.form()} onSuccess={() => onClose()} resetOnError resetOnSuccess>
+            {({ processing, errors }: { processing: boolean; errors?: { confirmTwoFactorAuthentication?: { code?: string } } }) => (
                 <>
-                    <div
-                        ref={pinInputContainerRef}
-                        className="relative w-full space-y-3"
-                    >
+                    <div ref={pinInputContainerRef} className="relative w-full space-y-3">
                         <div className="flex w-full flex-col items-center space-y-3 py-2">
                             <InputOTP
                                 id="otp"
@@ -183,24 +156,14 @@ function TwoFactorVerificationStep({
                                 pattern={REGEXP_ONLY_DIGITS}
                             >
                                 <InputOTPGroup>
-                                    {Array.from(
-                                        { length: OTP_MAX_LENGTH },
-                                        (_, index) => (
-                                            <InputOTPSlot
-                                                key={index}
-                                                index={index}
-                                            />
-                                        ),
-                                    )}
+                                    {Array.from({ length: OTP_MAX_LENGTH }, (_, index) => (
+                                        <InputOTPSlot key={index} index={index} />
+                                    ))}
                                 </InputOTPGroup>
                             </InputOTP>
-                            <InputError
-                                message={
-                                    errors?.confirmTwoFactorAuthentication?.code
-                                }
-                            />
+                            <InputError message={errors?.confirmTwoFactorAuthentication?.code} />
                         </div>
-
+ 
                         <div className="flex w-full space-x-5">
                             <Button
                                 type="button"
@@ -209,16 +172,14 @@ function TwoFactorVerificationStep({
                                 onClick={onBack}
                                 disabled={processing}
                             >
-                                Back
+                                Kembali
                             </Button>
                             <Button
                                 type="submit"
                                 className="flex-1"
-                                disabled={
-                                    processing || code.length < OTP_MAX_LENGTH
-                                }
+                                disabled={processing || code.length < OTP_MAX_LENGTH}
                             >
-                                Confirm
+                                Sahkan
                             </Button>
                         </div>
                     </div>
@@ -227,7 +188,7 @@ function TwoFactorVerificationStep({
         </Form>
     );
 }
-
+ 
 type Props = {
     isOpen: boolean;
     onClose: () => void;
@@ -239,7 +200,7 @@ type Props = {
     fetchSetupData: () => Promise<void>;
     errors: string[];
 };
-
+ 
 export default function TwoFactorSetupModal({
     isOpen,
     onClose,
@@ -251,9 +212,8 @@ export default function TwoFactorSetupModal({
     fetchSetupData,
     errors,
 }: Props) {
-    const [showVerificationStep, setShowVerificationStep] =
-        useState<boolean>(false);
-
+    const [showVerificationStep, setShowVerificationStep] = useState<boolean>(false);
+ 
     const modalConfig = useMemo<{
         title: string;
         description: string;
@@ -261,30 +221,27 @@ export default function TwoFactorSetupModal({
     }>(() => {
         if (twoFactorEnabled) {
             return {
-                title: 'Two-factor authentication enabled',
-                description:
-                    'Two-factor authentication is now enabled. Scan the QR code or enter the setup key in your authenticator app.',
-                buttonText: 'Close',
+                title: 'Pengesahan dua faktor didayakan',
+                description: 'Pengesahan dua faktor kini telah didayakan. Imbas kod QR atau masukkan kunci persediaan dalam aplikasi pengesah anda.',
+                buttonText: 'Tutup',
             };
         }
 
         if (showVerificationStep) {
             return {
-                title: 'Verify authentication code',
-                description:
-                    'Enter the 6-digit code from your authenticator app',
-                buttonText: 'Continue',
+                title: 'Sahkan kod pengesahan',
+                description: 'Masukkan kod 6 digit daripada aplikasi pengesah anda',
+                buttonText: 'Teruskan',
             };
         }
 
         return {
-            title: 'Enable two-factor authentication',
-            description:
-                'To finish enabling two-factor authentication, scan the QR code or enter the setup key in your authenticator app',
-            buttonText: 'Continue',
+            title: 'Dayakan pengesahan dua faktor',
+            description: 'Untuk menyelesaikan pengaktifan pengesahan dua faktor, imbas kod QR atau masukkan kunci persediaan dalam aplikasi pengesah anda',
+            buttonText: 'Teruskan',
         };
     }, [twoFactorEnabled, showVerificationStep]);
-
+ 
     const handleModalNextStep = useCallback(() => {
         if (requiresConfirmation) {
             setShowVerificationStep(true);
@@ -295,7 +252,7 @@ export default function TwoFactorSetupModal({
         clearSetupData();
         onClose();
     }, [requiresConfirmation, clearSetupData, onClose]);
-
+ 
     const resetModalState = useCallback(() => {
         setShowVerificationStep(false);
 
@@ -303,18 +260,18 @@ export default function TwoFactorSetupModal({
             clearSetupData();
         }
     }, [twoFactorEnabled, clearSetupData]);
-
+ 
     useEffect(() => {
         if (isOpen && !qrCodeSvg) {
             fetchSetupData();
         }
     }, [isOpen, qrCodeSvg, fetchSetupData]);
-
+ 
     const handleClose = useCallback(() => {
         resetModalState();
         onClose();
     }, [onClose, resetModalState]);
-
+ 
     return (
         <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
             <DialogContent className="sm:max-w-md">
@@ -325,7 +282,7 @@ export default function TwoFactorSetupModal({
                         {modalConfig.description}
                     </DialogDescription>
                 </DialogHeader>
-
+ 
                 <div className="flex flex-col items-center space-y-5">
                     {showVerificationStep ? (
                         <TwoFactorVerificationStep

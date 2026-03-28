@@ -1,8 +1,16 @@
 import { Link, usePage } from '@inertiajs/react';
+import { Bell } from 'lucide-react';
+import { useInitials } from '@/hooks/use-initials';
 import { login, register } from '@/routes';
 import type { SharedData } from '@/types';
+import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
+import { Button } from './ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from './ui/dropdown-menu';
+//import { UserMenuContent } from './user-menu-content';
+import { VillagerUserMenuContent } from './villager-user-menu-content';
 
 export function HeaderBar() {
+    const getInitials = useInitials();
     const { auth, categories = [] } = usePage<SharedData>().props;
 
     return (
@@ -44,6 +52,39 @@ export function HeaderBar() {
                                     Dashboard
                                 </Link>
                             )}
+
+                            <Link href="/notifications">
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="relative h-9 w-9"
+                                    >
+                                        <Bell className="h-5 w-5 text-gray-600 dark:text-gray-300" />
+                                        {/* Unread dot — replace hardcoded true with real unread count later */}
+                                    </Button>
+                                </Link>
+
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button
+                                        variant="ghost"
+                                        className="size-10 rounded-full p-1"
+                                    >
+                                        <Avatar className="size-8 overflow-hidden rounded-full">
+                                            <AvatarImage
+                                                src={auth.user.avatar}
+                                                alt={auth.user.name}
+                                            />
+                                            <AvatarFallback className="rounded-lg bg-neutral-200 text-black dark:bg-neutral-700 dark:text-white">
+                                                {getInitials(auth.user.name)}
+                                            </AvatarFallback>
+                                        </Avatar>
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                    <DropdownMenuContent className="w-56" align="end">
+                                        <VillagerUserMenuContent user={auth.user} />  {/* ← change this */}
+                                    </DropdownMenuContent>
+                            </DropdownMenu>
                             <Link
                                 href="/logout"
                                 method="post"

@@ -1,9 +1,9 @@
 import { Head, Link, usePage, router } from '@inertiajs/react';
 import { Eye, Heart, Lock, MessageCircle, ThumbsUp, ChevronUp, ChevronDown } from 'lucide-react';
 import { useState } from 'react';
+import { HeaderBar } from '@/components/header-bar';
 import { Badge } from '@/components/ui/badge';
 import { login, register } from '@/routes';
-import { HeaderBar } from '@/components/header-bar';
 import type { SharedData } from '@/types';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -104,13 +104,18 @@ function CommentItem({
     const handleReplyClick = () => {
         if (!isAuthenticated) {
             onAuthRequired('membalas komentar');
+
             return;
         }
+
         setShowReplyBox(!showReplyBox);
     };
 
     const handleSubmitReply = () => {
-        if (!replyText.trim()) return;
+        if (!replyText.trim()) {
+return;
+}
+
         router.post(`/comments/${comment.id}/replies`, { content: replyText });
         setReplyText('');
         setShowReplyBox(false);
@@ -208,7 +213,7 @@ function CommentItem({
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-export default function NewsDetails({ news, comments = [], canRegister = true }: Props) {
+export default function NewsDetails({ news, comments = [], /*canRegister = true*/ }: Props) {
     const { auth } = usePage<SharedData>().props;
     const isAuthenticated = !!auth.user;
 
@@ -220,8 +225,10 @@ export default function NewsDetails({ news, comments = [], canRegister = true }:
     const handleLike = () => {
         if (!isAuthenticated) {
             setAuthPrompt('menyukai berita ini');
+
             return;
         }
+
         router.post(`/news/${news.id}/like`, {}, {
             preserveScroll: true,
             onSuccess: () => {
@@ -234,9 +241,14 @@ export default function NewsDetails({ news, comments = [], canRegister = true }:
     const handleComment = () => {
         if (!isAuthenticated) {
             setAuthPrompt('menulis komentar');
+
             return;
         }
-        if (!commentText.trim()) return;
+
+        if (!commentText.trim()) {
+return;
+}
+
         router.post(`/news/${news.id}/comments`, { content: commentText }, {
             preserveScroll: true,
             onSuccess: () => setCommentText(''),

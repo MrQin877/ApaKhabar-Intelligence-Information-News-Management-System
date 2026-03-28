@@ -34,5 +34,18 @@ return [
             'channel' => env('SLACK_BOT_USER_DEFAULT_CHANNEL'),
         ],
     ],
+    /*
+    'twilio' => [
+        'sid'            => env('TWILIO_SID'),
+        'token'          => env('TWILIO_TOKEN'),
+        'from'           => env('TWILIO_FROM'),
+        'whatsapp_from'  => env('TWILIO_WHATSAPP_FROM'),
+    ],
+    */
+    'vonage' => [
+        'key'    => env('VONAGE_KEY'),
+        'secret' => env('VONAGE_SECRET'),
+        'sms_from'   => env('VONAGE_SMS_FROM'),
+    ],
 
 ];

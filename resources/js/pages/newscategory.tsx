@@ -1,6 +1,6 @@
 import { Head, Link } from '@inertiajs/react';
-import { Badge } from '@/components/ui/badge';
 import { HeaderBar } from '@/components/header-bar';
+import { Badge } from '@/components/ui/badge';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 

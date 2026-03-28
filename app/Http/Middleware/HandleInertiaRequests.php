@@ -27,6 +27,8 @@ class HandleInertiaRequests extends Middleware
 
             // ↓ Share unique categories from DB to all pages
             'categories' => News::all()->pluck('category')->unique()->filter()->sort()->values(),
+
+            
         ];
     }
 }

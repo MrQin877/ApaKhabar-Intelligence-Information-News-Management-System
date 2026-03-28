@@ -1,5 +1,6 @@
 "use client"
 
+import { router } from '@inertiajs/react'
 import type {
   ColumnDef,
   ColumnFiltersState,
@@ -64,7 +65,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-//import { router } from '@inertiajs/react'
+ 
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[]
@@ -156,14 +157,10 @@ export function DataTable<TData, TValue>({
   }
 */
   function handleBulkArchive() {
-      // TODO: router.post('/admin/broadcasting/archive', { ids: selectedIds })
-      console.log("Archive IDs:", selectedIds)
-      table.resetRowSelection()
-
-      //router.post(route('admin.broadcasting.archive'), { ids: selectedIds }, {
-        //preserveScroll: true,
-        //onSuccess: () => table.resetRowSelection(),
-    //})
+      router.post('/admin/broadcasting/archive', { ids: selectedIds }, {
+          preserveScroll: true,
+          onSuccess: () => table.resetRowSelection(),
+      })
   }
 
   function handleBulkResend() {

@@ -142,7 +142,7 @@ export function BroadcastComposeForm() {
   const [scheduledDate, setScheduledDate] = useState("")
   const [scheduledTime, setScheduledTime] = useState("")
 
-  const MAX        = 300
+  const MAX        = 500
   const remaining  = MAX - message.length
   const isOverLimit = remaining < 0
   const canSubmit  = title.trim().length > 0
