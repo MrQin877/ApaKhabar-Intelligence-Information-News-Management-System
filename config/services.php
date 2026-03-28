@@ -41,11 +41,17 @@ return [
         'from'           => env('TWILIO_FROM'),
         'whatsapp_from'  => env('TWILIO_WHATSAPP_FROM'),
     ],
-    */
+    
     'vonage' => [
         'key'    => env('VONAGE_KEY'),
         'secret' => env('VONAGE_SECRET'),
         'sms_from'   => env('VONAGE_SMS_FROM'),
+    ],
+    */
+    'bulk360' => [
+        'app_key'    => env('BULK360_APP_KEY'),
+        'app_secret' => env('BULK360_APP_SECRET'),
+        'from'       => env('BULK360_FROM', '68068'),
     ],
 
 ];

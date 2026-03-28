@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "8b3366594afbd949d6413258324b59e3",
+    "content-hash": "5771f5f8b10453c029fd20aa938cf2e8",
     "packages": [
         {
             "name": "bacon/bacon-qr-code",
@@ -120,6 +120,47 @@
                 }
             ],
             "time": "2026-02-10T14:33:43+00:00"
+        },
+        {
+            "name": "bulk360/client",
+            "version": "3.0.1",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/bulk360/client.git",
+                "reference": "e186e49ba2de41a456a9756212a1e0a761586732"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/bulk360/client/zipball/e186e49ba2de41a456a9756212a1e0a761586732",
+                "reference": "e186e49ba2de41a456a9756212a1e0a761586732",
+                "shasum": ""
+            },
+            "require": {
+                "nesbot/carbon": ">2.0"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "bulk360\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "360 Interactive",
+                    "email": "mark@360.my"
+                }
+            ],
+            "description": "PHP Client for using bulk360's API",
+            "homepage": "https://sms.360.my",
+            "support": {
+                "issues": "https://github.com/bulk360/client/issues",
+                "source": "https://github.com/bulk360/client/tree/3.0.1"
+            },
+            "time": "2021-10-28T04:35:54+00:00"
         },
         {
             "name": "carbonphp/carbon-doctrine-types",
