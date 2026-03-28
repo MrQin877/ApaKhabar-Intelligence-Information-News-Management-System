@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Notifications\Channels\Bulk360Channel;
 use App\Notifications\Channels\MongoDBDatabaseChannel;
+use App\Models\PersonalAccessToken;  // ← ADD THIS
 use App\Services\SmsService;
 use Carbon\CarbonImmutable;
 use Illuminate\Notifications\ChannelManager;
@@ -12,6 +13,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
+use Laravel\Sanctum\Sanctum;  // ← ADD THIS
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -22,11 +24,11 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        Sanctum::usePersonalAccessTokenModel(PersonalAccessToken::class);  // ← ADD THIS
         $this->configureDefaults();
         $this->configureNotificationChannels();
     }
 
-    // ── Register custom notification channels ──────────
     protected function configureNotificationChannels(): void
     {
         Notification::resolved(function (ChannelManager $service) {
