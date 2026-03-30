@@ -6,7 +6,8 @@ use App\Http\Controllers\Api\NewsController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\CommentController;
 use App\Http\Controllers\Api\PostLikeController;
-use App\Http\Middleware\ApiAuth;  // ← ADD THIS
+use App\Http\Controllers\Api\BroadcastController;  // ← ADD THIS
+use App\Http\Middleware\ApiAuth;
 
 // Public routes
 Route::post('/login',    [AuthController::class, 'login']);
@@ -14,6 +15,7 @@ Route::post('/register', [AuthController::class, 'register']);
 Route::get('/news',      [NewsController::class, 'index']);
 Route::get('/news/{id}', [NewsController::class, 'show']);
 Route::get('/news/{id}/related', [NewsController::class, 'related']);
+Route::get('/broadcasts/darurat', [BroadcastController::class, 'darurat']);  // ← ADD THIS
 
 // Protected routes — use our custom middleware
 Route::middleware(ApiAuth::class)->group(function () {

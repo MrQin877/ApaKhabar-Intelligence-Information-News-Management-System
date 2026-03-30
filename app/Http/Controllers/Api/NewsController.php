@@ -84,20 +84,11 @@ class NewsController extends Controller
     public function related($id)
     {
         try {
-            $news = News::find($id);
-
-            if (!$news) {
-                return response()->json(['data' => []]);
-            }
-
-            $related = News::where('category', $news->category)
-                ->latest()
+            $related = News::latest()
                 ->limit(10)
                 ->get()
-                ->filter(function ($item) use ($id) {
-                    return (string) $item->_id !== (string) $id;
-                })
-                ->take(5)
+                ->filter(fn ($item) => (string) $item->_id !== (string) $id)
+                ->take(3)
                 ->values()
                 ->map(fn ($item) => [
                     'id'       => (string) $item->_id,
