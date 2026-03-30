@@ -13,6 +13,7 @@ Route::post('/login',    [AuthController::class, 'login']);
 Route::post('/register', [AuthController::class, 'register']);
 Route::get('/news',      [NewsController::class, 'index']);
 Route::get('/news/{id}', [NewsController::class, 'show']);
+Route::get('/news/{id}/related', [NewsController::class, 'related']);
 
 // Protected routes — use our custom middleware
 Route::middleware(ApiAuth::class)->group(function () {
