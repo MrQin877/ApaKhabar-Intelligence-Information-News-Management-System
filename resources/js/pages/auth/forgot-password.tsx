@@ -12,10 +12,10 @@ import { email } from '@/routes/password';
 export default function ForgotPassword({ status }: { status?: string }) {
     return (
         <AuthLayout
-            title="Lupa kata laluan"
-            description="Masukkan e-mel anda untuk menerima pautan tetapan semula kata laluan"
+            title="Lupa kata sandi"
+            description="Masukkan tatuan untuk melakukan perubahan kata sandi"
         >
-            <Head title="Lupa kata laluan" />
+            <Head title="Lupa kata sandi" />
  
             {status && (
                 <div className="mb-4 text-center text-sm font-medium text-green-600">
@@ -28,7 +28,7 @@ export default function ForgotPassword({ status }: { status?: string }) {
                     {({ processing, errors }) => (
                         <>
                             <div className="grid gap-2">
-                                <Label htmlFor="email">Alamat e-mel</Label>
+                                <Label htmlFor="email">Alamat e-mail</Label>
                                 <Input
                                     id="email"
                                     type="email"
@@ -49,7 +49,7 @@ export default function ForgotPassword({ status }: { status?: string }) {
                                     {processing && (
                                         <LoaderCircle className="h-4 w-4 animate-spin" />
                                     )}
-                                    Hantar pautan tetapan semula
+                                    Kirim tatuan untuk perubahan kata sandi
                                 </Button>
                             </div>
                         </>

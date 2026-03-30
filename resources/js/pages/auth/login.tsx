@@ -21,8 +21,8 @@ type Props = {
 export default function Login({ status, canResetPassword, canRegister }: Props) {
     return (
         <AuthLayout
-            title="Log masuk ke akaun anda"
-            description="Masukkan e-mel dan kata laluan anda untuk log masuk"
+            title="Log masuk ke akun anda"
+            description="Masukkan e-mail dan kata sandi anda untuk log masuk"
         >
             <Head title="Log masuk" />
  
@@ -35,7 +35,7 @@ export default function Login({ status, canResetPassword, canRegister }: Props) 
                     <>
                         <div className="grid gap-6">
                             <div className="grid gap-2">
-                                <Label htmlFor="email">Alamat e-mel</Label>
+                                <Label htmlFor="email">Alamat e-mail</Label>
                                 <Input
                                     id="email"
                                     type="email"
@@ -51,10 +51,10 @@ export default function Login({ status, canResetPassword, canRegister }: Props) 
  
                             <div className="grid gap-2">
                                 <div className="flex items-center">
-                                    <Label htmlFor="password">Kata laluan</Label>
+                                    <Label htmlFor="password">Kata sandi</Label>
                                     {canResetPassword && (
                                         <TextLink href={request()} className="ml-auto text-sm" tabIndex={5}>
-                                            Lupa kata laluan?
+                                            Lupa kata sandi?
                                         </TextLink>
                                     )}
                                 </div>
@@ -64,7 +64,7 @@ export default function Login({ status, canResetPassword, canRegister }: Props) 
                                     required
                                     tabIndex={2}
                                     autoComplete="current-password"
-                                    placeholder="Kata laluan"
+                                    placeholder="Kata sandi"
                                 />
                                 <InputError message={errors.password} />
                             </div>
@@ -88,7 +88,7 @@ export default function Login({ status, canResetPassword, canRegister }: Props) 
  
                         {canRegister && (
                             <div className="text-center text-sm text-muted-foreground">
-                                Belum ada akaun?{' '}
+                                Belum ada akun?{' '}
                                 <TextLink href={register()} tabIndex={5}>
                                     Daftar sekarang
                                 </TextLink>

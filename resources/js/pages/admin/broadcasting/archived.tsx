@@ -21,7 +21,7 @@ type Props = {
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Pesan',   href: '/admin/broadcasting' },
-    { title: 'Arkib',   href: '/admin/broadcasting/archived' },
+    { title: 'Arsip',   href: '/admin/broadcasting/archived' },
 ]
 
 export default function ArchivedBroadcastPage({ broadcasts }: Props) {
@@ -34,7 +34,7 @@ export default function ArchivedBroadcastPage({ broadcasts }: Props) {
 
     return (
         <>
-            <Head title="Arkib Siaran" />
+            <Head title="Arkib Pesan" />
             <div className="flex flex-1 flex-col gap-4 p-4 max-w-4xl mx-auto w-full">
 
                 {/* ── Header ── */}
@@ -61,7 +61,7 @@ export default function ArchivedBroadcastPage({ broadcasts }: Props) {
                             Arkib Siaran
                         </h1>
                         <p className="text-sm text-neutral-500">
-                            {broadcasts.length} siaran diarkibkan
+                            {broadcasts.length} siaran diarsipkan
                         </p>
                     </div>
                 </div>
@@ -72,7 +72,7 @@ export default function ArchivedBroadcastPage({ broadcasts }: Props) {
                         <div className="flex h-14 w-14 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800">
                             <Archive className="h-6 w-6 opacity-50" />
                         </div>
-                        <p className="text-sm text-neutral-500">Tiada siaran diarkibkan</p>
+                        <p className="text-sm text-neutral-500">Tiada siaran diarsipkan</p>
                     </div>
                 ) : (
                     <div className="space-y-3">
@@ -102,7 +102,7 @@ export default function ArchivedBroadcastPage({ broadcasts }: Props) {
                                         <span>•</span>
                                         <span>{broadcast.status}</span>
                                         <span>•</span>
-                                        <span>Diarkib: {broadcast.archived_at}</span>
+                                        <span>Diarsip: {broadcast.archived_at}</span>
                                     </div>
                                 </div>
 
@@ -122,7 +122,7 @@ export default function ArchivedBroadcastPage({ broadcasts }: Props) {
                                         className="text-xs h-8 gap-1.5 text-green-600 border-green-200 hover:bg-green-50"
                                     >
                                         <ArchiveRestore className="h-3.5 w-3.5" />
-                                        Pulihkan
+                                        Aktifkan
                                     </Button>
                                 </div>
                             </div>

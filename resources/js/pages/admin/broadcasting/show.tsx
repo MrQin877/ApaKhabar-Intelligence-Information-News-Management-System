@@ -319,7 +319,7 @@ export default function BroadcastShowPage({ broadcast }: Props) {
                                 <p className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">
                                     {broadcast.stats.read_rate}%
                                 </p>
-                                <p className="text-xs text-neutral-400 mt-0.5">Kadar Baca</p>
+                                <p className="text-xs text-neutral-400 mt-0.5">Rate Diakses</p>
                             </div>
                         </div>
  
@@ -328,7 +328,7 @@ export default function BroadcastShowPage({ broadcast }: Props) {
                             <div className="mt-4">
                                 <div className="flex items-center justify-between text-xs text-neutral-400 mb-1.5">
                                     <span className="flex items-center gap-1">
-                                        <CheckCheck className="h-3 w-3" /> Kadar baca keseluruhan
+                                        <CheckCheck className="h-3 w-3" /> Rate diakses keseluruhan
                                     </span>
                                     <span>{broadcast.stats.read_rate}%</span>
                                 </div>

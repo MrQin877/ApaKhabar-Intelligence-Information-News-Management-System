@@ -15,7 +15,7 @@ export function AnalyticsStats({ totalPesan, dikirimHariIni, rateTerbuka }: Stat
     const stats = [
         { label: "Total Pesan",      value: String(totalPesan),      icon: <Radio className="h-4 w-4" /> },
         { label: "Dikirim Hari Ini", value: String(dikirimHariIni),  icon: <Send className="h-4 w-4" /> },
-        { label: "Rate Terbuka",     value: `${rateTerbuka}%`,       icon: <MailOpen className="h-4 w-4" /> },
+        { label: "Rate Diakses",     value: `${rateTerbuka}%`,       icon: <MailOpen className="h-4 w-4" /> },
     ]
 
     return (
