@@ -55,17 +55,17 @@ class BroadcastController extends Controller
 
         // ── Chart data — last 6 months ─────────────────────────
         $chartData = collect(range(5, 0))->map(function ($monthsAgo) {
-            $date  = now()->subMonths($monthsAgo);
+            $date  = now()->startOfMonth()->subMonths($monthsAgo);  // ← startOfMonth() first
             $start = $date->copy()->startOfMonth();
             $end   = $date->copy()->endOfMonth();
 
             return [
-                'month'       => $date->format('M'),
-                'pengumuman'  => Broadcast::active()
+                'month'      => $date->format('M'),
+                'pengumuman' => Broadcast::active()
                                     ->where('category', 'pengumuman')
                                     ->whereBetween('created_at', [$start, $end])
                                     ->count(),
-                'darurat'     => Broadcast::active()
+                'darurat'    => Broadcast::active()
                                     ->where('category', 'darurat')
                                     ->whereBetween('created_at', [$start, $end])
                                     ->count(),

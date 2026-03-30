@@ -1,6 +1,6 @@
 import { Head, router, usePage } from '@inertiajs/react'
 import { Bell, BellOff, CheckCheck } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { HeaderBar } from '@/components/header-bar'  // your villager header
 import { NotificationCard } from '@/components/notifications/notification-card'
 import { NotificationSkeleton } from '@/components/notifications/notification-skeleton'
@@ -25,7 +25,18 @@ export default function NotificationsPage({ notifications: initial}: Props) {
     const isAdmin = auth?.user?.role === 'admin' || auth?.user?.role === 'moderator'
     const [notifications, setNotifications] = useState<Notification[]>(initial)
     const [activeFilter, setActiveFilter] = useState<FilterTab>('semua')
-    const [isLoading] = useState(false)
+    const [isLoading, setIsLoading] = useState(false)  // ← remove const, make stateful
+
+    // ← Wire to Inertia navigation events
+    useEffect(() => {
+        const startLoading = router.on('start',  () => setIsLoading(true))
+        const stopLoading  = router.on('finish', () => setIsLoading(false))
+
+        return () => {
+            startLoading()
+            stopLoading()
+        }
+    }, [])
  
     const unreadCount = notifications.filter(n => !n.is_read).length
  
