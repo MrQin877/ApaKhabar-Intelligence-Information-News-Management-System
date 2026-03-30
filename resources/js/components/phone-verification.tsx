@@ -1,4 +1,4 @@
-import { router } from '@inertiajs/react'
+import { router, usePage } from '@inertiajs/react'
 import {
     Phone, ShieldCheck, ShieldX,
     Send, RefreshCw, CheckCircle2,
@@ -38,6 +38,7 @@ export function PhoneVerification({
     otpSent: initialOtpSent,
     status,
 }: PhoneVerificationProps) {
+    const { errors } = usePage().props as any
     const [phone,       setPhone]       = useState<string>(initialPhone ?? '')
     const [otp,         setOtp]         = useState('')
     const [otpSent,     setOtpSent]     = useState(initialOtpSent || status === 'otp-sent')
@@ -102,7 +103,7 @@ return
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                     <Phone className="h-4 w-4 text-neutral-500" />
-                    <Label className="text-sm font-medium">Nombor Telefon</Label>
+                    <Label className="text-sm font-medium">Nomor Telepon</Label>
                 </div>
                 {phone && (
                     <Badge
@@ -115,8 +116,8 @@ return
                         )}
                     >
                         {phoneVerified
-                            ? <><ShieldCheck className="h-3 w-3" /> Disahkan</>
-                            : <><ShieldX className="h-3 w-3" /> Belum disahkan</>
+                            ? <><ShieldCheck className="h-3 w-3" /> Approved</>
+                            : <><ShieldX className="h-3 w-3" /> Belum diapproved</>
                         }
                     </Badge>
                 )}
@@ -128,7 +129,7 @@ return
                     <div className="flex items-center gap-2">
                         <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
                         <p className="text-sm text-green-700 dark:text-green-400">
-                            Nombor telefon berjaya disahkan!
+                            Nomor telepon berjaya disahkan!
                         </p>
                     </div>
                     {/* Close button */}
@@ -164,7 +165,7 @@ return
                     className="w-full sm:w-auto h-9 gap-1.5 text-sm shrink-0"
                 >
                     <Send className="h-3.5 w-3.5" />
-                    {phoneVerified ? 'Tukar Nombor' : 'Hantar OTP'}
+                    {phoneVerified ? 'Ganti Nomor' : 'Kirim OTP'}
                 </Button>
             </div>
 
@@ -176,18 +177,18 @@ return
             )}
 
             <p className="text-xs text-neutral-400">
-                Pilih kod negara dan masukkan nombor telefon anda.
+                Pilih kode negara dan masukkan nomor telepon anda.
             </p>
 
             {/* ── OTP input section ── */}
             {otpSent && !phoneVerified && (
                 <div className="space-y-3 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/40 p-4">
                     <p className="text-sm text-neutral-600 dark:text-neutral-400">
-                        Kod OTP telah dihantar ke{' '}
+                        Kode OTP telah dikirim ke{' '}
                         <span className="font-medium text-neutral-900 dark:text-neutral-100">
                             {phone}
                         </span>.
-                        Masukkan kod 6 digit di bawah.
+                        Masukkan kode 6 digit di bawah.
                     </p>
 
                     <div className="flex gap-2">
@@ -208,7 +209,7 @@ return
                             className="h-9 gap-1.5 text-sm bg-green-600 hover:bg-green-700 text-white shrink-0"
                         >
                             <ShieldCheck className="h-3.5 w-3.5" />
-                            Sahkan
+                            Approve
                         </Button>
                     </div>
 
@@ -219,7 +220,7 @@ return
                         className="flex items-center gap-1.5 text-xs text-neutral-400 hover:text-green-600 transition-colors"
                     >
                         <RefreshCw className="h-3 w-3" />
-                        Hantar semula OTP
+                        Kirim OTP
                     </button>
                 </div>
             )}

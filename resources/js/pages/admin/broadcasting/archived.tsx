@@ -1,7 +1,9 @@
 import { Head, router } from '@inertiajs/react'
+import { useEffect, useState } from 'react'
 import { Archive, ArrowLeft, ArchiveRestore } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'  
 import AppLayout from '@/layouts/app-layout'
 import type { BreadcrumbItem } from '@/types'
 
@@ -21,10 +23,21 @@ type Props = {
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Pesan',   href: '/admin/broadcasting' },
-    { title: 'Arkib',   href: '/admin/broadcasting/archived' },
+    { title: 'Arsip',   href: '/admin/broadcasting/archived' },
 ]
 
 export default function ArchivedBroadcastPage({ broadcasts }: Props) {
+
+    const [loading, setLoading] = useState(false)  // ← add
+
+    useEffect(() => {
+        const startLoading = router.on('start',  () => setLoading(true))
+        const stopLoading  = router.on('finish', () => setLoading(false))
+        return () => {
+            startLoading()
+            stopLoading()
+        }
+    }, [])
 
     function handleRestore(id: string) {
         router.post(`/admin/broadcasting/${id}/restore`, {}, {
@@ -34,7 +47,7 @@ export default function ArchivedBroadcastPage({ broadcasts }: Props) {
 
     return (
         <>
-            <Head title="Arkib Siaran" />
+            <Head title="Arkib Pesan" />
             <div className="flex flex-1 flex-col gap-4 p-4 max-w-4xl mx-auto w-full">
 
                 {/* ── Header ── */}
@@ -61,18 +74,45 @@ export default function ArchivedBroadcastPage({ broadcasts }: Props) {
                             Arkib Siaran
                         </h1>
                         <p className="text-sm text-neutral-500">
-                            {broadcasts.length} siaran diarkibkan
+                            {broadcasts.length} siaran diarsipkan
                         </p>
                     </div>
                 </div>
 
                 {/* ── List ── */}
-                {broadcasts.length === 0 ? (
+
+                {loading ? (
+                    // ── Skeleton ──
+                    <div className="space-y-3">
+                        {Array.from({ length: 4 }).map((_, i) => (
+                            <div
+                                key={i}
+                                className="flex items-center justify-between gap-4 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-5 py-4"
+                            >
+                                <div className="flex-1 min-w-0 space-y-2">
+                                    <div className="flex items-center gap-2">
+                                        <Skeleton className="h-4 w-48 rounded" />
+                                        <Skeleton className="h-5 w-20 rounded-full" />
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <Skeleton className="h-3 w-24 rounded" />
+                                        <Skeleton className="h-3 w-16 rounded" />
+                                        <Skeleton className="h-3 w-32 rounded" />
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                    <Skeleton className="h-8 w-14 rounded" />
+                                    <Skeleton className="h-8 w-20 rounded" />
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                ): broadcasts.length === 0 ? (
                     <div className="flex flex-col items-center justify-center gap-3 py-20 text-neutral-400">
                         <div className="flex h-14 w-14 items-center justify-center rounded-full bg-neutral-100 dark:bg-neutral-800">
                             <Archive className="h-6 w-6 opacity-50" />
                         </div>
-                        <p className="text-sm text-neutral-500">Tiada siaran diarkibkan</p>
+                        <p className="text-sm text-neutral-500">Tiada siaran diarsipkan</p>
                     </div>
                 ) : (
                     <div className="space-y-3">
@@ -102,7 +142,7 @@ export default function ArchivedBroadcastPage({ broadcasts }: Props) {
                                         <span>•</span>
                                         <span>{broadcast.status}</span>
                                         <span>•</span>
-                                        <span>Diarkib: {broadcast.archived_at}</span>
+                                        <span>Diarsip: {broadcast.archived_at}</span>
                                     </div>
                                 </div>
 
@@ -122,7 +162,7 @@ export default function ArchivedBroadcastPage({ broadcasts }: Props) {
                                         className="text-xs h-8 gap-1.5 text-green-600 border-green-200 hover:bg-green-50"
                                     >
                                         <ArchiveRestore className="h-3.5 w-3.5" />
-                                        Pulihkan
+                                        Aktifkan
                                     </Button>
                                 </div>
                             </div>

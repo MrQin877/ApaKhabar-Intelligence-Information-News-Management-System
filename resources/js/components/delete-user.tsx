@@ -30,23 +30,23 @@ export default function DeleteUser() {
                 <div className="relative space-y-0.5 text-red-600 dark:text-red-100">
                     <p className="font-medium">Amaran</p>
                     <p className="text-sm">
-                        Sila teruskan dengan berhati-hati, tindakan ini tidak boleh dibatalkan.
+                        Silahkan lanjutkan dengan hati-hati, tindakan ini tidak bisa dibatalkan
                     </p>
                 </div>
  
                 <Dialog>
                     <DialogTrigger asChild>
                         <Button variant="destructive" data-test="delete-user-button">
-                            Padam akaun
+                            Inaktifkan akun
                         </Button>
                     </DialogTrigger>
                     <DialogContent>
                         <DialogTitle>
-                            Adakah anda pasti ingin memadam akaun anda?
+                            Inaktifkan akun pasti ingin inaktifkan akaun anda?
                         </DialogTitle>
                         <DialogDescription>
-                            Setelah akaun anda dipadam, semua sumber dan data akan turut dipadam secara kekal.
-                            Sila masukkan kata laluan anda untuk mengesahkan bahawa anda ingin memadam akaun secara kekal.
+                            Setelah akun anda dihapus, semua sumber dan data akan dihapus secara permanen.
+                            Silakan masukkan kata sandi anda untuk mengkonfirmasi bahwa anda ingin menghapus akun secara permanen.
                         </DialogDescription>
  
                         <Form
@@ -60,13 +60,13 @@ export default function DeleteUser() {
                                 <>
                                     <div className="grid gap-2">
                                         <Label htmlFor="password" className="sr-only">
-                                            Kata laluan
+                                            Kata sandi
                                         </Label>
                                         <PasswordInput
                                             id="password"
                                             name="password"
                                             ref={passwordInput}
-                                            placeholder="Kata laluan"
+                                            placeholder="Kata sandi"
                                             autoComplete="current-password"
                                         />
                                         <InputError message={errors.password} />
@@ -83,7 +83,7 @@ export default function DeleteUser() {
                                         </DialogClose>
                                         <Button variant="destructive" disabled={processing} asChild>
                                             <button type="submit" data-test="confirm-delete-user-button">
-                                                Padam akaun
+                                                Inaktifkan akun
                                             </button>
                                         </Button>
                                     </DialogFooter>

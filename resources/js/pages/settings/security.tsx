@@ -24,7 +24,7 @@ type Props = {
 };
  
 const breadcrumbs: BreadcrumbItem[] = [
-    { title: 'Tetapan Keselamatan', href: edit() },
+    { title: 'Ketentuan Keamanan', href: edit() },
 ];
  
 export default function Security({
@@ -45,8 +45,8 @@ export default function Security({
             <div className="space-y-6">
                 <Heading
                     variant="small"
-                    title="Kemaskini kata laluan"
-                    description="Pastikan akaun anda menggunakan kata laluan yang panjang dan rawak untuk keselamatan"
+                    title="Input kata sandi"
+                    description="Pastikan akun anda menggunakan kata sandi yang panjang dan acak untuk keamanan"
                 />
  
                 <Form
@@ -68,39 +68,39 @@ currentPasswordInput.current?.focus();
                     {({ errors, processing, recentlySuccessful }) => (
                         <>
                             <div className="grid gap-2">
-                                <Label htmlFor="current_password">Kata laluan semasa</Label>
+                                <Label htmlFor="current_password">Kata sandi yang lalu</Label>
                                 <PasswordInput
                                     id="current_password"
                                     ref={currentPasswordInput}
                                     name="current_password"
                                     className="mt-1 block w-full"
                                     autoComplete="current-password"
-                                    placeholder="Kata laluan semasa"
+                                    placeholder="Kata sandi yang lalu"
                                 />
                                 <InputError message={errors.current_password} />
                             </div>
  
                             <div className="grid gap-2">
-                                <Label htmlFor="password">Kata laluan baharu</Label>
+                                <Label htmlFor="password">Kata sandi baru</Label>
                                 <PasswordInput
                                     id="password"
                                     ref={passwordInput}
                                     name="password"
                                     className="mt-1 block w-full"
                                     autoComplete="new-password"
-                                    placeholder="Kata laluan baharu"
+                                    placeholder="Kata sandi baru"
                                 />
                                 <InputError message={errors.password} />
                             </div>
  
                             <div className="grid gap-2">
-                                <Label htmlFor="password_confirmation">Sahkan kata laluan</Label>
+                                <Label htmlFor="password_confirmation">Aktifkan kata sandi</Label>
                                 <PasswordInput
                                     id="password_confirmation"
                                     name="password_confirmation"
                                     className="mt-1 block w-full"
                                     autoComplete="new-password"
-                                    placeholder="Sahkan kata laluan"
+                                    placeholder="Aktifkan kata sandi"
                                 />
                                 <InputError message={errors.password_confirmation} />
                             </div>
@@ -128,8 +128,8 @@ currentPasswordInput.current?.focus();
                 <div className="space-y-6">
                     <Heading
                         variant="small"
-                        title="Pengesahan dua faktor"
-                        description="Urus tetapan pengesahan dua faktor anda"
+                        title="Autentikasi dua faktor"
+                        description="Proses ketentuan autentikasi dua faktor anda"
                     />
                     {twoFactorEnabled ? (
                         <div className="flex flex-col items-start space-y-4">
@@ -152,7 +152,7 @@ currentPasswordInput.current?.focus();
                     ) : (
                         <div className="flex flex-col items-start space-y-4">
                             <p className="text-sm text-muted-foreground">
-                                Apabila anda mendayakan pengesahan dua faktor, anda akan diminta memasukkan pin selamat semasa log masuk. Pin ini boleh diperolehi daripada aplikasi TOTP pada telefon anda.
+                                Apabila anda menggunakan autentikasi dua faktor, anda akan diminta memasukkan pin keamanan saat log masuk. Pin ini bisa didapatkan dari aplikasi TOTP pada telepon anda.
                             </p>
                             <div>
                                 {hasSetupData ? (
@@ -164,7 +164,7 @@ currentPasswordInput.current?.focus();
                                     <Form {...enable.form()} onSuccess={() => setShowSetupModal(true)}>
                                         {({ processing }) => (
                                             <Button type="submit" disabled={processing}>
-                                                Dayakan 2FA
+                                                Aktifkan 2FA
                                             </Button>
                                         )}
                                     </Form>

@@ -1,4 +1,6 @@
 import { Head, router } from '@inertiajs/react'
+import { useEffect, useState } from 'react'  
+import { Skeleton } from '@/components/ui/skeleton'  
 import {
     ArrowLeft, Megaphone, Siren, Send, Archive,
     Clock, Users, User, MessageSquare, Smartphone,
@@ -64,7 +66,18 @@ const channelMap: Record<string, { icon: React.ReactNode; label: string }> = {
  
 // ── Main Page ──────────────────────────────────────────────
 export default function BroadcastShowPage({ broadcast }: Props) {
+    const [loading, setLoading] = useState(false) 
 
+    // ← Listen to Inertia navigation events
+    useEffect(() => {
+        const startLoading = router.on('start',  () => setLoading(true))
+        const stopLoading  = router.on('finish', () => setLoading(false))
+
+        return () => {
+            startLoading()
+            stopLoading()
+        }
+    }, [])
  
     const status = statusMap[broadcast.status]
     const isDarurat = broadcast.category === 'darurat'
@@ -173,6 +186,61 @@ export default function BroadcastShowPage({ broadcast }: Props) {
                 </div>
  
                 {/* ── Main card ── */}
+                {loading ? (
+                // ── Skeleton while loading ──
+                <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 overflow-hidden">
+                    {/* Header skeleton */}
+                    <div className="px-6 py-5 border-b border-neutral-100 dark:border-neutral-800">
+                        <div className="flex items-start gap-4">
+                            <Skeleton className="h-10 w-10 rounded-xl shrink-0" />
+                            <div className="flex-1 space-y-2">
+                                <Skeleton className="h-6 w-48 rounded" />
+                                <div className="flex gap-2">
+                                    <Skeleton className="h-5 w-20 rounded-full" />
+                                    <Skeleton className="h-4 w-32 rounded" />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Message skeleton */}
+                    <div className="px-6 py-5 space-y-2">
+                        <Skeleton className="h-3 w-20 rounded" />
+                        <Skeleton className="h-4 w-full rounded" />
+                        <Skeleton className="h-4 w-3/4 rounded" />
+                        <Skeleton className="h-4 w-5/6 rounded" />
+                    </div>
+
+                    <Separator className="dark:bg-neutral-800" />
+
+                    {/* Meta grid skeleton */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-0 divide-y sm:divide-y-0 sm:divide-x divide-neutral-100 dark:divide-neutral-800">
+                        {Array.from({ length: 4 }).map((_, i) => (
+                            <div key={i} className="px-6 py-4 space-y-2">
+                                <Skeleton className="h-3 w-16 rounded" />
+                                <Skeleton className="h-4 w-28 rounded" />
+                            </div>
+                        ))}
+                    </div>
+
+                    <Separator className="dark:bg-neutral-800" />
+
+                    {/* Stats skeleton */}
+                    <div className="px-6 py-5 space-y-4">
+                        <Skeleton className="h-3 w-32 rounded" />
+                        <div className="grid grid-cols-3 gap-4">
+                            {Array.from({ length: 3 }).map((_, i) => (
+                                <div key={i} className="rounded-lg border border-neutral-100 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800/40 p-4 flex flex-col items-center gap-2">
+                                    <Skeleton className="h-5 w-5 rounded" />
+                                    <Skeleton className="h-8 w-12 rounded" />
+                                    <Skeleton className="h-3 w-20 rounded" />
+                                </div>
+                            ))}
+                        </div>
+                        <Skeleton className="h-2 w-full rounded-full" />
+                    </div>
+                </div>
+                ) : (
                 <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 overflow-hidden">
  
                     {/* Header band */}
@@ -319,7 +387,7 @@ export default function BroadcastShowPage({ broadcast }: Props) {
                                 <p className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">
                                     {broadcast.stats.read_rate}%
                                 </p>
-                                <p className="text-xs text-neutral-400 mt-0.5">Kadar Baca</p>
+                                <p className="text-xs text-neutral-400 mt-0.5">Rate Diakses</p>
                             </div>
                         </div>
  
@@ -328,7 +396,7 @@ export default function BroadcastShowPage({ broadcast }: Props) {
                             <div className="mt-4">
                                 <div className="flex items-center justify-between text-xs text-neutral-400 mb-1.5">
                                     <span className="flex items-center gap-1">
-                                        <CheckCheck className="h-3 w-3" /> Kadar baca keseluruhan
+                                        <CheckCheck className="h-3 w-3" /> Rate diakses keseluruhan
                                     </span>
                                     <span>{broadcast.stats.read_rate}%</span>
                                 </div>
@@ -341,7 +409,7 @@ export default function BroadcastShowPage({ broadcast }: Props) {
                             </div>
                         )}
                     </div>
-                </div>
+                </div>)}
             </div>
         </>
     )

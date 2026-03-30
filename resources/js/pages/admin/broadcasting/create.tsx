@@ -12,7 +12,7 @@ const breadcrumbs: BreadcrumbItem[] = [
 export default function BroadcastCreatePage() {
     return (
         <>
-            <Head title="Siaran Baru" />
+            <Head title="Pesan Baru" />
             <div className="flex flex-1 flex-col gap-4 p-4 min-w-0">
                 <BroadcastComposeForm />
             </div>
