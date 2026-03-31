@@ -41,7 +41,7 @@ const mainNavItems: NavItem[] = [
                 href: adminRoutes.broadcasting.index(),
             },
             {
-                title: 'Arkib',
+                title: 'Arsip',
                 icon: Archive,
                 href: adminRoutes.broadcasting.archived(),  // ← use route helper
             },
@@ -58,7 +58,7 @@ const mainNavItems: NavItem[] = [
 const footerNavItems: NavItem[] = [
 
     {
-        title: 'Notifications',
+        title: 'Notifikasi',
         href: notifications.index(),
         icon: Bell,
     },

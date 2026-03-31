@@ -40,13 +40,13 @@ export default function Profile({
     return (
         <SettingsWrapper title="Tetapan Profil" breadcrumbs={breadcrumbs}>
             <Head title="Tetapan Profil" />
-            <h1 className="sr-only">Tetapan Profil</h1>
+            <h1 className="sr-only">Informasi Profil</h1>
  
             <div className="space-y-6">
                 <Heading
                     variant="small"
-                    title="Maklumat Profil"
-                    description="Kemaskini nama dan alamat e-mel anda"
+                    title="Informasi Profil"
+                    description="Input nama dan alamat e-mail anda"
                 />
  
                 <Form
@@ -71,7 +71,7 @@ export default function Profile({
                             </div>
  
                             <div className="grid gap-2">
-                                <Label htmlFor="email">Alamat e-mel</Label>
+                                <Label htmlFor="email">Alamat e-mail</Label>
                                 <Input
                                     id="email"
                                     type="email"
@@ -80,7 +80,7 @@ export default function Profile({
                                     name="email"
                                     required
                                     autoComplete="username"
-                                    placeholder="Alamat e-mel"
+                                    placeholder="Alamat e-mail"
                                 />
                                 <InputError className="mt-2" message={errors.email} />
                             </div>
@@ -88,18 +88,18 @@ export default function Profile({
                             {mustVerifyEmail && auth.user.email_verified_at === null && (
                                 <div>
                                     <p className="-mt-4 text-sm text-muted-foreground">
-                                        Alamat e-mel anda belum disahkan.{' '}
+                                        Alamat e-mail anda belum diaktifkan.{' '}
                                         <Link
                                             href={send()}
                                             as="button"
                                             className="text-foreground underline decoration-neutral-300 underline-offset-4 transition-colors duration-300 ease-out hover:decoration-current! dark:decoration-neutral-500"
                                         >
-                                            Klik di sini untuk menghantar semula e-mel pengesahan.
+                                            Klik di sini untuk mengirim ulang email konfirmasi.
                                         </Link>
                                     </p>
                                     {status === 'verification-link-sent' && (
                                         <div className="mt-2 text-sm font-medium text-green-600">
-                                            Pautan pengesahan baharu telah dihantar ke alamat e-mel anda.
+                                            Tautan konfirmasi baru telah dikirim ke alamat email anda.
                                         </div>
                                     )}
                                 </div>
@@ -130,8 +130,8 @@ export default function Profile({
             <div className="space-y-4">
                 <Heading
                     variant="small"
-                    title="Nombor Telefon"
-                    description="Tambah nombor telefon untuk menerima notifikasi SMS"
+                    title="Nomor Telepon"
+                    description="Tambah nomor telefon untuk menerima notifikasi SMS"
                 />
                 <PhoneVerification
                     phone={phone}

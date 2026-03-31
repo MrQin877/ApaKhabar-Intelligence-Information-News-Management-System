@@ -7,20 +7,20 @@ import type { BreadcrumbItem } from '@/types';
  
 const breadcrumbs: BreadcrumbItem[] = [
     {
-        title: 'Tetapan Penampilan',
+        title: 'Ketentuan Penampilan',
         href: editAppearance(),
     },
 ];
  
 export default function Appearance() {
     return (
-        <SettingsWrapper title="Tetapan Penampilan" breadcrumbs={breadcrumbs}>
-            <Head title="Tetapan Penampilan" />
+        <SettingsWrapper title="Ketentuan Penampilan" breadcrumbs={breadcrumbs}>
+            <Head title="Ketentuan Penampilan" />
             <div className="space-y-6">
                 <Heading
                     variant="small"
-                    title="Tetapan Penampilan"
-                    description="Kemaskini tetapan penampilan akaun anda"
+                    title="Ketentuan Penampilan"
+                    description="Atur ketentuan tampilan akun anda"
                 />
                 <AppearanceTabs />
             </div>

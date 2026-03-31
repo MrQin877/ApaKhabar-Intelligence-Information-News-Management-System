@@ -13,8 +13,8 @@ import { store } from '@/routes/register';
 export default function Register() {
     return (
         <AuthLayout
-            title="Cipta akaun baharu"
-            description="Masukkan maklumat anda di bawah untuk mendaftar"
+            title="Buat akun baharu"
+            description="Masukkan data anda di bawah untuk mendaftar"
         >
             <Head title="Daftar" />
             <Form
@@ -36,13 +36,13 @@ export default function Register() {
                                     tabIndex={1}
                                     autoComplete="name"
                                     name="name"
-                                    placeholder="Nama penuh"
+                                    placeholder="Nama lengkap"
                                 />
                                 <InputError message={errors.name} className="mt-2" />
                             </div>
  
                             <div className="grid gap-2">
-                                <Label htmlFor="email">Alamat e-mel</Label>
+                                <Label htmlFor="email">Alamat e-mail</Label>
                                 <Input
                                     id="email"
                                     type="email"
@@ -56,27 +56,27 @@ export default function Register() {
                             </div>
  
                             <div className="grid gap-2">
-                                <Label htmlFor="password">Kata laluan</Label>
+                                <Label htmlFor="password">Kata sandi</Label>
                                 <PasswordInput
                                     id="password"
                                     required
                                     tabIndex={3}
                                     autoComplete="new-password"
                                     name="password"
-                                    placeholder="Kata laluan"
+                                    placeholder="Kata sandi"
                                 />
                                 <InputError message={errors.password} />
                             </div>
  
                             <div className="grid gap-2">
-                                <Label htmlFor="password_confirmation">Sahkan kata laluan</Label>
+                                <Label htmlFor="password_confirmation">Ulangi kata sandi</Label>
                                 <PasswordInput
                                     id="password_confirmation"
                                     required
                                     tabIndex={4}
                                     autoComplete="new-password"
                                     name="password_confirmation"
-                                    placeholder="Sahkan kata laluan"
+                                    placeholder="Ulangi kata sandi"
                                 />
                                 <InputError message={errors.password_confirmation} />
                             </div>
@@ -88,12 +88,12 @@ export default function Register() {
                                 data-test="register-user-button"
                             >
                                 {processing && <Spinner />}
-                                Cipta akaun
+                                Buat akaun
                             </Button>
                         </div>
  
                         <div className="text-center text-sm text-muted-foreground">
-                            Sudah ada akaun?{' '}
+                            Sudah ada akun?{' '}
                             <TextLink href={login()} tabIndex={6}>
                                 Log masuk
                             </TextLink>

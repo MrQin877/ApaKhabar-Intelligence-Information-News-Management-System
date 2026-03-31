@@ -200,7 +200,7 @@ return
             Judul
           </Label>
           <Input
-            placeholder="Masukkan judul siaran..."
+            placeholder="Masukkan judul pesan..."
             value={title}
             onChange={e => setTitle(e.target.value)}
             className="h-9 text-sm bg-neutral-50 dark:bg-neutral-800/50 border-neutral-200 dark:border-neutral-700 focus-visible:ring-green-500/40"
@@ -341,8 +341,8 @@ return
                   )}
               >
                   {sendMode === "scheduled"
-                      ? <><Clock className="h-4 w-4" /> Jadwalkan Siaran</>
-                      : <><Send  className="h-4 w-4" /> Kirim Siaran Sekarang</>
+                      ? <><Clock className="h-4 w-4" /> Jadwalkan Pesan</>
+                      : <><Send  className="h-4 w-4" /> Kirim Pesan Sekarang</>
                   }
               </Button>
           </div>

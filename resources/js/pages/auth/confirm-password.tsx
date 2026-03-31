@@ -10,8 +10,8 @@ import { store } from '@/routes/password/confirm';
 export default function ConfirmPassword() {
     return (
         <AuthLayout
-            title="Sahkan kata laluan anda"
-            description="Ini adalah kawasan selamat aplikasi. Sila sahkan kata laluan anda sebelum meneruskan."
+            title="Aktifkan kata sandi anda"
+            description="Ini adalah kawasan keamanan apliksi. Silahkan aktifkan kata sandi anda sebelum meneruskan"
         >
             <Head title="Sahkan kata laluan" />
  
@@ -19,11 +19,11 @@ export default function ConfirmPassword() {
                 {({ processing, errors }) => (
                     <div className="space-y-6">
                         <div className="grid gap-2">
-                            <Label htmlFor="password">Kata laluan</Label>
+                            <Label htmlFor="password">Kata sandi</Label>
                             <PasswordInput
                                 id="password"
                                 name="password"
-                                placeholder="Kata laluan"
+                                placeholder="Kata sandi"
                                 autoComplete="current-password"
                                 autoFocus
                             />
@@ -37,7 +37,7 @@ export default function ConfirmPassword() {
                                 data-test="confirm-password-button"
                             >
                                 {processing && <Spinner />}
-                                Sahkan kata laluan
+                                Aktifkan kata sandi
                             </Button>
                         </div>
                     </div>

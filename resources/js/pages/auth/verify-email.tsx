@@ -9,14 +9,14 @@ import { send } from '@/routes/verification';
 export default function VerifyEmail({ status }: { status?: string }) {
     return (
         <AuthLayout
-            title="Sahkan e-mel"
-            description="Sila sahkan alamat e-mel anda dengan mengklik pautan yang telah kami hantar kepada anda."
+            title="Aktivasi e-mail"
+            description="Silahkan aktivsi e-mail anda dengan mengklik tautan yang sudah kirimkan kepada anda"
         >
             <Head title="Pengesahan e-mel" />
  
             {status === 'verification-link-sent' && (
                 <div className="mb-4 text-center text-sm font-medium text-green-600">
-                    Pautan pengesahan baharu telah dihantar ke alamat e-mel yang anda daftarkan.
+                    Tautan konfirmasi baru telah dikirim ke alamat email yang anda daftarkan.
                 </div>
             )}
  
@@ -25,7 +25,7 @@ export default function VerifyEmail({ status }: { status?: string }) {
                     <>
                         <Button disabled={processing} variant="secondary">
                             {processing && <Spinner />}
-                            Hantar semula e-mel pengesahan
+                            Kirim ulang email konfirmasi
                         </Button>
                         <TextLink href={logout()} className="mx-auto block text-sm">
                             Log keluar

@@ -185,7 +185,7 @@ export function DataTable<TData, TValue>({
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-neutral-400" />
           <Input
-            placeholder="Cari judul siaran..."
+            placeholder="Cari judul pesan..."
             value={(table.getColumn("title")?.getFilterValue() as string) ?? ""}
             onChange={(e) => table.getColumn("title")?.setFilterValue(e.target.value)}
             className="pl-8 h-9 text-sm bg-white dark:bg-neutral-900"
