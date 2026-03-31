@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Broadcast;
 use App\Models\News;
 use Inertia\Inertia;
 use Laravel\Fortify\Features;
@@ -24,14 +25,21 @@ class WelcomeController extends Controller
         $featuredNews = $news->first();
         $newsList     = $news->skip(1)->values();
 
-        // ↓ Breaking news = latest news title, no special field needed
-        $breakingNews = $featuredNews ? $featuredNews['title'] : null;
+        // ── Darurat broadcast — only show if sent within last 24 hours ──
+        $daruratBroadcast = Broadcast::where('category', 'darurat')
+            ->where('status', 'dikirim')
+            ->where('sent_at', '>=', now()->subHours(24))
+            ->whereNull('archived_at')
+            ->latest('sent_at')
+            ->first();
 
         return Inertia::render('welcome', [
-            'featuredNews' => $featuredNews,
-            'newsList'     => $newsList,
-            'breakingNews' => $breakingNews,
-            'canRegister'  => Features::enabled(Features::registration()),
+            'featuredNews'     => $featuredNews,
+            'newsList'         => $newsList,
+            'breakingNews'     => $daruratBroadcast?->title,
+            'breakingMessage'  => $daruratBroadcast?->message,
+            'breakingSentAt'   => $daruratBroadcast?->sent_at?->toISOString(),
+            'canRegister'      => Features::enabled(Features::registration()),
         ]);
     }
 }

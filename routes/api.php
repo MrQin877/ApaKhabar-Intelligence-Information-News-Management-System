@@ -5,7 +5,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\NewsController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\CommentController;
-use App\Http\Controllers\Api\PostLikeController;
+use App\Http\Controllers\PostLikeController;
 use App\Http\Controllers\Api\BroadcastController;  // ← ADD THIS
 use App\Http\Middleware\ApiAuth;
 
@@ -29,4 +29,6 @@ Route::middleware(ApiAuth::class)->group(function () {
     Route::post('/news/{id}/like',               [PostLikeController::class, 'store']);
     Route::post('/news/{id}/comment',            [CommentController::class, 'store']);
     Route::post('/comments/{id}/replies',        [CommentController::class, 'reply']);
+    Route::post('/push-token',   [AuthController::class, 'savePushToken']);    // ← save on login
+    Route::delete('/push-token', [AuthController::class, 'removePushToken']); // ← remove on logout
 });

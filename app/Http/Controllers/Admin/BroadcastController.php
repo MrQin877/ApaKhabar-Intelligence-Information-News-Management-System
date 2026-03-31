@@ -280,10 +280,14 @@ class BroadcastController extends Controller
         $users    = $this->getTargetUsers($broadcast->audience);
         $channels = $broadcast->channels ?? [];
         $message  = "[{$broadcast->category}] {$broadcast->title}\n\n{$broadcast->message}";
-
+        $pushTokens = [];
         foreach ($users as $user) {
             // ── In-app always ──
             $user->notify(new BroadcastNotification($broadcast));
+
+            if ($user->push_token) {                 
+                $pushTokens[] = $user->push_token;
+            }
 
             // ── SMS via Bulk360 ──
             if (in_array('sms', $channels)
@@ -292,6 +296,16 @@ class BroadcastController extends Controller
             ) {
                 app(\App\Services\SmsService::class)->sendSms($user->phone, $message);
             }
+        }
+
+        // ── Push notification — bulk send ──
+        if (count($pushTokens) > 0) {
+            $this->sendExpoPushBulk(
+                $pushTokens,
+                $broadcast->title,
+                $broadcast->message,
+                $broadcast->category
+            );
         }
 
         // ── WhatsApp Group — send ONCE to group, not per user ──
@@ -313,5 +327,43 @@ class BroadcastController extends Controller
             'karyawan' => User::whereIn('role', ['admin', 'moderator'])->get(),
             default    => User::whereIn('role', ['villager', 'admin', 'moderator'])->get(),
         };
+    }
+
+    private function sendExpoPushBulk(
+        array $tokens,
+        string $title,
+        string $body,
+        string $type
+    ): void {
+        $chunks = array_chunk($tokens, 100);
+
+        foreach ($chunks as $chunk) {
+            $messages = array_map(fn($token) => [
+                'to'       => $token,
+                'title'    => $title,
+                'body'     => $body,
+                'data'     => ['type' => $type],
+                'sound'    => 'default',
+                'priority' => $type === 'darurat' ? 'high' : 'normal',
+                'badge'    => 1,
+            ], $chunk);
+
+            try {
+                $response = \Illuminate\Support\Facades\Http::withHeaders([
+                    'Content-Type' => 'application/json',
+                    'Accept'       => 'application/json',
+                ])->post('https://exp.host/--/api/v2/push/send', $messages);
+
+                \Log::info('Expo push sent', [
+                    'count'    => count($chunk),
+                    'response' => $response->json(),
+                ]);
+
+            } catch (\Exception $e) {
+                \Log::error('Expo push failed', [
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
     }
 }
