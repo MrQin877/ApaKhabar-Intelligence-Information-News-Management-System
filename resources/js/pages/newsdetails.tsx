@@ -6,8 +6,6 @@ import { Badge } from '@/components/ui/badge';
 import { login, register } from '@/routes';
 import type { SharedData } from '@/types';
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-
 interface Reply {
     id: number;
     author: string;
@@ -50,8 +48,16 @@ interface Props {
 
 function AuthPrompt({ action, onClose }: { action: string; onClose: () => void }) {
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-            <div className="bg-white dark:bg-neutral-900 rounded-xl shadow-xl p-8 max-w-sm w-full mx-4 text-center">
+        // 1️⃣ Modal backdrop fade-in
+        <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+            style={{ animation: 'fadeIn 0.2s ease both' }}
+        >
+            {/* 2️⃣ Modal card slide-up */}
+            <div
+                className="bg-white dark:bg-neutral-900 rounded-xl shadow-xl p-8 max-w-sm w-full mx-4 text-center"
+                style={{ animation: 'fadeSlideUp 0.25s ease both' }}
+            >
                 <div className="flex justify-center mb-4">
                     <div className="h-14 w-14 rounded-full bg-red-50 dark:bg-red-900/30 flex items-center justify-center">
                         <Lock className="h-6 w-6 text-red-500" />
@@ -77,7 +83,7 @@ function AuthPrompt({ action, onClose }: { action: string; onClose: () => void }
                 </div>
                 <button
                     onClick={onClose}
-                    className="mt-4 text-xs text-gray-400 hover:text-gray-600"
+                    className="mt-4 text-xs text-gray-400 hover:text-gray-600 transition-colors duration-200"
                 >
                     Nanti saja
                 </button>
@@ -104,25 +110,21 @@ function CommentItem({
     const handleReplyClick = () => {
         if (!isAuthenticated) {
             onAuthRequired('membalas komentar');
-
             return;
         }
-
         setShowReplyBox(!showReplyBox);
     };
 
     const handleSubmitReply = () => {
-        if (!replyText.trim()) {
-return;
-}
-
+        if (!replyText.trim()) return;
         router.post(`/comments/${comment.id}/replies`, { content: replyText });
         setReplyText('');
         setShowReplyBox(false);
     };
 
     return (
-        <div className="flex gap-3">
+        // 3️⃣ Each comment fades in on mount
+        <div className="flex gap-3 animate-fade-slide-up">
             <img
                 src={comment.avatar || `https://ui-avatars.com/api/?name=${comment.author}&background=dcfce7&color=16a34a`}
                 alt={comment.author}
@@ -138,47 +140,54 @@ return;
                 </div>
                 <div className="flex items-center gap-4 mt-1.5 pl-1">
                     <button
-                        className="flex items-center gap-1 text-xs text-gray-500 hover:text-green-600 font-medium transition"
+                        className="flex items-center gap-1 text-xs text-gray-500 hover:text-green-600 font-medium transition-colors duration-200"
                         onClick={() => !isAuthenticated && onAuthRequired('menyukai komentar')}
                     >
                         <ThumbsUp className="h-3 w-3" />
                         {comment.likes}
                     </button>
                     <button
-                        className="text-xs text-gray-500 hover:text-green-600 font-medium transition"
+                        className="text-xs text-gray-500 hover:text-green-600 font-medium transition-colors duration-200"
                         onClick={handleReplyClick}
                     >
                         Balas
                     </button>
                     {comment.replies.length > 0 && (
                         <button
-                            className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition"
+                            className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors duration-200"
                             onClick={() => setShowReplies(!showReplies)}
                         >
-                            {showReplies ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                            {/* 4️⃣ Chevron rotates smoothly */}
+                            <span className={`transition-transform duration-200 ${showReplies ? 'rotate-0' : 'rotate-180'}`}>
+                                <ChevronUp className="h-3 w-3" />
+                            </span>
                             {comment.replies.length} balasan
                         </button>
                     )}
                 </div>
-                {showReplyBox && (
-                    <div className="mt-3 flex gap-2">
+
+                {/* 5️⃣ Reply box slides down */}
+                <div className={`overflow-hidden transition-all duration-300 ease-in-out ${showReplyBox ? 'max-h-40 opacity-100 mt-3' : 'max-h-0 opacity-0'}`}>
+                    <div className="flex gap-2">
                         <textarea
                             value={replyText}
                             onChange={(e) => setReplyText(e.target.value)}
                             placeholder="Tulis balasan..."
                             rows={2}
-                            className="flex-1 text-sm border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white rounded-xl px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-green-300"
+                            className="flex-1 text-sm border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white rounded-xl px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-green-300 transition-shadow duration-200"
                         />
                         <button
                             onClick={handleSubmitReply}
-                            className="self-end px-4 py-2 bg-green-600 text-white text-sm rounded-xl hover:bg-green-700 transition"
+                            className="self-end px-4 py-2 bg-green-600 text-white text-sm rounded-xl hover:bg-green-700 active:scale-95 transition-all duration-150"
                         >
                             Kirim
                         </button>
                     </div>
-                )}
-                {showReplies && comment.replies.length > 0 && (
-                    <div className="mt-3 space-y-3 border-l-2 border-green-100 dark:border-green-900 pl-4">
+                </div>
+
+                {/* 6️⃣ Replies section collapses smoothly */}
+                <div className={`overflow-hidden transition-all duration-300 ease-in-out ${showReplies && comment.replies.length > 0 ? 'max-h-[1000px] opacity-100 mt-3' : 'max-h-0 opacity-0'}`}>
+                    <div className="space-y-3 border-l-2 border-green-100 dark:border-green-900 pl-4">
                         {comment.replies.map((reply) => (
                             <div key={reply.id} className="flex gap-3">
                                 <img
@@ -195,7 +204,7 @@ return;
                                         <p className="text-xs text-gray-700 dark:text-gray-300 leading-relaxed">{reply.content}</p>
                                     </div>
                                     <button
-                                        className="flex items-center gap-1 text-xs text-gray-500 hover:text-green-600 font-medium mt-1 pl-1 transition"
+                                        className="flex items-center gap-1 text-xs text-gray-500 hover:text-green-600 font-medium mt-1 pl-1 transition-colors duration-200"
                                         onClick={() => !isAuthenticated && onAuthRequired('menyukai balasan')}
                                     >
                                         <ThumbsUp className="h-3 w-3" />
@@ -205,7 +214,7 @@ return;
                             </div>
                         ))}
                     </div>
-                )}
+                </div>
             </div>
         </div>
     );
@@ -213,7 +222,7 @@ return;
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-export default function NewsDetails({ news, comments = [], /*canRegister = true*/ }: Props) {
+export default function NewsDetails({ news, comments = [] }: Props) {
     const { auth } = usePage<SharedData>().props;
     const isAuthenticated = !!auth.user;
 
@@ -225,10 +234,8 @@ export default function NewsDetails({ news, comments = [], /*canRegister = true*
     const handleLike = () => {
         if (!isAuthenticated) {
             setAuthPrompt('menyukai berita ini');
-
             return;
         }
-
         router.post(`/news/${news.id}/like`, {}, {
             preserveScroll: true,
             onSuccess: () => {
@@ -241,14 +248,9 @@ export default function NewsDetails({ news, comments = [], /*canRegister = true*
     const handleComment = () => {
         if (!isAuthenticated) {
             setAuthPrompt('menulis komentar');
-
             return;
         }
-
-        if (!commentText.trim()) {
-return;
-}
-
+        if (!commentText.trim()) return;
         router.post(`/news/${news.id}/comments`, { content: commentText }, {
             preserveScroll: true,
             onSuccess: () => setCommentText(''),
@@ -267,25 +269,32 @@ return;
 
                 <HeaderBar />
 
-                {/* Article */}
                 <main className="mx-auto max-w-3xl px-4 py-10">
 
-                    {/* Page Header */}
-                    <div className="mb-6">
+                    {/* 7️⃣ Page header fades in */}
+                    <div className="animate-fade-slide-up mb-6">
                         <h1 className="text-3xl font-bold text-gray-900 dark:text-white leading-tight">
                             {news.title}
                         </h1>
                     </div>
 
-                    {/* Breadcrumb */}
-                    <div className="flex items-center gap-2 text-xs text-gray-400 mb-6">
-                        <Link href="/" className="hover:text-green-600 dark:hover:text-green-400">Beranda</Link>
+                    {/* Breadcrumb — slight delay */}
+                    <div
+                        className="animate-fade-slide-up flex items-center gap-2 text-xs text-gray-400 mb-6"
+                        style={{ animationDelay: '80ms' }}
+                    >
+                        <Link href="/" className="hover:text-green-600 dark:hover:text-green-400 transition-colors duration-200">
+                            Beranda
+                        </Link>
                         <span>/</span>
                         <span className="text-gray-600 dark:text-gray-400">{news.category}</span>
                     </div>
 
-                    {/* Category & Meta */}
-                    <div className="flex items-center gap-3 mb-4">
+                    {/* Category & Meta — slight delay */}
+                    <div
+                        className="animate-fade-slide-up flex items-center gap-3 mb-4"
+                        style={{ animationDelay: '120ms' }}
+                    >
                         <Badge className="bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 hover:bg-green-100">
                             {news.category}
                         </Badge>
@@ -296,30 +305,42 @@ return;
                         </span>
                     </div>
 
-                    {/* Hero Image */}
-                    <img
-                        src={news.image}
-                        alt={news.title}
-                        className="w-full rounded-xl object-cover max-h-96 mb-8"
-                    />
-
-                    {/* Article Body */}
+                    {/* 8️⃣ Hero image fades in with zoom — longer delay so title loads first */}
                     <div
-                        className="prose prose-gray dark:prose-invert prose-sm max-w-none leading-relaxed text-gray-700 dark:text-gray-300 mb-8"
+                        className="animate-fade-slide-up overflow-hidden rounded-xl mb-8"
+                        style={{ animationDelay: '160ms' }}
+                    >
+                        <img
+                            src={news.image}
+                            alt={news.title}
+                            className="w-full object-cover max-h-96
+                                       transition-transform duration-700 hover:scale-[1.02]"
+                        />
+                    </div>
+
+                    {/* Article body */}
+                    <div
+                        className="animate-fade-slide-up prose prose-gray dark:prose-invert prose-sm max-w-none leading-relaxed text-gray-700 dark:text-gray-300 mb-8"
+                        style={{ animationDelay: '200ms' }}
                         dangerouslySetInnerHTML={{ __html: news.content || `<p>${news.excerpt}</p>` }}
                     />
 
-                    {/* Like & Stats Bar */}
-                    <div className="flex items-center justify-between border-t border-b border-gray-100 dark:border-neutral-800 py-4 mb-10">
+                    {/* 9️⃣ Like button — scale + color transition */}
+                    <div
+                        className="animate-fade-slide-up flex items-center justify-between border-t border-b border-gray-100 dark:border-neutral-800 py-4 mb-10"
+                        style={{ animationDelay: '240ms' }}
+                    >
                         <button
                             onClick={handleLike}
-                            className={`flex items-center gap-2 px-5 py-2 rounded-full border text-sm font-medium transition ${
+                            className={`flex items-center gap-2 px-5 py-2 rounded-full border text-sm font-medium
+                                        transition-all duration-200 active:scale-95 ${
                                 liked
                                     ? 'bg-green-600 text-white border-green-600 hover:bg-green-700'
                                     : 'bg-white dark:bg-neutral-900 text-gray-600 dark:text-gray-400 border-gray-300 dark:border-neutral-700 hover:border-green-400 hover:text-green-600'
                             }`}
                         >
-                            <Heart className={`h-4 w-4 ${liked ? 'fill-white' : ''}`} />
+                            {/* 🔟 Heart icon fills smoothly */}
+                            <Heart className={`h-4 w-4 transition-all duration-200 ${liked ? 'fill-white scale-110' : 'scale-100'}`} />
                             {liked ? 'Disukai' : 'Suka'} · {likesCount}
                         </button>
                         <div className="flex items-center gap-4 text-sm text-gray-400">
@@ -335,12 +356,12 @@ return;
                     </div>
 
                     {/* Comments Section */}
-                    <section>
+                    <section className="animate-fade-slide-up" style={{ animationDelay: '280ms' }}>
                         <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-6">
                             Komentar ({comments.length})
                         </h2>
 
-                        {/* Comment Input */}
+                        {/* Comment input */}
                         <div className="flex gap-3 mb-8">
                             <img
                                 src={
@@ -359,12 +380,13 @@ return;
                                     placeholder={isAuthenticated ? 'Tulis komentar...' : 'Login untuk berkomentar...'}
                                     readOnly={!isAuthenticated}
                                     rows={3}
-                                    className="w-full text-sm border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white rounded-2xl px-4 py-3 resize-none focus:outline-none focus:ring-2 focus:ring-green-300 cursor-text"
+                                    className="w-full text-sm border border-gray-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-gray-900 dark:text-white rounded-2xl px-4 py-3 resize-none focus:outline-none focus:ring-2 focus:ring-green-300 transition-shadow duration-200 cursor-text"
                                 />
                                 <div className="flex justify-end mt-2">
+                                    {/* 1️⃣1️⃣ Submit button press feedback */}
                                     <button
                                         onClick={handleComment}
-                                        className="px-5 py-2 bg-green-600 text-white text-sm rounded-xl hover:bg-green-700 transition font-medium"
+                                        className="px-5 py-2 bg-green-600 text-white text-sm rounded-xl hover:bg-green-700 active:scale-95 transition-all duration-150 font-medium"
                                     >
                                         Kirim Komentar
                                     </button>
@@ -372,9 +394,9 @@ return;
                             </div>
                         </div>
 
-                        {/* Comment List */}
+                        {/* Comment list */}
                         {comments.length === 0 ? (
-                            <div className="text-center py-12 text-gray-400">
+                            <div className="text-center py-12 text-gray-400 animate-fade-slide-up">
                                 <div className="flex justify-center mb-3">
                                     <MessageCircle className="h-10 w-10 text-gray-300 dark:text-neutral-700" />
                                 </div>
@@ -382,13 +404,18 @@ return;
                             </div>
                         ) : (
                             <div className="space-y-6">
-                                {comments.map((comment) => (
-                                    <CommentItem
+                                {comments.map((comment, index) => (
+                                    // 1️⃣2️⃣ Staggered comment entries
+                                    <div
                                         key={comment.id}
-                                        comment={comment}
-                                        isAuthenticated={isAuthenticated}
-                                        onAuthRequired={(action) => setAuthPrompt(action)}
-                                    />
+                                        style={{ animationDelay: `${index * 80}ms` }}
+                                    >
+                                        <CommentItem
+                                            comment={comment}
+                                            isAuthenticated={isAuthenticated}
+                                            onAuthRequired={(action) => setAuthPrompt(action)}
+                                        />
+                                    </div>
                                 ))}
                             </div>
                         )}

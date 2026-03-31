@@ -1,13 +1,15 @@
 // broadcasting/index.tsx
-import { Head } from '@inertiajs/react';
-import { router } from '@inertiajs/react'
+import { Head, router } from '@inertiajs/react';
+import { useEffect, useState } from 'react'
 import { Radio} from 'lucide-react'; 
 import { AnalyticsSidebar } from "@/components/broadcast-analytics";
 import { columns } from '@/components/broadcast-column';
 import type { Broadcast } from '@/components/broadcast-column'
 import { DataTable } from '@/components/broadcast-datatable';
+import { BroadcastSkeleton } from '@/components/broadcast-skeleton';
 import AppLayout from '@/layouts/app-layout';
 import type { BreadcrumbItem } from '@/types';
+import { Skeleton } from '@/components/ui/skeleton';
 
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -35,6 +37,20 @@ type Props = {
 }
 
 export default function BroadcastPage({ broadcasts, analytics }: Props) {
+    const [loading, setLoading] = useState(false)
+
+    // ← Listen to Inertia navigation events
+    useEffect(() => {
+        const startLoading  = router.on('start',  () => setLoading(true))
+        const stopLoading   = router.on('finish', () => setLoading(false))
+
+        return () => {
+            startLoading()
+            stopLoading()
+        }
+    }, [])
+
+
     return (
         <>
             <Head title="Manajemen Siaran" />
@@ -67,14 +83,26 @@ export default function BroadcastPage({ broadcasts, analytics }: Props) {
 
                     {/* Table — DataTable now owns filtering, sorting, and pagination */}
                     <div className="overflow-hidden rounded-xl border border-sidebar-border/70 dark:border-sidebar-border bg-white dark:bg-neutral-900 p-4">
-                        <DataTable columns={columns} data={broadcasts} />
+                        {loading ? (
+                            <BroadcastSkeleton /> 
+                        ) : (
+                            <DataTable columns={columns} data={broadcasts} />
+                        )}
                     </div>
                 </div>
 
                 {/* ── Right: Analytics sidebar ── */}
                 <div className="w-full lg:w-64 lg:shrink-0">
+                    {loading ? (
+                        // ← Analytics skeleton
+                        <div className="space-y-4">
+                            <Skeleton className="h-32 w-full rounded-xl" />
+                            <Skeleton className="h-48 w-full rounded-xl" />
+                            <Skeleton className="h-24 w-full rounded-xl" />
+                        </div>
+                    ) : (
                         <AnalyticsSidebar analytics={analytics} />
-                
+                    )}
                 </div>
             </div>
         </>
