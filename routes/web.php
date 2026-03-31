@@ -7,6 +7,15 @@ use App\Http\Controllers\Villager\NotificationController;
 use App\Http\Controllers\PostLikeController;
 use App\Http\Controllers\CommentController;
 
+// This route receives the click, then redirects to the mobile app.
+Route::get('/mobile/reset-password', function (Illuminate\Http\Request $request) {
+    $token = $request->query('token');
+    $email = $request->query('email');
+
+    // For browser/web testing → redirect to Expo web app
+    return redirect("http://localhost:8081/reset-password?token={$token}&email={$email}");
+});
+
 //Public routes — no auth required
 
 Route::get('/', [App\Http\Controllers\WelcomeController::class, 'index'])->name('home');
