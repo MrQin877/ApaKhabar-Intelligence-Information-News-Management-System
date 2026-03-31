@@ -15,7 +15,9 @@ Route::post('/register', [AuthController::class, 'register']);
 Route::get('/news',      [NewsController::class, 'index']);
 Route::get('/news/{id}', [NewsController::class, 'show']);
 Route::get('/news/{id}/related', [NewsController::class, 'related']);
-Route::get('/broadcasts/darurat', [BroadcastController::class, 'darurat']);  // ← ADD THIS
+Route::get('/broadcasts/darurat', [BroadcastController::class, 'darurat']);
+Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
+Route::post('/reset-password',  [AuthController::class, 'resetPassword']);
 
 // Protected routes — use our custom middleware
 Route::middleware(ApiAuth::class)->group(function () {
