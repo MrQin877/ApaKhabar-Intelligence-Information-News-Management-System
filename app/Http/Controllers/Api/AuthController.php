@@ -70,6 +70,9 @@ class AuthController extends Controller
 
     public function logout(Request $request)
     {
+        // ── Clear push token on logout ──
+        $request->user()?->update(['push_token' => null]);
+
         $token = $request->bearerToken();
 
         if ($token && str_contains($token, '|')) {
@@ -91,14 +94,41 @@ class AuthController extends Controller
         ]);
     }
 
-    // ── Forgot Password ──
+    // ── Save push token ────────────────────────────────────
+    public function savePushToken(Request $request)
+    {
+        $request->validate([
+            'token' => 'required|string',
+        ]);
+
+        $request->user()->update([
+            'push_token' => $request->token,
+        ]);
+
+        return response()->json([
+            'message' => 'Push token saved',
+        ]);
+    }
+
+    // ── Remove push token ──────────────────────────────────
+    public function removePushToken(Request $request)
+    {
+        $request->user()->update([
+            'push_token' => null,
+        ]);
+
+        return response()->json([
+            'message' => 'Push token removed',
+        ]);
+    }
+
+    // ── Forgot Password ────────────────────────────────────
     public function forgotPassword(Request $request)
     {
         $request->validate(['email' => 'required|email']);
 
         \Illuminate\Auth\Notifications\ResetPassword::createUrlUsing(function ($user, string $token) {
             $email = urlencode($user->email);
-            // ✅ Use https:// so email clients make it clickable
             return url("/mobile/reset-password?token={$token}&email={$email}");
         });
 
@@ -111,7 +141,7 @@ class AuthController extends Controller
         return response()->json(['message' => 'Email not found.'], 404);
     }
 
-    // ── Reset Password ──
+    // ── Reset Password ─────────────────────────────────────
     public function resetPassword(Request $request)
     {
         $request->validate([

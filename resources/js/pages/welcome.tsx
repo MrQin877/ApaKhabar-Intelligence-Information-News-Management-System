@@ -15,13 +15,20 @@ interface Props {
     featuredNews: NewsItem | null;
     newsList: NewsItem[];
     breakingNews: string | null;
+    breakingMessage: string | null;
+    breakingSentAt: string | null;
 }
 
 export default function Welcome({
     featuredNews,
     newsList = [],
     breakingNews,
+    breakingMessage,
+    breakingSentAt,
 }: Props) {
+    const timeRemaining = breakingSentAt
+    ? Math.max(0, 24 - Math.floor((Date.now() - new Date(breakingSentAt).getTime()) / 3600000))
+    : 0
     return (
         <>
             <Head title="ApaKhabar - Berita Terkini">
@@ -36,9 +43,9 @@ export default function Welcome({
 
                 <HeaderBar />
 
-                {/* ── Breaking News Bar ── */}
-                {breakingNews && (
-                    <div className="border-b border-red-100 dark:border-red-900/40 bg-red-50 dark:bg-red-950/30 py-2 overflow-hidden">
+                {/* ── Darurat Broadcast Bar — shows 24 hours only ── */}
+                {breakingNews && timeRemaining > 0 && (
+                    <div className="border-b border-red-200 dark:border-red-900/40 bg-red-50 dark:bg-red-950/30 py-2 overflow-hidden">
                         <div
                             style={{
                                 display: 'inline-flex',
@@ -47,14 +54,27 @@ export default function Welcome({
                             }}
                         >
                             <span className="inline-flex items-center gap-3 px-8">
-                                {/* Animated pulse dot + badge */}
-                                <span className="bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400 text-sm font-bold px-2 py-1 rounded inline-flex items-center gap-1 border border-red-300 dark:border-red-700">
+                                {/* Darurat badge */}
+                                <span className="bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400 text-sm font-bold px-2 py-1 rounded inline-flex items-center gap-1 border border-red-300 dark:border-red-700 shrink-0">
                                     <span className="h-2 w-2 rounded-full bg-red-500 inline-block animate-pulse" />
-                                    BREAKING
+                                    DARURAT
                                 </span>
-                                <span className="text-base text-red-600 dark:text-red-400">
+
+                                {/* Title */}
+                                <span className="text-base font-semibold text-red-700 dark:text-red-400">
                                     {breakingNews}
                                 </span>
+
+                                {/* Message */}
+                                {breakingMessage && (
+                                    <>
+                                        <span className="text-red-400 dark:text-red-600">—</span>
+                                        <span className="text-sm text-red-600 dark:text-red-400">
+                                            {breakingMessage}
+                                        </span>
+                                    </>
+                                )}
+
                             </span>
                         </div>
                     </div>

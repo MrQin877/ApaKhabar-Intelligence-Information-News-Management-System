@@ -29,4 +29,6 @@ Route::middleware(ApiAuth::class)->group(function () {
     Route::post('/news/{id}/like',               [PostLikeController::class, 'store']);
     Route::post('/news/{id}/comment',            [CommentController::class, 'store']);
     Route::post('/comments/{id}/replies',        [CommentController::class, 'reply']);
+    Route::post('/push-token',   [AuthController::class, 'savePushToken']);    // ← save on login
+    Route::delete('/push-token', [AuthController::class, 'removePushToken']); // ← remove on logout
 });
