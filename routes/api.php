@@ -5,7 +5,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\NewsController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\CommentController;
-use App\Http\Controllers\Api\PostLikeController;
+use App\Http\Controllers\PostLikeController;
 use App\Http\Controllers\Api\BroadcastController;  // ← ADD THIS
 use App\Http\Middleware\ApiAuth;
 
