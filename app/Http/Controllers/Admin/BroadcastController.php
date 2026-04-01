@@ -274,20 +274,36 @@ class BroadcastController extends Controller
         return back()->with('success', 'Siaran berhasil dipulihkan.');
     }
 
-    // ── Private: send to target users ─────────────────────
     private function sendToUsers(Broadcast $broadcast): void
     {
         $users    = $this->getTargetUsers($broadcast->audience);
         $channels = $broadcast->channels ?? [];
         $message  = "[{$broadcast->category}] {$broadcast->title}\n\n{$broadcast->message}";
+
+        // ── Debug ──
+        \Log::info('sendToUsers debug', [
+            'channels'   => $channels,
+            'user_count' => $users->count(),
+            'audience'   => $broadcast->audience,
+        ]);
+
         $pushTokens = [];
+
         foreach ($users as $user) {
             // ── In-app always ──
             $user->notify(new BroadcastNotification($broadcast));
 
-            if ($user->push_token) {                 
+            if ($user->push_token) {
                 $pushTokens[] = $user->push_token;
             }
+
+            // ── Debug per user ──
+            \Log::info('User SMS check', [
+                'name'       => $user->name,
+                'phone'      => $user->phone,
+                'verified'   => $user->hasVerifiedPhone(),
+                'has_sms'    => in_array('sms', $channels),
+            ]);
 
             // ── SMS via Bulk360 ──
             if (in_array('sms', $channels)
