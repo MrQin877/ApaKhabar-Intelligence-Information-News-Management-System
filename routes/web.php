@@ -11,7 +11,7 @@ use App\Http\Controllers\CommentController;
 Route::get('/mobile/reset-password', function (Illuminate\Http\Request $request) {
     $token = $request->query('token');
     $email = $request->query('email');
-    $ip    = '10.150.215.203'; // ← replace with YOUR actual IP from ipconfig
+    $ip    = '192.168.68.56'; // ← replace with YOUR actual IP from ipconfig
 
     return redirect("exp://{$ip}:8081/--/reset-password?token={$token}&email={$email}");
 });
