@@ -7,6 +7,13 @@ use App\Http\Controllers\Villager\NotificationController;
 use App\Http\Controllers\PostLikeController;
 use App\Http\Controllers\CommentController;
 
+//news creator routes
+use App\Http\Controllers\NewsCreatorController;
+
+Route::get('/apakhabar-creator/documents', [NewsCreatorController::class, 'documents'])->name('creator.documents');
+Route::get('/apakhabar-creator/create', [NewsCreatorController::class, 'create'])->name('creator.create');
+
+
 // This route receives the click, then redirects to the mobile app.
 Route::get('/mobile/reset-password', function (Illuminate\Http\Request $request) {
     $token = $request->query('token');
