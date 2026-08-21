@@ -104,7 +104,7 @@ const STYLES = `
   --font-serif:'Source Serif 4',Georgia,serif; --font-mono:'IBM Plex Mono',monospace;
 }
 .ang-app *{box-sizing:border-box;}
-.ang-app{font-family:var(--font-ui);background:var(--bg);color:var(--ink);height:100%;min-height:0;display:flex;flex-direction:column;overflow:hidden;}
+.ang-app{font-family:var(--font-ui);background:var(--bg);color:var(--ink);flex:1 1 auto;min-height:0;display:flex;flex-direction:column;overflow:hidden;}
 .ang-app button{font-family:inherit;cursor:pointer;background:none;border:none;color:inherit;}
 .ang-app input,.ang-app textarea,.ang-app select{font-family:inherit;color:inherit;}
 .ang-header{height:64px;flex:0 0 64px;display:flex;align-items:center;justify-content:space-between;padding:0 20px;background:var(--surface);border-bottom:1px solid var(--border);position:relative;z-index:50;}
