@@ -10,9 +10,6 @@ use App\Http\Controllers\CommentController;
 //news creator routes
 use App\Http\Controllers\NewsCreatorController;
 
-Route::get('/apakhabar-creator/documents', [NewsCreatorController::class, 'documents'])->name('creator.documents');
-Route::get('/apakhabar-creator/create', [NewsCreatorController::class, 'create'])->name('creator.create');
-
 
 // This route receives the click, then redirects to the mobile app.
 Route::get('/mobile/reset-password', function (Illuminate\Http\Request $request) {
@@ -74,6 +71,11 @@ Route::prefix('admin')
         Route::post('/broadcasting/archive',             [BroadcastController::class, 'archive'])->name('broadcasting.archive');
         Route::post('/broadcasting/{broadcast}/archive', [BroadcastController::class, 'archiveSingle'])->name('broadcasting.archive-single');
         Route::post('/broadcasting/{broadcast}/restore', [BroadcastController::class, 'restore'])->name('broadcasting.restore');
+
+        // News creator routes
+        Route::get('/apakhabar-creator/documents', [NewsCreatorController::class, 'documents'])->name('creator.documents');
+        Route::get('/apakhabar-creator/create', [NewsCreatorController::class, 'create'])->name('creator.create');
+        Route::get('/apakhabar-creator/archive', [NewsCreatorController::class, 'archive'])->name('creator.archive');
     });
 
 //Post-login redirect — Fortify lands here, bounce by role

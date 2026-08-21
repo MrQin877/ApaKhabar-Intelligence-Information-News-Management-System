@@ -17,6 +17,7 @@ import { dashboard } from '@/routes';
 import adminRoutes from '@/routes/admin';
 import notifications from '@/routes/notifications';
 import type { NavItem } from '@/types';
+import creatorRoutes from '@/routes/admin/creator';
 
 const mainNavItems: NavItem[] = [
     {
@@ -27,7 +28,7 @@ const mainNavItems: NavItem[] = [
     
     {
         title: 'Pembuat Berita',
-        href: dashboard(),
+        href: creatorRoutes.create(),
         icon: Newspaper,
     },
 

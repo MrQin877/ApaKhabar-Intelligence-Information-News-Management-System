@@ -13,10 +13,15 @@ class NewsCreatorController extends Controller
         return Inertia::render('admin/intelligentnewscreator/docarchive');
     }
 
-    public function create(Request $request): Response
+    public function create()
     {
-        return Inertia::render('admin/intelligentnewscreator/newscreator', [
-            'selectedDocId' => $request->integer('doc') ?: null,
+        return inertia('admin/intelligentnewscreator/newscreator');
+    }
+
+    public function archive()
+    {
+        return inertia('admin/intelligentnewscreator/docarchive', [
+            // 'documents' => Document::latest()->get(), // wire up real data later
         ]);
     }
 }
