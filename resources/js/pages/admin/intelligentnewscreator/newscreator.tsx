@@ -193,6 +193,17 @@ const STYLES = `
 .ang-wbtn.primary:hover{background:var(--accent-hover);}
 .ang-unsaved-flag{display:flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;color:var(--warn);}
 .ang-unsaved-flag::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--warn);}
+.ang-thumb-wrap{position:relative;margin-bottom:18px;border-radius:var(--radius-md);overflow:hidden;}
+.ang-thumb-img{width:100%;max-height:320px;object-fit:cover;display:block;}
+.ang-thumb-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;width:100%;height:160px;border:1.5px dashed var(--border-strong);border-radius:var(--radius-md);color:var(--ink-faint);font-size:12.5px;font-weight:500;background:var(--surface-2);transition:.15s;}
+.ang-thumb-empty:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft);}
+.ang-thumb-actions{position:absolute;top:10px;right:10px;display:flex;gap:6px;}
+.ang-thumb-btn{height:28px;padding:0 10px;border-radius:7px;font-size:11.5px;font-weight:600;background:rgba(26,34,51,.72);color:#fff;backdrop-filter:blur(2px);transition:.15s;}
+.ang-thumb-btn:hover{background:rgba(26,34,51,.88);}
+.ang-thumb-btn.danger:hover{background:#C0392B;}
+@media (max-width:480px){
+  .ang-thumb-empty{height:120px;}
+}
 .ang-toolbar{display:flex;align-items:center;gap:4px;flex-wrap:wrap;padding:9px 28px;background:var(--surface-2);border-bottom:1px solid var(--border);}
 .ang-tb-select{height:30px;padding:0 8px;border:1px solid var(--border);border-radius:7px;background:var(--surface);font-size:12.5px;color:var(--ink);}
 .ang-tb-btn{width:30px;height:30px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:var(--ink-soft);border:1px solid transparent;}
@@ -346,6 +357,11 @@ export default function NewsCreator() {
   const imageInputRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
 
+  //Thumbnail
+  const [thumbnail, setThumbnail] = useState<string | null>(null);
+  const savedThumbnail = useRef<string | null>(null);
+  const thumbnailInputRef = useRef<HTMLInputElement>(null);
+
   // Sources / drawer
   const [sourcesOpen, setSourcesOpen] = useState(true);
   const [drawerSource, setDrawerSource] = useState<Source | null>(null);
@@ -394,6 +410,7 @@ export default function NewsCreator() {
   function runGeneration() {
     setGenerating(true);
     setLoadingStepIndex(0);
+    setThumbnail(null);
     let i = 0;
     const step = () => {
       if (i < LOADING_STEPS.length) {
@@ -439,6 +456,7 @@ export default function NewsCreator() {
     if (isEditing) return;
     savedHeadlineHTML.current = headlineRef.current?.innerHTML ?? '';
     savedBodyHTML.current = bodyRef.current?.innerHTML ?? '';
+    savedThumbnail.current = thumbnail;
     setIsEditing(true);
     setIsDirty(false);
   }
@@ -446,6 +464,7 @@ export default function NewsCreator() {
   function cancelEdit() {
     if (headlineRef.current) headlineRef.current.innerHTML = savedHeadlineHTML.current;
     if (bodyRef.current) bodyRef.current.innerHTML = savedBodyHTML.current;
+    setThumbnail(savedThumbnail.current);
     setIsEditing(false);
   }
 
@@ -478,6 +497,24 @@ export default function NewsCreator() {
     reader.onload = () => {
       if (typeof reader.result === 'string') {
         document.execCommand('insertImage', false, reader.result);
+        markDirty();
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function onThumbnailSelected(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert('Please choose an image file.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setThumbnail(reader.result);
         markDirty();
       }
     };
@@ -905,6 +942,50 @@ export default function NewsCreator() {
 
             <div className="ang-doc-card" style={{ display: generated && !wsBusy ? 'block' : 'none' }}>
               <span className="ang-doc-stamp">AI draft</span>
+              {(thumbnail || isEditing) && (
+                <div className="ang-thumb-wrap">
+                  {thumbnail ? (
+                    <img src={thumbnail} alt="Thumbnail" className="ang-thumb-img" />
+                  ) : (
+                    <button
+                      type="button"
+                      className="ang-thumb-empty"
+                      onClick={() => thumbnailInputRef.current?.click()}
+                    >
+                      <ImagePlus size={20} strokeWidth={1.8} />
+                      <span>Add thumbnail</span>
+                    </button>
+                  )}
+                  {isEditing && thumbnail && (
+                    <div className="ang-thumb-actions">
+                      <button
+                        type="button"
+                        className="ang-thumb-btn"
+                        onClick={() => thumbnailInputRef.current?.click()}
+                      >
+                        Change
+                      </button>
+                      <button
+                        type="button"
+                        className="ang-thumb-btn danger"
+                        onClick={() => {
+                          setThumbnail(null);
+                          markDirty();
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  )}
+                  <input
+                    ref={thumbnailInputRef}
+                    type="file"
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                    onChange={onThumbnailSelected}
+                  />
+                </div>
+              )}
               <div className="ang-doc-category">FLOOD REPORT</div>
               <h2
                 className="ang-doc-headline"
