@@ -2,22 +2,19 @@
 
 namespace App\Models;
 
-use Illuminate\Contracts\Auth\MustVerifyEmail;
-use Database\Factories\UserFactory;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-use MongoDB\Laravel\Auth\User as Authenticatable;
-use Illuminate\Notifications\Notifiable;
-use Illuminate\Auth\Notifications\VerifyEmail;
 use App\Models\Notification as MongoNotification;
+use Illuminate\Auth\Notifications\VerifyEmail;
+use Illuminate\Contracts\Auth\MustVerifyEmail;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
 use Illuminate\Notifications\Notification;
 use Laravel\Fortify\TwoFactorAuthenticatable;
-use Laravel\Sanctum\HasApiTokens;  // ← ADDED BACK
+use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable implements MustVerifyEmail
 {
-    use HasFactory, Notifiable, TwoFactorAuthenticatable, HasApiTokens;  // ← ADDED BACK
-
-    protected $connection = 'mongodb';
+    use HasFactory, Notifiable, TwoFactorAuthenticatable, HasApiTokens;
 
     protected $fillable = [
         'name',
@@ -63,11 +60,6 @@ class User extends Authenticatable implements MustVerifyEmail
             'password'                => 'hashed',
             'two_factor_confirmed_at' => 'datetime',
         ];
-    }
-
-    public function getKey()
-    {
-        return (string) $this->_id;
     }
 
     public function sendEmailVerificationNotification(): void

@@ -12,27 +12,30 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('broadcasts', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('created_by')->constrained('users')->cascadeOnDelete();
+            $table->id('alertID');
             $table->string('title');
             $table->text('message');
-            $table->enum('category', ['pengumuman', 'darurat']);
-            $table->json('channels');           // ["whatsapp", "sms", "aplikasi"]
-            $table->enum('audience', ['semua', 'karyawan']);
-            $table->enum('status', ['dikirim', 'terjadwal', 'tertunda'])->default('tertunda');
-            $table->enum('send_mode', ['now', 'scheduled'])->default('now');
-            $table->timestamp('scheduled_at')->nullable();
+            $table->string('send_mode')->default('now');
+            $table->string('status')->default('tertunda');
             $table->timestamp('sent_at')->nullable();
+            $table->timestamp('scheduled_at')->nullable();
             $table->timestamp('archived_at')->nullable();
             $table->timestamps();
+ 
+            $table->foreignId('created_by')
+                ->constrained('users', 'userID')
+                ->cascadeOnDelete();
+ 
+            $table->foreignId('categoryID')
+                ->nullable()
+                ->constrained('broadcast_categories', 'categoryID')
+                ->nullOnDelete();
         });
     }
-
-    /**
-     * Reverse the migrations.
-     */
+ 
     public function down(): void
     {
         Schema::dropIfExists('broadcasts');
     }
 };
+ 

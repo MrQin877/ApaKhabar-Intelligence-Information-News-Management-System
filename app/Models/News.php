@@ -3,14 +3,11 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use MongoDB\Laravel\Eloquent\Model;
+use Illuminate\Database\Eloquent\Model;
 
 class News extends Model
 {
     use HasFactory;
-
-    protected $connection = 'mongodb';
-    protected $collection = 'news';
 
     protected $fillable = [
         'title',
@@ -26,6 +23,10 @@ class News extends Model
     protected $attributes = [
         'views'       => 0,
         'likes_count' => 0,
+    ];
+
+    protected $casts = [
+        'date' => 'date',
     ];
 
     public function comments()
