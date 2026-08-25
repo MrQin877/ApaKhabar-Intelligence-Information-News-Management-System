@@ -3,38 +3,26 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Str;
 
 class Notification extends Model
 {
-    // The notifications table uses a UUID string as its primary key, not an auto-increment int.
-    public $incrementing = false;
-    protected $keyType = 'string';
+    protected $primaryKey = 'notificationID';
 
     protected $fillable = [
-        'id',
         'type',
         'notifiable_id',
         'notifiable_type',
         'data',
         'read_at',
+        'alertID',
+        'postID',
+        'commentID',
     ];
 
     protected $casts = [
         'data'    => 'array',
         'read_at' => 'datetime',
     ];
-
-    protected static function boot()
-    {
-        parent::boot();
-
-        static::creating(function (Notification $notification) {
-            if (empty($notification->id)) {
-                $notification->id = (string) Str::uuid();
-            }
-        });
-    }
 
     public function notifiable()
     {

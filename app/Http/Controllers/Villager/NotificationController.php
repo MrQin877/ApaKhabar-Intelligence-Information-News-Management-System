@@ -14,7 +14,7 @@ class NotificationController extends Controller
             ->latest()
             ->get()
             ->map(fn ($n) => [
-                'id'           => $n->id,
+                'id'           => $n->getKey(),
                 'type'         => $n->data['type'],        // 'darurat' | 'pengumuman'
                 'title'        => $n->data['title'],
                 'message'      => $n->data['message'],
@@ -36,7 +36,7 @@ class NotificationController extends Controller
             ->notifications()
             ->get()
             ->map(fn ($n) => [
-                'id'           => (string) $n->_id,
+                'id'           => (string) $n->getKey(),
                 'type'         => $n->data['type']    ?? 'pengumuman',
                 'title'        => $n->data['title']   ?? '',
                 'message'      => $n->data['message'] ?? '',
@@ -75,7 +75,7 @@ class NotificationController extends Controller
     {
         $notification = auth()->user()
             ->notifications()
-            ->where('_id', $id)  // ← use _id for MongoDB
+            ->whereKey($id)
             ->first();
 
         if ($notification) {

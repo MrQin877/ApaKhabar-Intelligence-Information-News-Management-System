@@ -6,18 +6,20 @@ use Illuminate\Database\Eloquent\Model;
 
 class Like extends Model
 {
+    protected $primaryKey = 'likeID';
+
     protected $fillable = [
-        'news_id',
-        'user_id',
+        'postID',
+        'userID',
     ];
 
     public function news()
     {
-        return $this->belongsTo(News::class, 'news_id');
+        return $this->belongsTo(News::class, 'postID', 'postID');
     }
 
     public function user()
     {
-        return $this->belongsTo(User::class, 'user_id');
+        return $this->belongsTo(User::class, 'userID', 'userID');
     }
 }

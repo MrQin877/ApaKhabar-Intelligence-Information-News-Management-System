@@ -9,7 +9,7 @@ class BroadcastController extends Controller
 {
     public function darurat()
     {
-        $broadcast = Broadcast::where('category', 'darurat')
+        $broadcast = Broadcast::whereHas('categoryRecord', fn ($query) => $query->where('name', 'darurat'))
             ->where('status', 'dikirim')
             ->whereNull('archived_at')
             ->where('sent_at', '>=', now()->subHours(24))  // ← only within 24 hours

@@ -90,7 +90,7 @@ class FortifyServiceProvider extends ServiceProvider
         });
 
         RateLimiter::for('verification', function (Request $request) {
-            return Limit::perMinute(3)->by($request->user()?->id ?: $request->ip());
+            return Limit::perMinute(3)->by($request->user()?->getKey() ?: $request->ip());
         });
         
     }

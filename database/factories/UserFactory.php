@@ -3,6 +3,8 @@
 namespace Database\Factories;
 
 use App\Models\User;
+use App\Models\Email;
+use App\Models\UserRole;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -26,14 +28,21 @@ class UserFactory extends Factory
     {
         return [
             'name' => fake()->name(),
-            'email' => fake()->unique()->safeEmail(),
-            'email_verified_at' => now(),
             'password' => static::$password ??= Hash::make('password'),
             'remember_token' => Str::random(10),
-            'two_factor_secret' => null,
-            'two_factor_recovery_codes' => null,
-            'two_factor_confirmed_at' => null,
+            'roleID' => UserRole::where('name', 'villager')->value('roleID'),
         ];
+    }
+
+    public function configure(): static
+    {
+        return $this->afterCreating(function (User $user) {
+            Email::create([
+                'email' => fake()->unique()->safeEmail(),
+                'email_verified_at' => now(),
+                'userID' => $user->getKey(),
+            ]);
+        });
     }
 
     /**

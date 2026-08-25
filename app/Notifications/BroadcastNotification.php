@@ -24,9 +24,9 @@ class BroadcastNotification extends Notification
      */
     public function via(object $notifiable): array
     {
-        $channels = ['mongodb'];  // always in-app
+        $channels = ['database'];
 
-        if (in_array('sms', $this->broadcast->channels ?? [])
+        if (in_array('sms', $this->channelNames())
             && $notifiable->phone
             && $notifiable->hasVerifiedPhone()
         ) {
@@ -58,13 +58,18 @@ class BroadcastNotification extends Notification
     public function toArray(object $notifiable): array
     {
         return [
-            'broadcast_id' => (string) $this->broadcast->id,
+            'broadcast_id' => (string) $this->broadcast->getKey(),
             'type'         => $this->broadcast->category,
             'title'        => $this->broadcast->title,
             'message'      => $this->broadcast->message,
-            'channel'      => implode(', ', $this->broadcast->channels ?? []),
-            'audience'     => $this->broadcast->audience,
+            'channel'      => implode(', ', $this->channelNames()),
+            'audience'     => $this->broadcast->audience ?? null,
         ];
+    }
+
+    private function channelNames(): array
+    {
+        return $this->broadcast->channels->pluck('name')->all();
     }
 
     // ── Vonage SMS ─────────────────────────────────────────

@@ -23,7 +23,7 @@ class ApiAuth
 
         [$id, $plainText] = explode('|', $token, 2);
 
-        $accessToken = PersonalAccessToken::where('_id', $id)->first();
+        $accessToken = PersonalAccessToken::whereKey($id)->first();
 
         if (!$accessToken) {
             return response()->json(['message' => 'Unauthenticated.'], 401);

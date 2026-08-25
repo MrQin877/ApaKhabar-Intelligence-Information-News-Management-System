@@ -2,7 +2,7 @@
 
 namespace App\Models;
 
-use App\Models\Notification as MongoNotification;
+use App\Models\Notification as NotificationModel;
 use Illuminate\Auth\Notifications\VerifyEmail;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -16,16 +16,13 @@ class User extends Authenticatable implements MustVerifyEmail
 {
     use HasFactory, Notifiable, TwoFactorAuthenticatable, HasApiTokens;
 
+    protected $primaryKey = 'userID';
+
     protected $fillable = [
         'name',
-        'email',
         'password',
-        'role',
-        'phone',
-        'phone_verified_at',
-        'phone_otp',
-        'phone_otp_expires_at',
         'push_token',
+        'roleID',
     ];
 
     protected $hidden = [
@@ -37,8 +34,58 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function notifications()
     {
-        return $this->morphMany(MongoNotification::class, 'notifiable')
+        return $this->morphMany(NotificationModel::class, 'notifiable', 'notifiable_type', 'notifiable_id', 'userID')
                     ->orderBy('created_at', 'desc');
+    }
+
+    public function emailRecord()
+    {
+        return $this->hasOne(Email::class, 'userID', 'userID');
+    }
+
+    public function phoneRecord()
+    {
+        return $this->hasOne(Phone::class, 'userID', 'userID');
+    }
+
+    public function roleRecord()
+    {
+        return $this->belongsTo(UserRole::class, 'roleID', 'roleID');
+    }
+
+    public function getEmailAttribute(): ?string
+    {
+        return $this->emailRecord?->getKey();
+    }
+
+    public function getEmailVerifiedAtAttribute()
+    {
+        return $this->emailRecord?->email_verified_at;
+    }
+
+    public function getPhoneAttribute(): ?string
+    {
+        return $this->phoneRecord?->getKey();
+    }
+
+    public function getPhoneOtpAttribute()
+    {
+        return $this->phoneRecord?->phone_otp;
+    }
+
+    public function getPhoneOtpExpiresAtAttribute()
+    {
+        return $this->phoneRecord?->phone_otp_expires_at;
+    }
+
+    public function getPhoneVerifiedAtAttribute()
+    {
+        return $this->phoneRecord?->phone_verified_at;
+    }
+
+    public function getRoleAttribute(): ?string
+    {
+        return $this->roleRecord?->name;
     }
 
     public function unreadNotifications()
@@ -70,6 +117,24 @@ class User extends Authenticatable implements MustVerifyEmail
     public function getEmailForVerification(): string
     {
         return $this->email;
+    }
+
+    public function hasVerifiedEmail(): bool
+    {
+        return ! is_null($this->email_verified_at);
+    }
+
+    public function markEmailAsVerified(): bool
+    {
+        $email = $this->emailRecord;
+
+        if (! $email || $email->email_verified_at) {
+            return false;
+        }
+
+        $email->forceFill(['email_verified_at' => now()])->save();
+
+        return true;
     }
 
     public function routeNotificationForVonage(Notification $notification): string

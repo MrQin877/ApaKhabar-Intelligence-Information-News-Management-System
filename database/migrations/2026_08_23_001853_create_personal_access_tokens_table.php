@@ -13,14 +13,18 @@ return new class extends Migration
     {
         Schema::create('personal_access_tokens', function (Blueprint $table) {
             $table->id('tokenID');
-            $table->unsignedBigInteger('tokenable_id');
+
+            $table->foreignId('tokenable_id')
+                ->constrained('users', 'userID')
+                ->restrictOnDelete();
+
             $table->string('tokenable_type');
             $table->string('name');
             $table->string('token', 64)->unique();
             $table->text('abilities')->nullable();
             $table->timestamp('expires_at')->nullable();
             $table->timestamps();
- 
+
             $table->index(['tokenable_type', 'tokenable_id']);
         });
     }

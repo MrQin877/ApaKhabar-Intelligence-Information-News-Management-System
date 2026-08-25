@@ -30,7 +30,7 @@ class HandleInertiaRequests extends Middleware
 
             'unreadNotifications' => function () use ($request) {
                 if (!$request->user()) return 0;
-                return \App\Models\Notification::where('notifiable_id', (string) $request->user()->id)
+                return \App\Models\Notification::where('notifiable_id', $request->user()->getKey())
                     ->whereNull('read_at')
                     ->count();
             }

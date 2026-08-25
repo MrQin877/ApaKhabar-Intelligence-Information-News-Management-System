@@ -13,7 +13,7 @@ class WelcomeController extends Controller
     {
         $news = News::latest()->get()->map(function ($item) {
             return [
-                'id'       => (string) $item->_id,
+                'id'       => (string) $item->getKey(),
                 'title'    => $item->title,
                 'excerpt'  => $item->excerpt ?? '',
                 'image'    => $item->image ?? 'https://placehold.co/600x400',
@@ -26,7 +26,7 @@ class WelcomeController extends Controller
         $newsList     = $news->skip(1)->values();
 
         // ── Darurat broadcast — only show if sent within last 24 hours ──
-        $daruratBroadcast = Broadcast::where('category', 'darurat')
+        $daruratBroadcast = Broadcast::category('darurat')
             ->where('status', 'dikirim')
             ->where('sent_at', '>=', now()->subHours(24))
             ->whereNull('archived_at')

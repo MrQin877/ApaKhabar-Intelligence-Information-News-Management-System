@@ -20,10 +20,10 @@ class CommentController extends Controller
         $request->validate(['content' => 'required|string|max:1000']);
 
         $comment = Comment::create([
-            'news_id'   => (string) $news->_id,
-            'user_id'   => auth()->id(),
+            'newsID'    => $news->getKey(),
+            'userID'    => auth()->id(),
             'content'   => $request->content,
-            'parent_id' => null,
+            'parentID'  => null,
         ]);
 
         return response()->json($comment, 201);
@@ -40,10 +40,10 @@ class CommentController extends Controller
         $request->validate(['content' => 'required|string|max:1000']);
 
         $reply = Comment::create([
-            'news_id'   => $comment->news_id,
-            'user_id'   => auth()->id(),
+            'newsID'    => $comment->newsID,
+            'userID'    => auth()->id(),
             'content'   => $request->content,
-            'parent_id' => (string) $comment->_id,
+            'parentID'  => $comment->getKey(),
         ]);
 
         return response()->json($reply, 201);

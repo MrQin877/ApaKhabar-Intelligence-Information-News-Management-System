@@ -42,9 +42,9 @@ trait ProfileValidationRules
             'string',
             'email',
             'max:255',
-            Rule::unique(User::class, 'email')->where(function ($query) use ($userId) {
+            Rule::unique('emails', 'email')->where(function ($query) use ($userId) {
                 if ($userId !== null) {
-                    $query->where('_id', '!=', $userId);
+                    $query->where('userID', '!=', $userId);
                 }
             }),
         ];

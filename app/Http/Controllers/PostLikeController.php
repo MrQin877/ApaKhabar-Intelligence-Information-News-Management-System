@@ -14,8 +14,8 @@ class PostLikeController extends Controller
 
         abort_if(!$news, 404);
 
-        $existing = Like::where('news_id', (string) $news->_id)
-                        ->where('user_id', auth()->id())
+        $existing = Like::where('postID', $news->getKey())
+                ->where('userID', auth()->id())
                         ->first();
 
         if ($existing) {
@@ -24,8 +24,8 @@ class PostLikeController extends Controller
             $liked = false;
         } else {
             Like::create([
-                'news_id' => (string) $news->_id,
-                'user_id' => auth()->id(),
+                'postID' => $news->getKey(),
+                'userID' => auth()->id(),
             ]);
             $news->increment('likes_count');
             $liked = true;
