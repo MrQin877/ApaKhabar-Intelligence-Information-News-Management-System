@@ -1,6 +1,6 @@
 import { Head, router } from '@inertiajs/react'
-import { useEffect, useState } from 'react'
 import { Archive, ArrowLeft, ArchiveRestore } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'  
@@ -33,6 +33,7 @@ export default function ArchivedBroadcastPage({ broadcasts }: Props) {
     useEffect(() => {
         const startLoading = router.on('start',  () => setLoading(true))
         const stopLoading  = router.on('finish', () => setLoading(false))
+
         return () => {
             startLoading()
             stopLoading()

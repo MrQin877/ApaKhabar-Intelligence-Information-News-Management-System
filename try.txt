@@ -1,0 +1,11 @@
+--warning-50: #FEF5E7;
+--warning-100: #FCE4BA;
+--warning-200: #FAD38E;
+--warning-300: #F8C162;
+--warning-400: #F7B036;
+--warning-500: #F59E0B;
+--warning-600: #C98208;
+--warning-700: #9D6607;
+--warning-800: #714905;
+--warning-900: #452C03;
+--warning-950: #181001;

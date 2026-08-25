@@ -8,6 +8,8 @@ use App\Models\BroadcastCategory;
 use App\Models\Channel;
 use App\Models\News;
 use App\Models\NewsCategory;
+use App\Models\Email;
+use Illuminate\Support\Facades\Hash;
 // use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
@@ -28,6 +30,30 @@ class DatabaseSeeder extends Seeder
 
         foreach (['whatsapp', 'sms', 'aplikasi'] as $channel) {
             Channel::firstOrCreate(['name' => $channel]);
+        }
+
+        $adminRole = UserRole::where('name', 'admin')->firstOrFail();
+        $adminEmail = 'noreply.apakhabar@gmail.com';
+        $emailRecord = Email::where('email', $adminEmail)->first();
+
+        if ($emailRecord) {
+            $admin = $emailRecord->user;
+            $admin->update([
+                'name' => 'Admin',
+                'roleID' => $adminRole->getKey(),
+                'password' => Hash::make('Ap@Kh@6ar!'),
+            ]);
+        } else {
+            $admin = User::create([
+                'name' => 'Admin',
+                'roleID' => $adminRole->getKey(),
+                'password' => Hash::make('Ap@Kh@6ar!'),
+            ]);
+
+            Email::create([
+                'email' => $adminEmail,
+                'userID' => $admin->getKey(),
+            ]);
         }
 
         User::factory()->create([

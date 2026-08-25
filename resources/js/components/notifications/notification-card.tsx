@@ -34,15 +34,15 @@ export function NotificationCard({ notif, onMarkRead }: NotificationCardProps) {
         <Card className={cn(
             "transition-all duration-200 border",
             !notif.is_read
-                ? "border-green-200 dark:border-green-800/60 bg-white dark:bg-neutral-900 shadow-sm"
-                : "border-neutral-200 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-900/40"
+                ? "border-success-border bg-card shadow-sm"
+                : "border-border bg-secondary/50"
         )}>
             <CardContent className="p-0">
                 <div className="flex gap-3 p-4">
                     {/* Unread dot */}
                     <div className="relative mt-0.5">
                         {!notif.is_read && (
-                            <span className="absolute -left-1 top-0 h-2 w-2 rounded-full bg-green-500 ring-2 ring-white dark:ring-neutral-900" />
+                            <span className="absolute -left-1 top-0 h-2 w-2 rounded-full bg-brand-500 ring-2 ring-background" />
                         )}
                         <NotificationIcon type={notif.type} size="md" />
                     </div>
@@ -56,8 +56,8 @@ export function NotificationCard({ notif, onMarkRead }: NotificationCardProps) {
                                 <p className={cn(
                                     "text-sm leading-snug",
                                     !notif.is_read
-                                        ? "font-semibold text-neutral-900 dark:text-neutral-100"
-                                        : "font-medium text-neutral-600 dark:text-neutral-400"
+                                        ? "font-semibold text-foreground"
+                                        : "font-medium text-muted-foreground"
                                 )}>
                                     {notif.title}
                                 </p>
@@ -69,7 +69,7 @@ export function NotificationCard({ notif, onMarkRead }: NotificationCardProps) {
                                 <Button
                                     variant="ghost"
                                     size="icon"
-                                    className="h-6 w-6 shrink-0 text-neutral-400 hover:text-green-500 hover:bg-green-50 dark:hover:bg-green-950/30"
+                                    className="h-6 w-6 shrink-0 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                                     onClick={() => onMarkRead(notif.id)}
                                     title="Tandai sebagai dibaca"
                                 >
@@ -80,25 +80,25 @@ export function NotificationCard({ notif, onMarkRead }: NotificationCardProps) {
  
                         {/* Message — collapsed or expanded */}
                         <p className={cn(
-                            "text-sm text-neutral-500 dark:text-neutral-400 leading-relaxed",
+                            "text-sm text-muted-foreground leading-relaxed",
                             !expanded && isLong && "line-clamp-2"
                         )}>
                             {notif.message}
                         </p>
  
                         {/* Meta row */}
-                        <div className="flex items-center justify-between flex-wrap gap-2 pt-0.5">
-                            <div className="flex items-center gap-2 text-xs text-neutral-400">
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                 <Clock className="h-3 w-3 shrink-0" />
                                 <span title={notif.sent_at_full}>{notif.sent_at}</span>
-                                <span className="text-neutral-200 dark:text-neutral-700">·</span>
+                                <span className="text-border">·</span>
                                 <ChannelIcon channel={notif.channel} />
                                 <span>via {notif.channel}</span>
                                 {notif.is_read && (
                                     <>
-                                        <span className="text-neutral-200 dark:text-neutral-700">·</span>
-                                        <CheckCheck className="h-3 w-3 text-green-400" />
-                                        <span className="text-green-500">Dibaca</span>
+                                        <span className="text-border">·</span>
+                                        <CheckCheck className="h-3 w-3 text-brand-400" />
+                                        <span className="text-brand-500">Dibaca</span>
                                     </>
                                 )}
                             </div>
@@ -108,7 +108,7 @@ export function NotificationCard({ notif, onMarkRead }: NotificationCardProps) {
                                 <Button
                                     variant="ghost"
                                     size="sm"
-                                    className="h-6 px-2 text-xs gap-1 text-neutral-400 hover:text-green-600 dark:hover:text-green-400"
+                                    className="h-6 gap-1 px-2 text-xs text-muted-foreground hover:text-primary"
                                     onClick={() => setExpanded(v => !v)}
                                 >
                                     {expanded

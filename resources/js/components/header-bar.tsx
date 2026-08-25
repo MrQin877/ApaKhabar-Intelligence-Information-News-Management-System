@@ -1,19 +1,32 @@
 import { Link, usePage } from '@inertiajs/react';
-import { Bell } from 'lucide-react';
+import { Bell, LayoutDashboard, LogIn, LogOut, Menu, Palette, Shield, UserPlus, UserCircle } from 'lucide-react';
 import { useInitials } from '@/hooks/use-initials';
 import { login, register } from '@/routes';
+import adminRoutes from '@/routes/admin';
+import { edit as editAppearance } from '@/routes/appearance';
+import { edit as editProfile } from '@/routes/profile';
+import { edit as editSecurity } from '@/routes/security';
 import type { SharedData } from '@/types';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { Button } from './ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from './ui/dropdown-menu';
+import {
+    Sheet,
+    SheetClose,
+    SheetContent,
+    SheetHeader,
+    SheetTitle,
+    SheetTrigger,
+} from './ui/sheet';
 import { VillagerUserMenuContent } from './villager-user-menu-content';
 
 export function HeaderBar() {
     const getInitials = useInitials();
     const { auth, categories = [], unreadNotifications } = usePage<SharedData>().props;
+    const canAccessAdmin = auth.user?.role === 'admin' || auth.user?.role === 'moderator';
 
     return (
-        <nav className="border-b border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-4 py-3 sticky top-0 z-40">
+        <nav className="sticky top-0 z-40 border-b border-border bg-background px-4 py-3">
             <div className="mx-auto flex max-w-7xl items-center justify-between">
 
                 {/*  Logo  */}
@@ -27,10 +40,10 @@ export function HeaderBar() {
                 </div>
 
                 {/*  Nav links  */}
-                <div className="hidden items-center space-x-6 text-sm font-medium text-gray-700 dark:text-gray-300 md:flex">
+                <div className="hidden items-center space-x-6 text-sm font-medium text-foreground lg:flex">
                     <Link
                         href="/"
-                        className="relative hover:text-green-600 dark:hover:text-green-400 transition-colors duration-200
+                        className="relative text-foreground transition-colors duration-200 hover:text-primary
                                    after:absolute after:bottom-[-2px] after:left-0 after:h-px after:w-0 after:bg-green-600
                                    after:transition-[width] after:duration-300 hover:after:w-full"
                     >
@@ -40,7 +53,7 @@ export function HeaderBar() {
                         <Link
                             key={category}
                             href={`/news?category=${encodeURIComponent(category)}`}
-                            className="relative hover:text-green-600 dark:hover:text-green-400 transition-colors duration-200
+                            className="relative text-foreground transition-colors duration-200 hover:text-primary
                                        after:absolute after:bottom-[-2px] after:left-0 after:h-px after:w-0 after:bg-green-600
                                        after:transition-[width] after:duration-300 hover:after:w-full"
                         >
@@ -50,17 +63,14 @@ export function HeaderBar() {
                 </div>
 
                 {/* Auth Buttons */}
-                <div className="flex items-center space-x-2">
+                <div className="hidden items-center space-x-2 lg:flex">
                     {auth.user ? (
                         <>
-                            {(auth.user.role === 'admin' || auth.user.role === 'moderator') && (
-                                //  Dashboard button 
-                                <Link
-                                    href="/admin/dashboard"
-                                    className="rounded-sm border border-gray-300 dark:border-neutral-700 px-4 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300
-                                               hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors duration-200"
-                                >
-                                    Dashboard
+                            {canAccessAdmin && (
+                                <Link href={adminRoutes.dashboard()}>
+                                    <Button variant="ghost" size="icon" className="relative h-9 w-9">
+                                        <LayoutDashboard data-icon="inline-start" />
+                                    </Button>
                                 </Link>
                             )}
 
@@ -68,13 +78,13 @@ export function HeaderBar() {
                             <Link href="/notifications">
                                 <Button variant="ghost" size="icon" className="relative h-9 w-9">
                                     <Bell
-                                        className={`h-5 w-5 text-gray-600 dark:text-gray-300 transition-transform duration-200
+                                        className={`h-5 w-5 text-muted-foreground transition-transform duration-200
                                                     hover:scale-110
                                                     ${unreadNotifications > 0 ? '[animation:bellWobble_1.2s_ease_2]' : ''}`}
                                     />
                                     {unreadNotifications > 0 && (
                                         // 5️⃣ Badge pulses to draw attention
-                                        <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-green-500 text-[9px] font-bold text-white ring-2 ring-white dark:ring-neutral-900 animate-pulse">
+                                        <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-brand-500 text-[9px] font-bold text-white ring-2 ring-background animate-pulse">
                                             {unreadNotifications > 9 ? '9+' : unreadNotifications}
                                         </span>
                                     )}
@@ -143,6 +153,140 @@ export function HeaderBar() {
                         </>
                     )}
                 </div>
+
+                <Sheet>
+                    <SheetTrigger asChild>
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="lg:hidden"
+                            aria-label="Buka menu navigasi"
+                        >
+                            <Menu className="size-5" />
+                        </Button>
+                    </SheetTrigger>
+                    <SheetContent side="right" className="w-[min(22rem,calc(100vw-2rem))]">
+                                <SheetHeader className="border-b border-border px-6 py-5">
+                            <SheetTitle className="text-left">Menu ApaKhabar</SheetTitle>
+                        </SheetHeader>
+
+                        <div className="flex flex-1 flex-col overflow-y-auto px-4 py-2">
+                            <div className="flex flex-col gap-1">
+                                <SheetClose asChild>
+                                    <Link
+                                        href="/"
+                                        className="flex min-h-11 items-center gap-3 rounded-md px-3 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-neutral-800"
+                                    >
+                                        Beranda
+                                    </Link>
+                                </SheetClose>
+                                {(categories as string[]).map((category) => (
+                                    <SheetClose asChild key={category}>
+                                        <Link
+                                            href={`/news?category=${encodeURIComponent(category)}`}
+                                            className="flex min-h-11 items-center rounded-md px-3 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-neutral-800"
+                                        >
+                                            {category}
+                                        </Link>
+                                    </SheetClose>
+                                ))}
+                            </div>
+
+                            <div className="my-4 border-t border-border" />
+
+                            {auth.user ? (
+                                <div className="flex flex-col gap-1">
+                                    {canAccessAdmin && (
+                                        <SheetClose asChild>
+                                            <Link
+                                                href={adminRoutes.dashboard()}
+                                                className="flex min-h-11 items-center gap-3 rounded-md px-3 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-neutral-800"
+                                            >
+                                                <LayoutDashboard className="size-4" />
+                                                Dasbor
+                                            </Link>
+                                        </SheetClose>
+                                    )}
+                                    <SheetClose asChild>
+                                        <Link
+                                            href="/notifications"
+                                            className="flex min-h-11 items-center justify-between rounded-md px-3 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-neutral-800"
+                                        >
+                                            <span className="flex items-center gap-3">
+                                                <Bell className="size-4" />
+                                                Notifikasi
+                                            </span>
+                                            {unreadNotifications > 0 && (
+                                                <span className="rounded-full bg-green-500 px-2 py-0.5 text-xs font-bold text-white">
+                                                    {unreadNotifications > 9 ? '9+' : unreadNotifications}
+                                                </span>
+                                            )}
+                                        </Link>
+                                    </SheetClose>
+                                    <SheetClose asChild>
+                                        <Link
+                                            href={editProfile()}
+                                            className="flex min-h-11 items-center rounded-md px-3 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-neutral-800"
+                                        >
+                                            <UserCircle className="mr-2 h-4 w-4" />
+                                            Profil
+                                        </Link>
+                                    </SheetClose>
+                                    <SheetClose asChild>
+                                        <Link
+                                            href={editSecurity()}
+                                            className="flex min-h-11 items-center rounded-md px-3 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-neutral-800"
+                                        >
+                                            <Shield className="mr-2 h-4 w-4" />
+                                            Keselamatan
+                                        </Link>
+                                    </SheetClose>
+                                    <SheetClose asChild>
+                                        <Link
+                                            href={editAppearance()}
+                                            className="flex min-h-11 items-center rounded-md px-3 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-neutral-800"
+                                        >
+                                            <Palette className="mr-2 h-4 w-4" />
+                                            Penampilan
+                                        </Link>
+                                    </SheetClose>
+                                    <SheetClose asChild>
+                                        <Link
+                                            href="/logout"
+                                            method="post"
+                                            as="button"
+                                            className="flex min-h-11 items-center gap-3 rounded-md px-3 text-left text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-neutral-800"
+                                        >
+                                            <LogOut className="size-4" />
+                                            Keluar
+                                        </Link>
+                                    </SheetClose>
+                                </div>
+                            ) : (
+                                <div className="flex flex-col gap-1">
+                                    <SheetClose asChild>
+                                        <Link
+                                            href={login()}
+                                            className="flex min-h-11 items-center gap-3 rounded-md px-3 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-neutral-800"
+                                        >
+                                            <LogIn className="size-4" />
+                                            Masuk
+                                        </Link>
+                                    </SheetClose>
+                                    <SheetClose asChild>
+                                        <Link
+                                            href={register()}
+                                            className="flex min-h-11 items-center gap-3 rounded-md bg-green-600 px-3 text-sm font-medium text-white hover:bg-green-700"
+                                        >
+                                            <UserPlus className="size-4" />
+                                            Daftar
+                                        </Link>
+                                    </SheetClose>
+                                </div>
+                            )}
+                        </div>
+                    </SheetContent>
+                </Sheet>
             </div>
         </nav>
     );

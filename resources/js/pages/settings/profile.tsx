@@ -36,6 +36,12 @@ export default function Profile({
     otpSent: boolean;
 }) {
     const { auth } = usePage().props;
+
+    if (!auth.user) {
+return null;
+}
+
+    const user = auth.user;
  
     return (
         <SettingsWrapper title="Tetapan Profil" breadcrumbs={breadcrumbs}>
@@ -61,7 +67,7 @@ export default function Profile({
                                 <Input
                                     id="name"
                                     className="mt-1 block w-full"
-                                    defaultValue={auth.user.name}
+                                    defaultValue={user.name}
                                     name="name"
                                     required
                                     autoComplete="name"
@@ -76,7 +82,7 @@ export default function Profile({
                                     id="email"
                                     type="email"
                                     className="mt-1 block w-full"
-                                    defaultValue={auth.user.email}
+                                    defaultValue={user.email}
                                     name="email"
                                     required
                                     autoComplete="username"
@@ -85,7 +91,7 @@ export default function Profile({
                                 <InputError className="mt-2" message={errors.email} />
                             </div>
  
-                            {mustVerifyEmail && auth.user.email_verified_at === null && (
+                            {mustVerifyEmail && user.email_verified_at === null && (
                                 <div>
                                     <p className="-mt-4 text-sm text-muted-foreground">
                                         Alamat e-mail anda belum diaktifkan.{' '}
@@ -98,7 +104,7 @@ export default function Profile({
                                         </Link>
                                     </p>
                                     {status === 'verification-link-sent' && (
-                                        <div className="mt-2 text-sm font-medium text-green-600">
+                                        <div className="mt-2 text-sm font-medium text-success-text">
                                             Tautan konfirmasi baru telah dikirim ke alamat email anda.
                                         </div>
                                     )}
@@ -116,7 +122,7 @@ export default function Profile({
                                     leave="transition ease-in-out"
                                     leaveTo="opacity-0"
                                 >
-                                    <p className="text-sm text-neutral-600">Disimpan</p>
+                                    <p className="text-sm text-muted-foreground">Disimpan</p>
                                 </Transition>
                             </div>
                         </>
@@ -124,7 +130,7 @@ export default function Profile({
                 </Form>
             </div>
 
-            <Separator className="dark:bg-neutral-800" />
+            <Separator />
 
             {/* ── Phone verification ── */}
             <div className="space-y-4">

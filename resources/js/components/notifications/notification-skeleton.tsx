@@ -5,7 +5,7 @@ export function NotificationSkeleton({ count = 4 }: { count?: number }) {
     return (
         <div className="space-y-3">
             {Array.from({ length: count }).map((_, i) => (
-                <Card key={i} className="border border-neutral-200 dark:border-neutral-800">
+                <Card key={i} className="border border-border bg-card">
                     <CardContent className="p-4">
                         <div className="flex gap-3">
                             <Skeleton className="h-9 w-9 rounded-xl shrink-0" />

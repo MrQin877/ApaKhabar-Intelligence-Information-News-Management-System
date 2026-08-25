@@ -21,12 +21,12 @@ export function NotificationIcon({ type, size = 'md' }: NotificationIconProps) {
             "shrink-0 flex items-center justify-center",
             wrapper,
             isDarurat
-                ? "bg-red-100 dark:bg-red-900/30"
-                : "bg-green-100 dark:bg-green-900/30"
+                ? "bg-danger-bg"
+                : "bg-success-bg"
         )}>
             {isDarurat
-                ? <Siren className={cn(icon, "text-red-500")} />
-                : <Megaphone className={cn(icon, "text-green-600")} />
+                ? <Siren className={cn(icon, "text-danger-500")} />
+                : <Megaphone className={cn(icon, "text-brand-600")} />
             }
         </div>
     )

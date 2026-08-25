@@ -31,7 +31,7 @@ export default function NewsCategory({ newsList = [], activeCategory }: Props) {
                 />
             </Head>
 
-            <div className="min-h-screen bg-white dark:bg-neutral-900">
+            <div className="min-h-screen bg-background text-foreground">
 
                 <HeaderBar />
 
@@ -39,10 +39,10 @@ export default function NewsCategory({ newsList = [], activeCategory }: Props) {
 
                     {/* Page Title — fade-slide-up on mount */}
                     <div className="animate-fade-slide-up mb-8">
-                        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+                        <h1 className="text-2xl font-bold text-foreground">
                             {activeCategory}
                         </h1>
-                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                        <p className="mt-1 text-sm text-muted-foreground">
                             {newsList.length} berita ditemukan
                         </p>
                     </div>
@@ -54,7 +54,7 @@ export default function NewsCategory({ newsList = [], activeCategory }: Props) {
                                 // Staggered fade-up + hover lift
                                 <div
                                     key={news.id}
-                                    className="animate-fade-slide-up h-full flex flex-col overflow-hidden rounded-md bg-white dark:bg-neutral-900
+                                    className="animate-fade-slide-up h-full flex flex-col overflow-hidden rounded-md bg-card
                                                transition-transform duration-300 hover:-translate-y-1 hover:shadow-md"
                                     style={{ animationDelay: `${index * 100}ms` }}
                                 >
@@ -69,21 +69,21 @@ export default function NewsCategory({ newsList = [], activeCategory }: Props) {
                                     </div>
                                     <div className="flex flex-col flex-1 px-0 pt-3 pb-4">
                                         <div className="flex items-center gap-2 mb-2">
-                                            <span className="text-xs text-gray-500 dark:text-gray-400">{news.date}</span>
-                                            <Badge className="bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 hover:bg-green-100 text-xs">
+                                            <span className="text-xs text-muted-foreground">{news.date}</span>
+                                            <Badge className="bg-brand-100 text-brand-800 hover:bg-brand-100 text-xs dark:bg-brand-900/40 dark:text-brand-300">
                                                 {news.category}
                                             </Badge>
                                         </div>
-                                        <h3 className="text-lg font-bold mb-3 leading-snug text-gray-900 dark:text-white text-justify">
+                                        <h3 className="text-lg font-bold mb-3 leading-snug text-card-foreground text-justify">
                                             {news.title}
                                         </h3>
-                                        <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed text-justify">
+                                        <p className="text-sm text-muted-foreground leading-relaxed text-justify">
                                             {news.excerpt}
                                         </p>
                                         {/* Underline draw on hover */}
                                         <Link
                                             href={`/news/${news.id}`}
-                                            className="text-sm font-medium text-gray-900 dark:text-white mt-auto pt-4
+                                            className="text-sm font-medium text-card-foreground mt-auto pt-4
                                                        relative w-fit after:absolute after:bottom-0 after:left-0
                                                        after:h-px after:w-0 after:bg-current
                                                        after:transition-[width] after:duration-300

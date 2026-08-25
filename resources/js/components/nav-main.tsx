@@ -15,6 +15,7 @@ import {
     SidebarMenuSubButton,
     SidebarMenuSubItem,
 } from '@/components/ui/sidebar'
+import { toUrl } from '@/lib/utils'
 import type { NavItem } from '@/types'
 
 export function NavMain({ items = [] }: { items: NavItem[] }) {
@@ -30,14 +31,14 @@ export function NavMain({ items = [] }: { items: NavItem[] }) {
                         <Collapsible
                             key={item.title}
                             asChild
-                            defaultOpen={item.items.some(sub => url.startsWith(sub.href ?? ''))}
+                            defaultOpen={item.items.some(sub => url.startsWith(toUrl(sub.href ?? '#')))}
                             className="group/collapsible"
                         >
                             <SidebarMenuItem>
                                 <CollapsibleTrigger asChild>
                                     <SidebarMenuButton
                                         tooltip={{ children: item.title }}
-                                        isActive={item.items.some(sub => url.startsWith(sub.href ?? ''))}
+                                        isActive={item.items.some(sub => url.startsWith(toUrl(sub.href ?? '#')))}
                                     >
                                         {item.icon && <item.icon />}
                                         <span>{item.title}</span>
@@ -50,7 +51,7 @@ export function NavMain({ items = [] }: { items: NavItem[] }) {
                                             <SidebarMenuSubItem key={sub.title}>
                                                 <SidebarMenuSubButton
                                                     asChild
-                                                    isActive={url === sub.href || url.startsWith(sub.href ?? '')}
+                                                    isActive={url === toUrl(sub.href ?? '#') || url.startsWith(toUrl(sub.href ?? '#'))}
                                                 >
                                                     <Link href={sub.href ?? '#'} prefetch>
                                                         {sub.icon && <sub.icon />}
@@ -68,7 +69,7 @@ export function NavMain({ items = [] }: { items: NavItem[] }) {
                         <SidebarMenuItem key={item.title}>
                             <SidebarMenuButton
                                 asChild
-                                isActive={url === item.href}
+                                isActive={url === toUrl(item.href ?? '#')}
                                 tooltip={{ children: item.title }}
                             >
                                 <Link href={item.href ?? '#'} prefetch>

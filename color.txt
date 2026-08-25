@@ -1,0 +1,168 @@
+ApaKhabar Applied Color Library
+===============================
+
+Source: resources/css/app.css
+The application uses the following semantic color roles. These values match
+the current frontend theme implementation.
+
+BRAND GREEN
+-----------
+brand-50                  #f0fdf4
+brand-100                 #dcfce7
+brand-200                 #bbf7d0
+brand-300                 #86efac
+brand-400                 #4ade80
+brand-500                 #22c55e
+brand-600                 #16a34a
+brand-700                 #15803d
+brand-800                 #166534
+brand-900                 #14532d
+
+GREYSCALE
+---------
+greyscale-50              #FEFEFE
+greyscale-75              #FBFBFB
+greyscale-100             #F2F3F2
+greyscale-200             #C3C7C3
+greyscale-300             #ACB1AC
+greyscale-400             #949B94
+greyscale-500             #7D857D
+greyscale-600             #676D67
+greyscale-700             #515651
+greyscale-800             #3B3F3B
+greyscale-900             #242424
+greyscale-925             #0F0F0F
+greyscale-950             #0D0D0D
+
+STATUS COLORS
+-------------
+Info 50                   #E8F1FD
+Info 100                  #BDD7F9
+Info 200                  #93BEF6
+Info 300                  #69A4F2
+Info 400                  #2F80ED
+Info 500                  #1471EB
+Info 600                  #115DC0
+Info 700                  #0D4896
+Info 800                  #09346C
+Info 900                  #062042
+Info 950                  #020B17
+Warning 50                #FEF5E7
+Warning 100               #FCE4BA
+Warning 200               #FAD38E
+Warning 300               #F8C162
+Warning 400               #F7B036
+Warning 500               #F59E0B
+Warning 600               #C98208
+Warning 700               #9D6607
+Warning 800               #714905
+Warning 900               #452C03
+Warning 950               #181001
+Danger 50                 #FDE8E8
+Danger 100                #F9BDBD
+Danger 200                #F69393
+Danger 300                #F26969
+Danger 400                #EF4444
+Danger 500                #EB1414
+Danger 600                #C01111
+Danger 700                #960D0D
+Danger 800                #6C0909
+Danger 900                #420606
+Danger 950                #170202
+
+LIGHT THEME (:root)
+-------------------
+Background                #FBFBFB
+Foreground                #0D0D0D
+Card                      #FEFEFE
+Popover                   #FEFEFE
+Primary                   #16a34a
+Primary foreground        #FEFEFE
+Secondary                 #F2F3F2
+Secondary foreground      #3B3F3B
+Muted                     #F2F3F2
+Muted foreground          #676D67
+Accent                    #F2F3F2
+Accent foreground         #166534
+Destructive               #EB1414
+Destructive foreground    #FEFEFE
+Border                    #C3C7C3
+Input                     #C3C7C3
+Focus ring                #22c55e
+
+DARK THEME (.dark)
+------------------
+Background                #0F0F0F
+Foreground                #FEFEFE
+Card                      #0F0F0F
+Popover                   #0D0D0D
+Primary                   #16a34a
+Primary foreground        #FEFEFE
+Secondary                 #242424
+Secondary foreground      #C3C7C3
+Muted                     #242424
+Muted foreground          #949B94
+Accent                    #242424
+Accent foreground         #BBF7D0
+Destructive               #EB1414
+Destructive foreground    #FEFEFE
+Border                    #3B3F3B
+Input                     #3B3F3B
+Focus ring                #4ade80
+
+SEMANTIC FEEDBACK ROLES
+-----------------------
+Success background       #F0FDF4 light / see dark-mode note
+Success border           #BBF7D0 light / #166534 dark fallback
+Success text             #166534 light / #BBF7D0 dark fallback
+Info background          #E8F1FD light / #020B17 dark
+Info border              #93BEF6 light / #09346C dark
+Info text                #09346C light / #BDD7F9 dark
+Warning background       #FEF5E7 light / #181001 dark
+Warning border            #FAD38E light / #714905 dark
+Warning text              #714905 light / #FAD38E dark
+Danger background        #FDE8E8 light / #170202 dark
+Danger border             #F69393 light / #6C0909 dark
+Danger text               #6C0909 light / #F69393 dark
+
+SIDEBAR
+-------
+Light background         #FBFBFB
+Light foreground         #3B3F3B
+Light active background  #F2F3F2
+Light active text        #0D0D0D
+Light border              #C3C7C3
+Dark background          #0D0D0D
+Dark foreground          #C3C7C3
+Dark active background   #242424
+Dark active text         #FEFEFE
+Dark border               #3B3F3B
+
+CHART COLORS
+------------
+Chart 1                  #22C55E green
+Chart 2                  #2F80ED blue
+Chart 3                  #F59E0B amber
+Chart 4                  #EF4444 red
+Chart 5                  #AAB7B0 muted green-gray
+
+USAGE
+-----
+Primary actions          brand-600 / brand-500 dark
+Hover actions            brand-700 / brand-400 dark
+Positive states          Success roles
+General information      Info roles
+Pending or attention     Warning roles
+Critical or emergency    Danger roles
+Borders and surfaces     Greyscale palette
+
+Border radius             0.75rem
+Large radius              var(--radius)
+Medium radius             calc(var(--radius) - 2px)
+Small radius              calc(var(--radius) - 4px)
+
+IMPLEMENTATION NOTE
+-------------------
+The current .dark theme references --brand-950 for success-bg, but
+brand-950 is not defined. Add a brand-950 token or use a defined dark
+success background before relying on dark success alerts.

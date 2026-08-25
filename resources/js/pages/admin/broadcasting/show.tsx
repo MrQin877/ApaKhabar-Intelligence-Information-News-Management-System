@@ -1,12 +1,11 @@
 import { Head, router } from '@inertiajs/react'
-import { useEffect, useState } from 'react'  
-import { Skeleton } from '@/components/ui/skeleton'  
 import {
     ArrowLeft, Megaphone, Siren, Send, Archive,
     Clock, Users, User, MessageSquare, Smartphone,
     Radio, CalendarDays, CheckCheck, BarChart2,
     MailOpen, AlertTriangle,
 } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import {
     AlertDialog,
     AlertDialogAction,
@@ -21,6 +20,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
+import { Skeleton } from '@/components/ui/skeleton'
 import AppLayout from '@/layouts/app-layout'
 import { cn } from '@/lib/utils'
 import type { BreadcrumbItem } from '@/types'
@@ -53,9 +53,9 @@ type Props = {
  
 // ── Helpers ────────────────────────────────────────────────
 const statusMap = {
-    dikirim:   { label: 'Dikirim',   className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-green-200', dot: 'bg-green-500' },
-    terjadwal: { label: 'Terjadwal', className: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 border-yellow-200', dot: 'bg-yellow-500' },
-    tertunda:  { label: 'Tertunda',  className: 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400 border-red-200', dot: 'bg-red-400' },
+    dikirim:   { label: 'Dikirim',   className: 'bg-success-bg text-success-text border-success-border', dot: 'bg-brand-500' },
+    terjadwal: { label: 'Terjadwal', className: 'bg-warning-bg text-warning-text border-warning-border', dot: 'bg-warning-500' },
+    tertunda:  { label: 'Tertunda',  className: 'bg-danger-bg text-danger-text border-danger-border', dot: 'bg-danger-500' },
 }
  
 const channelMap: Record<string, { icon: React.ReactNode; label: string }> = {

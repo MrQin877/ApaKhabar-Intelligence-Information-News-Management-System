@@ -28,12 +28,16 @@ export function NavFooter({
             <SidebarGroupContent>
                 <SidebarMenu>
                     {items.map((item) => (
+                        (() => {
+                            const href = item.href ?? '#';
+
+                            return (
                         <SidebarMenuItem key={item.title}>
                             <SidebarMenuButton
                                 asChild
                                 className="text-neutral-600 hover:text-neutral-800 dark:text-neutral-300 dark:hover:text-neutral-100"
                             >
-                                <Link href={toUrl(item.href)}>
+                                <Link href={toUrl(href)}>
                                     {/* ── Icon with badge ── */}
                                     <div className="relative">
                                         {item.icon && <item.icon className="h-5 w-5" />}
@@ -47,6 +51,8 @@ export function NavFooter({
                                 </Link>
                             </SidebarMenuButton>
                         </SidebarMenuItem>
+                            );
+                        })()
                     ))}
                 </SidebarMenu>
             </SidebarGroupContent>

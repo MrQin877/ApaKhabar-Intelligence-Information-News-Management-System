@@ -32,6 +32,17 @@ class User extends Authenticatable implements MustVerifyEmail
         'remember_token',
     ];
 
+    protected $appends = [
+        'id',
+        'email',
+        'email_verified_at',
+        'phone',
+        'phone_verified_at',
+        'phone_otp',
+        'phone_otp_expires_at',
+        'role',
+    ];
+
     public function notifications()
     {
         return $this->morphMany(NotificationModel::class, 'notifiable', 'notifiable_type', 'notifiable_id', 'userID')
@@ -56,6 +67,11 @@ class User extends Authenticatable implements MustVerifyEmail
     public function getEmailAttribute(): ?string
     {
         return $this->emailRecord?->getKey();
+    }
+
+    public function getIdAttribute(): int
+    {
+        return (int) $this->getKey();
     }
 
     public function getEmailVerifiedAtAttribute()
