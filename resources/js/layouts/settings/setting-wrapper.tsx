@@ -27,20 +27,24 @@ function VillagerSettingsTabs() {
 
     return (
         <div className="flex gap-1 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-1">
-            {villagerTabs.map(tab => (
+            {villagerTabs.map(tab => {
+                const href = tab.href.url;
+
+                return (
                 <Link
-                    key={tab.href}
-                    href={tab.href}
+                    key={href}
+                    href={href}
                     className={cn(
                         "flex-1 rounded-md px-3 py-1.5 text-center text-sm font-medium transition-colors",
-                        url.startsWith(tab.href)
+                        url.startsWith(href)
                             ? "bg-green-600 text-white"
                             : "text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800"
                     )}
                 >
                     {tab.label}
                 </Link>
-            ))}
+                );
+            })}
         </div>
     )
 }

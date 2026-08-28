@@ -1,4 +1,5 @@
 import { Head, Link } from '@inertiajs/react';
+import { useEffect, useState } from 'react';
 import { HeaderBar } from '@/components/header-bar';
 import { Badge } from '@/components/ui/badge';
 
@@ -26,9 +27,18 @@ export default function Welcome({
     breakingMessage,
     breakingSentAt,
 }: Props) {
+    const [now, setNow] = useState(() => Date.now());
+
+    useEffect(() => {
+        const timer = window.setInterval(() => setNow(Date.now()), 60000);
+
+        return () => window.clearInterval(timer);
+    }, []);
+
     const timeRemaining = breakingSentAt
-    ? Math.max(0, 24 - Math.floor((Date.now() - new Date(breakingSentAt).getTime()) / 3600000))
+    ? Math.max(0, 24 - Math.floor((now - new Date(breakingSentAt).getTime()) / 3600000))
     : 0
+
     return (
         <>
             <Head title="ApaKhabar - Berita Terkini">
@@ -39,13 +49,13 @@ export default function Welcome({
                 />
             </Head>
 
-            <div className="min-h-screen bg-white dark:bg-neutral-900">
+            <div className="min-h-screen bg-background text-foreground">
 
                 <HeaderBar />
 
                 {/* ── Darurat Broadcast Bar — shows 24 hours only ── */}
                 {breakingNews && timeRemaining > 0 && (
-                    <div className="border-b border-red-200 dark:border-red-900/40 bg-red-50 dark:bg-red-950/30 py-2 overflow-hidden">
+                    <div className="border-b border-danger-border bg-danger-bg py-2 overflow-hidden">
                         <div
                             style={{
                                 display: 'inline-flex',
@@ -55,21 +65,21 @@ export default function Welcome({
                         >
                             <span className="inline-flex items-center gap-3 px-8">
                                 {/* Darurat badge */}
-                                <span className="bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400 text-sm font-bold px-2 py-1 rounded inline-flex items-center gap-1 border border-red-300 dark:border-red-700 shrink-0">
-                                    <span className="h-2 w-2 rounded-full bg-red-500 inline-block animate-pulse" />
+                                <span className="inline-flex shrink-0 items-center gap-1 rounded border border-danger-border bg-danger-100 px-2 py-1 text-sm font-bold text-danger-text">
+                                    <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-danger-500" />
                                     DARURAT
                                 </span>
 
                                 {/* Title */}
-                                <span className="text-base font-semibold text-red-700 dark:text-red-400">
+                                <span className="text-base font-semibold text-danger-text">
                                     {breakingNews}
                                 </span>
 
                                 {/* Message */}
                                 {breakingMessage && (
                                     <>
-                                        <span className="text-red-400 dark:text-red-600">—</span>
-                                        <span className="text-sm text-red-600 dark:text-red-400">
+                                        <span className="text-danger-text">—</span>
+                                        <span className="text-sm text-danger-text">
                                             {breakingMessage}
                                         </span>
                                     </>
@@ -85,7 +95,7 @@ export default function Welcome({
                     {/* ── Featured News ── */}
                     {featuredNews ? (
                         // Fade-slide-up on mount
-                        <div className="animate-fade-slide-up mb-8 flex flex-col md:flex-row items-stretch overflow-hidden rounded-md bg-white dark:bg-neutral-900
+                        <div className="animate-fade-slide-up mb-8 flex flex-col items-stretch overflow-hidden rounded-md bg-card md:flex-row
                                         transition-transform duration-300 hover:-translate-y-1 hover:shadow-lg">
                             {/* Image zoom on hover — wrap with overflow-hidden + group */}
                             <div className="group w-full md:w-1/2 overflow-hidden rounded-t-md md:rounded-t-none md:rounded-l-md">
@@ -98,23 +108,23 @@ export default function Welcome({
                             </div>
                             <div className="w-full md:w-1/2 flex flex-col justify-start pt-4 pb-6 px-6">
                                 <div className="flex items-center gap-2 mb-3">
-                                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                                    <span className="text-xs text-muted-foreground">
                                         {featuredNews.date}
                                     </span>
-                                    <Badge className="bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 hover:bg-green-100 text-xs">
+                                    <Badge className="bg-brand-100 text-brand-800 hover:bg-brand-100 text-xs dark:bg-brand-900/40 dark:text-brand-300">
                                         {featuredNews.category}
                                     </Badge>
                                 </div>
-                                <h2 className="text-xl font-bold mb-3 leading-snug text-gray-900 dark:text-white text-justify">
+                                <h2 className="text-xl font-bold mb-3 leading-snug text-card-foreground text-justify">
                                     {featuredNews.title}
                                 </h2>
-                                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 leading-relaxed text-justify">
+                                <p className="text-sm text-muted-foreground mb-4 leading-relaxed text-justify">
                                     {featuredNews.excerpt}
                                 </p>
                                 {/* Underline draw on hover */}
                                 <Link
                                     href={`/news/${featuredNews.id}`}
-                                    className="text-sm font-medium text-gray-900 dark:text-white mt-auto
+                                    className="text-sm font-medium text-card-foreground mt-auto
                                                relative w-fit after:absolute after:bottom-0 after:left-0
                                                after:h-px after:w-0 after:bg-current
                                                after:transition-[width] after:duration-300
@@ -145,7 +155,7 @@ export default function Welcome({
                                 // Staggered fade-slide-up per card
                                 <div
                                     key={news.id}
-                                    className="animate-fade-slide-up h-full flex flex-col overflow-hidden rounded-md bg-white dark:bg-neutral-900
+                                    className="animate-fade-slide-up h-full flex flex-col overflow-hidden rounded-md bg-card
                                                transition-transform duration-300 hover:-translate-y-1 hover:shadow-md"
                                     style={{ animationDelay: `${index * 100}ms` }}
                                 >
@@ -160,23 +170,23 @@ export default function Welcome({
                                     </div>
                                     <div className="flex flex-col flex-1 px-0 pt-3 pb-4">
                                         <div className="flex items-center gap-2 mb-2">
-                                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                                            <span className="text-xs text-muted-foreground">
                                                 {news.date}
                                             </span>
-                                            <Badge className="bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 hover:bg-green-100 text-xs">
+                                            <Badge className="bg-brand-100 text-brand-800 hover:bg-brand-100 text-xs dark:bg-brand-900/40 dark:text-brand-300">
                                                 {news.category}
                                             </Badge>
                                         </div>
-                                        <h3 className="text-lg font-bold mb-3 leading-snug text-gray-900 dark:text-white text-justify">
+                                        <h3 className="text-lg font-bold mb-3 leading-snug text-card-foreground text-justify">
                                             {news.title}
                                         </h3>
-                                        <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed text-justify">
+                                        <p className="text-sm text-muted-foreground leading-relaxed text-justify">
                                             {news.excerpt}
                                         </p>
                                         {/* Underline draw on hover */}
                                         <Link
                                             href={`/news/${news.id}`}
-                                            className="text-sm font-medium text-gray-900 dark:text-white mt-auto pt-4
+                                            className="text-sm font-medium text-card-foreground mt-auto pt-4
                                                        relative w-fit after:absolute after:bottom-0 after:left-0
                                                        after:h-px after:w-0 after:bg-current
                                                        after:transition-[width] after:duration-300

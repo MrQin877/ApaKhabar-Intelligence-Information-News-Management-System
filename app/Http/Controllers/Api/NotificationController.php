@@ -12,7 +12,7 @@ class NotificationController extends Controller
             ->notifications()
             ->get()
             ->map(fn ($n) => [
-                'id'           => (string) $n->_id,
+                'id'           => (string) $n->getKey(),
                 'type'         => $n->data['type']    ?? 'pengumuman',
                 'title'        => $n->data['title']   ?? '',
                 'message'      => $n->data['message'] ?? '',
@@ -29,7 +29,7 @@ class NotificationController extends Controller
     {
         $notification = auth()->user()
             ->notifications()
-            ->where('id', $id)
+            ->whereKey($id)
             ->first();
 
         if ($notification) {

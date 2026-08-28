@@ -1,5 +1,5 @@
 import { Head, Link, usePage, router } from '@inertiajs/react';
-import { Eye, Heart, Lock, MessageCircle, ThumbsUp, ChevronUp, ChevronDown } from 'lucide-react';
+import { Eye, Heart, Lock, MessageCircle, ThumbsUp, ChevronUp } from 'lucide-react';
 import { useState } from 'react';
 import { HeaderBar } from '@/components/header-bar';
 import { Badge } from '@/components/ui/badge';
@@ -55,35 +55,35 @@ function AuthPrompt({ action, onClose }: { action: string; onClose: () => void }
         >
             {/* 2️⃣ Modal card slide-up */}
             <div
-                className="bg-white dark:bg-neutral-900 rounded-xl shadow-xl p-8 max-w-sm w-full mx-4 text-center"
+                className="bg-card text-card-foreground rounded-xl shadow-xl p-8 max-w-sm w-full mx-4 text-center"
                 style={{ animation: 'fadeSlideUp 0.25s ease both' }}
             >
                 <div className="flex justify-center mb-4">
-                    <div className="h-14 w-14 rounded-full bg-red-50 dark:bg-red-900/30 flex items-center justify-center">
-                        <Lock className="h-6 w-6 text-red-500" />
+                    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-danger-bg">
+                        <Lock className="h-6 w-6 text-danger-500" />
                     </div>
                 </div>
-                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Login Diperlukan</h3>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+                <h3 className="mb-2 text-lg font-bold text-card-foreground">Login Diperlukan</h3>
+                <p className="mb-6 text-sm text-muted-foreground">
                     Anda perlu login untuk {action}. Bergabunglah sekarang — gratis!
                 </p>
                 <div className="flex gap-3">
                     <Link
                         href={login()}
-                        className="flex-1 rounded-lg border border-gray-300 dark:border-neutral-700 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-neutral-800 transition"
+                        className="flex-1 rounded-lg border border-border py-2 text-sm font-medium text-foreground transition hover:bg-secondary"
                     >
                         Masuk
                     </Link>
                     <Link
                         href={register()}
-                        className="flex-1 rounded-lg bg-green-600 py-2 text-sm font-medium text-white hover:bg-green-700 transition"
+                        className="flex-1 rounded-lg bg-primary py-2 text-sm font-medium text-primary-foreground transition hover:bg-brand-700"
                     >
                         Daftar
                     </Link>
                 </div>
                 <button
                     onClick={onClose}
-                    className="mt-4 text-xs text-gray-400 hover:text-gray-600 transition-colors duration-200"
+                    className="mt-4 text-xs text-muted-foreground transition-colors duration-200 hover:text-foreground"
                 >
                     Nanti saja
                 </button>
@@ -110,13 +110,18 @@ function CommentItem({
     const handleReplyClick = () => {
         if (!isAuthenticated) {
             onAuthRequired('membalas komentar');
+
             return;
         }
+
         setShowReplyBox(!showReplyBox);
     };
 
     const handleSubmitReply = () => {
-        if (!replyText.trim()) return;
+        if (!replyText.trim()) {
+return;
+}
+
         router.post(`/comments/${comment.id}/replies`, { content: replyText });
         setReplyText('');
         setShowReplyBox(false);
@@ -234,8 +239,10 @@ export default function NewsDetails({ news, comments = [] }: Props) {
     const handleLike = () => {
         if (!isAuthenticated) {
             setAuthPrompt('menyukai berita ini');
+
             return;
         }
+
         router.post(`/news/${news.id}/like`, {}, {
             preserveScroll: true,
             onSuccess: () => {
@@ -248,9 +255,14 @@ export default function NewsDetails({ news, comments = [] }: Props) {
     const handleComment = () => {
         if (!isAuthenticated) {
             setAuthPrompt('menulis komentar');
+
             return;
         }
-        if (!commentText.trim()) return;
+
+        if (!commentText.trim()) {
+return;
+}
+
         router.post(`/news/${news.id}/comments`, { content: commentText }, {
             preserveScroll: true,
             onSuccess: () => setCommentText(''),
@@ -265,7 +277,7 @@ export default function NewsDetails({ news, comments = [] }: Props) {
                 <AuthPrompt action={authPrompt} onClose={() => setAuthPrompt(null)} />
             )}
 
-            <div className="min-h-screen bg-white dark:bg-neutral-900">
+            <div className="min-h-screen bg-background text-foreground">
 
                 <HeaderBar />
 
@@ -273,21 +285,21 @@ export default function NewsDetails({ news, comments = [] }: Props) {
 
                     {/* 7️⃣ Page header fades in */}
                     <div className="animate-fade-slide-up mb-6">
-                        <h1 className="text-3xl font-bold text-gray-900 dark:text-white leading-tight">
+                        <h1 className="text-3xl font-bold text-foreground leading-tight">
                             {news.title}
                         </h1>
                     </div>
 
                     {/* Breadcrumb — slight delay */}
                     <div
-                        className="animate-fade-slide-up flex items-center gap-2 text-xs text-gray-400 mb-6"
+                        className="animate-fade-slide-up mb-6 flex items-center gap-2 text-xs text-muted-foreground"
                         style={{ animationDelay: '80ms' }}
                     >
-                        <Link href="/" className="hover:text-green-600 dark:hover:text-green-400 transition-colors duration-200">
+                        <Link href="/" className="transition-colors duration-200 hover:text-primary">
                             Beranda
                         </Link>
                         <span>/</span>
-                        <span className="text-gray-600 dark:text-gray-400">{news.category}</span>
+                        <span className="text-muted-foreground">{news.category}</span>
                     </div>
 
                     {/* Category & Meta — slight delay */}
@@ -295,11 +307,11 @@ export default function NewsDetails({ news, comments = [] }: Props) {
                         className="animate-fade-slide-up flex items-center gap-3 mb-4"
                         style={{ animationDelay: '120ms' }}
                     >
-                        <Badge className="bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 hover:bg-green-100">
+                        <Badge className="bg-brand-100 text-brand-800 hover:bg-brand-100 dark:bg-brand-900/40 dark:text-brand-300">
                             {news.category}
                         </Badge>
-                        <span className="text-sm text-gray-400">{news.date}</span>
-                        <span className="flex items-center gap-1 text-sm text-gray-400">
+                        <span className="text-sm text-muted-foreground">{news.date}</span>
+                        <span className="flex items-center gap-1 text-sm text-muted-foreground">
                             <Eye className="h-4 w-4" />
                             {news.views.toLocaleString()} dilihat
                         </span>
@@ -320,14 +332,14 @@ export default function NewsDetails({ news, comments = [] }: Props) {
 
                     {/* Article body */}
                     <div
-                        className="animate-fade-slide-up prose prose-gray dark:prose-invert prose-sm max-w-none leading-relaxed text-gray-700 dark:text-gray-300 mb-8"
+                        className="animate-fade-slide-up prose prose-sm dark:prose-invert mb-8 max-w-none leading-relaxed text-foreground"
                         style={{ animationDelay: '200ms' }}
                         dangerouslySetInnerHTML={{ __html: news.content || `<p>${news.excerpt}</p>` }}
                     />
 
                     {/* 9️⃣ Like button — scale + color transition */}
                     <div
-                        className="animate-fade-slide-up flex items-center justify-between border-t border-b border-gray-100 dark:border-neutral-800 py-4 mb-10"
+                        className="animate-fade-slide-up mb-10 flex items-center justify-between border-y border-border py-4"
                         style={{ animationDelay: '240ms' }}
                     >
                         <button

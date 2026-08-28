@@ -1,6 +1,7 @@
 import { AnalyticsChart }  from "./analytics/broadcast-analytic-chart";
 import { AnalyticsStats }  from "./analytics/broadcast-analytic-stats";
 import { AnalyticsRecent } from "./analytics/broadcast-analytics-recent";
+import type { RecentItem } from "./analytics/broadcast-analytics-recent";
 
 type SidebarProps = {
     analytics: {

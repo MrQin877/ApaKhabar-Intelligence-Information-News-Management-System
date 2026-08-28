@@ -1,15 +1,15 @@
 // broadcasting/index.tsx
 import { Head, router } from '@inertiajs/react';
-import { useEffect, useState } from 'react'
 import { Radio} from 'lucide-react'; 
+import { useEffect, useState } from 'react'
 import { AnalyticsSidebar } from "@/components/broadcast-analytics";
 import { columns } from '@/components/broadcast-column';
 import type { Broadcast } from '@/components/broadcast-column'
 import { DataTable } from '@/components/broadcast-datatable';
 import { BroadcastSkeleton } from '@/components/broadcast-skeleton';
+import { Skeleton } from '@/components/ui/skeleton';
 import AppLayout from '@/layouts/app-layout';
 import type { BreadcrumbItem } from '@/types';
-import { Skeleton } from '@/components/ui/skeleton';
 
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -62,27 +62,27 @@ export default function BroadcastPage({ broadcasts, analytics }: Props) {
                     {/* Header */}
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                            <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-sidebar-border/70 dark:border-sidebar-border bg-white dark:bg-neutral-900">
+                            <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card">
                                 <Radio />
                             </div>
                             <div>
-                                <h1 className="text-xl font-bold text-neutral-900 dark:text-neutral-100">
+                                <h1 className="text-xl font-bold text-foreground">
                                     Manajemen Pesan
                                 </h1>
-                                <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                                <p className="text-sm text-muted-foreground">
                                     Kirim pengumuman dan peringatan darurat kepada pengguna Anda.
                                 </p>
                             </div>
                         </div>
                         <button
                             onClick={() => router.visit('/admin/broadcasting/create')} 
-                            className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 transition-colors">
+                            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-brand-700">
                             + Pesan Baru
                         </button>
                     </div>
 
                     {/* Table — DataTable now owns filtering, sorting, and pagination */}
-                    <div className="overflow-hidden rounded-xl border border-sidebar-border/70 dark:border-sidebar-border bg-white dark:bg-neutral-900 p-4">
+                    <div className="overflow-hidden rounded-xl border border-border bg-card p-4">
                         {loading ? (
                             <BroadcastSkeleton /> 
                         ) : (

@@ -2,13 +2,11 @@
 
 namespace App\Models;
 
-//use Illuminate\Database\Eloquent\Model;
-use MongoDB\Laravel\Eloquent\Model;
+use Illuminate\Database\Eloquent\Model;
 
 class Notification extends Model
 {
-    protected $connection = 'mongodb';
-    protected $collection = 'notifications';
+    protected $primaryKey = 'notificationID';
 
     protected $fillable = [
         'type',
@@ -16,12 +14,20 @@ class Notification extends Model
         'notifiable_type',
         'data',
         'read_at',
+        'alertID',
+        'postID',
+        'commentID',
     ];
 
     protected $casts = [
         'data'    => 'array',
         'read_at' => 'datetime',
     ];
+
+    public function notifiable()
+    {
+        return $this->morphTo();
+    }
 
     public function markAsRead(): void
     {

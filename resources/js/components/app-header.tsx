@@ -34,6 +34,7 @@ import { useInitials } from '@/hooks/use-initials';
 import { cn, toUrl } from '@/lib/utils';
 import { dashboard } from '@/routes';
 import type { BreadcrumbItem, NavItem } from '@/types';
+import type { SharedData } from '@/types';
 
 type Props = {
     breadcrumbs?: BreadcrumbItem[];
@@ -64,10 +65,15 @@ const activeItemStyles =
     'text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100';
 
 export function AppHeader({ breadcrumbs = [] }: Props) {
-    const page = usePage();
+    const page = usePage<SharedData>();
     const { auth } = page.props;
+    const user = auth.user;
     const getInitials = useInitials();
     const { isCurrentUrl, whenCurrentUrl } = useCurrentUrl();
+
+    if (!user) {
+        return null;
+    }
 
     return (
         <>
@@ -114,9 +120,13 @@ export function AppHeader({ breadcrumbs = [] }: Props) {
 
                                         <div className="flex flex-col space-y-4">
                                             {rightNavItems.map((item) => (
+                                                (() => {
+                                                    const href = item.href ?? '#';
+
+                                                    return (
                                                 <a
                                                     key={item.title}
-                                                    href={toUrl(item.href)}
+                                                    href={toUrl(href)}
                                                     target="_blank"
                                                     rel="noopener noreferrer"
                                                     className="flex items-center space-x-2 font-medium"
@@ -126,6 +136,8 @@ export function AppHeader({ breadcrumbs = [] }: Props) {
                                                     )}
                                                     <span>{item.title}</span>
                                                 </a>
+                                                    );
+                                                })()
                                             ))}
                                         </div>
                                     </div>
@@ -146,17 +158,20 @@ export function AppHeader({ breadcrumbs = [] }: Props) {
                     <div className="ml-6 hidden h-full items-center space-x-6 lg:flex">
                         <NavigationMenu className="flex h-full items-stretch">
                             <NavigationMenuList className="flex h-full items-stretch space-x-2">
-                                {mainNavItems.map((item, index) => (
+                                {mainNavItems.map((item, index) => {
+                                    const href = item.href ?? '#';
+
+                                    return (
                                     <NavigationMenuItem
                                         key={index}
                                         className="relative flex h-full items-center"
                                     >
                                         <Link
-                                            href={item.href}
+                                            href={href}
                                             className={cn(
                                                 navigationMenuTriggerStyle(),
                                                 whenCurrentUrl(
-                                                    item.href,
+                                                    href,
                                                     activeItemStyles,
                                                 ),
                                                 'h-9 cursor-pointer px-3',
@@ -167,11 +182,12 @@ export function AppHeader({ breadcrumbs = [] }: Props) {
                                             )}
                                             {item.title}
                                         </Link>
-                                        {isCurrentUrl(item.href) && (
+                                        {isCurrentUrl(href) && (
                                             <div className="absolute bottom-0 left-0 h-0.5 w-full translate-y-px bg-black dark:bg-white"></div>
                                         )}
                                     </NavigationMenuItem>
-                                ))}
+                                    );
+                                })}
                             </NavigationMenuList>
                         </NavigationMenu>
                     </div>
@@ -186,11 +202,14 @@ export function AppHeader({ breadcrumbs = [] }: Props) {
                                 <Search className="!size-5 opacity-80 group-hover:opacity-100" />
                             </Button>
                             <div className="ml-1 hidden gap-1 lg:flex">
-                                {rightNavItems.map((item) => (
+                                {rightNavItems.map((item) => {
+                                    const href = item.href ?? '#';
+
+                                    return (
                                     <Tooltip key={item.title}>
                                         <TooltipTrigger>
                                             <a
-                                                href={toUrl(item.href)}
+                                                href={toUrl(href)}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
                                                 className="group inline-flex h-9 w-9 items-center justify-center rounded-md bg-transparent p-0 text-sm font-medium text-accent-foreground ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50"
@@ -207,7 +226,8 @@ export function AppHeader({ breadcrumbs = [] }: Props) {
                                             <p>{item.title}</p>
                                         </TooltipContent>
                                     </Tooltip>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </div>
                         <DropdownMenu>
@@ -218,17 +238,17 @@ export function AppHeader({ breadcrumbs = [] }: Props) {
                                 >
                                     <Avatar className="size-8 overflow-hidden rounded-full">
                                         <AvatarImage
-                                            src={auth.user.avatar}
-                                            alt={auth.user.name}
+                                            src={user.avatar}
+                                            alt={user.name}
                                         />
                                         <AvatarFallback className="rounded-lg bg-neutral-200 text-black dark:bg-neutral-700 dark:text-white">
-                                            {getInitials(auth.user.name)}
+                                            {getInitials(user.name)}
                                         </AvatarFallback>
                                     </Avatar>
                                 </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent className="w-56" align="end">
-                                <UserMenuContent user={auth.user} />
+                                <UserMenuContent user={user} />
                             </DropdownMenuContent>
                         </DropdownMenu>
                     </div>

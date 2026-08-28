@@ -1,0 +1,217 @@
+MYSQL MIGRATION UPDATE
+======================
+
+Purpose
+-------
+The application was changed from MongoDB-oriented code to the proposed
+normalized MySQL table structure. The migration files are treated as the
+source of truth for table names, columns, primary keys, and foreign keys.
+
+Database configuration
+----------------------
+- The active .env uses DB_CONNECTION=mysql.
+- MySQL host: 127.0.0.1
+- MySQL port: 3306
+- MySQL database: apakahbar
+- config/database.php now falls back to mysql when DB_CONNECTION is absent.
+- .env.example now documents the MySQL connection settings.
+
+Proposed table structure
+------------------------
+- users: userID, name, password, push_token, remember_token, roleID
+- user_roles: roleID, name
+- emails: email, email_verified_at, userID
+- phones: phone, phone_otp, phone_otp_expires_at, phone_verified_at, userID
+- personal_access_tokens: tokenID, tokenable_id, tokenable_type, name, token,
+	abilities, expires_at
+- news: postID, title, content, image, likes_count, view, excerpt,
+	category_id
+- news_categories: categoryID, name, description
+- comments: commentID, content, newsID, userID, parentID
+- likes: likeID, postID, userID
+- broadcasts: alertID, title, message, send_mode, status, sent_at,
+	scheduled_at, archived_at, created_by, categoryID
+- broadcast_categories: categoryID, name
+- channels: channelID, name
+- broadcast_channel: broadcast_id, channel_id
+- broadcast_user: broadcast_id, user_id
+- notifications: notificationID, type, data, read_at, notifiable_id,
+	notifiable_type, alertID, postID, commentID
+
+Model changes
+-------------
+Added models:
+- app/Models/Email.php
+- app/Models/Phone.php
+- app/Models/UserRole.php
+- app/Models/NewsCategory.php
+- app/Models/BroadcastCategory.php
+- app/Models/Channel.php
+
+Updated model primary keys:
+- User uses userID.
+- News uses postID.
+- Comment uses commentID.
+- Like uses likeID.
+- Broadcast uses alertID.
+- Notification uses notificationID.
+- PersonalAccessToken uses tokenID and no longer uses the MongoDB
+	DocumentModel trait.
+
+Normalized relationships:
+- User email is read through emailRecord() from emails.
+- User phone data is read through phoneRecord() from phones.
+- User role is read through roleRecord() from user_roles.
+- News category is read through categoryRecord() from news_categories.
+- Broadcast category is read through categoryRecord() from
+	broadcast_categories.
+- Broadcast channels are read through the broadcast_channel pivot table.
+- Broadcast recipients are read through the broadcast_user pivot table.
+- News comments use newsID and likes use postID.
+
+Compatibility accessors:
+- User still supports $user->email, $user->phone, and $user->role, but
+	these values are loaded from their normalized related records.
+- News still supports $news->category and $news->views. The category is
+	loaded from news_categories and views maps to the SQL column view.
+- Broadcast category and audience values are derived from relationships.
+
+Authentication changes
+----------------------
+- Added app/Auth/NormalizedEloquentUserProvider.php.
+- Laravel authentication now searches emails.email when credentials contain
+	an email address.
+- config/auth.php uses the normalized-eloquent provider.
+- AppServiceProvider registers the custom provider.
+- API registration creates a users row, an emails row, and a villager role
+	relationship.
+- Fortify registration uses the same normalized flow.
+- Sanctum tokens use tokenID and SQL Eloquent.
+- API authentication and logout no longer query MongoDB _id.
+
+Email verification changes
+--------------------------
+Laravel normally updates users.email_verified_at. That column does not exist
+in the proposed structure, so User overrides:
+- hasVerifiedEmail()
+- markEmailAsVerified()
+
+These methods now read and update emails.email_verified_at.
+
+Profile and phone changes
+-------------------------
+- Profile email updates write to the emails table.
+- Profile name updates write to users.
+- Phone registration, OTP creation, OTP verification, and OTP resend write
+	to the phones table.
+- Phone uniqueness checks use phones.phone and phones.userID.
+
+News and comment changes
+------------------------
+- Controllers use postID instead of MongoDB _id.
+- News view increments use the view column.
+- News category filters use a relationship query against news_categories.
+- Comments use newsID, userID, and parentID.
+- Likes use postID and userID.
+- Web and API news, comments, and likes controllers were updated.
+
+Broadcast and notification changes
+----------------------------------
+- Broadcast category is stored as categoryID.
+- Selected channels are synchronized through broadcast_channel.
+- Selected recipients are synchronized through broadcast_user.
+- Broadcast analytics use MySQL JSON queries for notification data.
+- Broadcast notification delivery uses Laravel's database channel instead
+	of the custom MongoDB channel.
+- MongoDB notification channel registration was removed from
+	AppServiceProvider.
+- API and web notification controllers use notificationID.
+
+Factory and seeder changes
+--------------------------
+- UserFactory no longer inserts email or phone fields into users.
+- UserFactory creates the related emails row after creating a user.
+- DatabaseSeeder creates the required roles, broadcast categories, and
+	channels before creating users.
+- DatabaseSeeder inserts five sample news articles using NewsCategory and
+	category_id.
+- The sample news categories are Pengumuman, Pendidikan, and Lingkungan.
+- Sample article dates are stored in created_at because the proposed news
+	table has no date column.
+- Sample view counts use the view column.
+- News insertion uses firstOrCreate by title to avoid duplicates.
+
+Commands
+--------
+Create the schema and seed all lookup, user, and news data:
+
+		php artisan migrate:fresh --seed
+
+Run the seeder without dropping existing tables:
+
+		php artisan db:seed
+
+Check migration status:
+
+		php artisan migrate:status
+
+Generate Wayfinder files:
+
+		php artisan wayfinder:generate --with-form
+
+Validation completed
+--------------------
+- php artisan migrate:fresh --seed completed successfully on MySQL.
+- Laravel route loading completed successfully.
+- All updated models booted with the expected table and primary key.
+- Normalized email authentication lookup returned the expected user.
+- Email verification updated emails.email_verified_at successfully.
+- Wayfinder generation completed successfully.
+- No PHP diagnostics were reported in the changed application files.
+
+Known test-suite note
+---------------------
+Some existing tests and test factories were written for the old flat schema
+and still attempt to insert fields such as users.email, users.role,
+news.category, and news.date. Those tests must be updated to create related
+Email, UserRole, and NewsCategory records and to use the new column names.
+
+Frontend color-library update
+-----------------------------
+- Applied the supplied ApaKhabar color library to resources/css/app.css.
+- Added brand green tokens from brand-50 through brand-900.
+- Added the custom greyscale palette from greyscale-50 through greyscale-950,
+	including greyscale-75 and greyscale-925.
+- Added expanded info, warning, and danger color scales.
+- Replaced the original neutral OKLCH theme values with the supplied
+	greyscale-based light and dark theme values.
+- Mapped primary actions to brand-600 in light mode and brand-600 in dark
+	mode, with semantic secondary, muted, accent, border, input, and ring
+	tokens.
+- Added reusable semantic status roles for success, info, warning, and
+	danger backgrounds, borders, and text.
+- Exposed brand and semantic roles through Tailwind v4 @theme variables.
+- Updated public frontend pages to use semantic roles such as bg-background,
+	bg-card, text-foreground, text-muted-foreground, bg-primary,
+	bg-success-bg, bg-warning-bg, and bg-danger-bg.
+- Updated the public header, welcome page, news category page, and news
+	detail page.
+- Updated notification cards, notification badges, notification icons,
+	appearance tabs, user info, authentication pages, settings pages, admin
+	broadcast pages, and broadcast status badges.
+- Preserved existing layout, routes, authentication behavior, and page
+	functionality.
+- Updated color.txt with the exact applied palette and usage roles.
+
+Frontend validation
+-------------------
+- npm run types:check passed.
+- npm run lint:check passed.
+- npm run build passed.
+- git diff --check passed.
+
+Color-library follow-up
+-----------------------
+- app.css currently references --brand-950 for dark success-bg, but no
+	--brand-950 token is defined. This should be corrected before using dark
+	success alerts in production.

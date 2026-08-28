@@ -3,15 +3,30 @@
 namespace App\Models;
 
 use Laravel\Sanctum\PersonalAccessToken as SanctumPersonalAccessToken;
-use MongoDB\Laravel\Eloquent\DocumentModel;
 
 class PersonalAccessToken extends SanctumPersonalAccessToken
 {
-    use DocumentModel;
+    /**
+     * Primary key.
+     *
+     * Sanctum normally expects "id",
+     * but our database uses "tokenID".
+     */
+    protected $primaryKey = 'tokenID';
 
-    protected $connection = 'mongodb';
-    protected $collection = 'personal_access_tokens';
+    /**
+     * Primary key is an integer.
+     */
+    protected $keyType = 'int';
 
+    /**
+     * Primary key is auto-incrementing.
+     */
+    public $incrementing = true;
+
+    /**
+     * Cast database fields to appropriate types.
+     */
     protected $casts = [
         'abilities'    => 'json',
         'last_used_at' => 'datetime',
@@ -30,7 +45,7 @@ class PersonalAccessToken extends SanctumPersonalAccessToken
 
         \Log::info('Looking for token with id: ' . $id);
 
-        $instance = static::where('_id', $id)->first();
+        $instance = static::whereKey($id)->first();
 
         \Log::info('Found instance: ' . ($instance ? 'YES' : 'NO'));
 

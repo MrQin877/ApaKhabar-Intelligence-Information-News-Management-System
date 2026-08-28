@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Broadcast;
+use App\Models\BroadcastCategory;
+use App\Models\Channel;
 use App\Models\Notification;
 use App\Models\User;
 use App\Notifications\BroadcastNotification;
@@ -18,11 +20,11 @@ class BroadcastController extends Controller
     public function index()
     {
         $broadcasts = Broadcast::active()
-            ->with('creator:id,name')
+            ->with(['creator:userID,name', 'categoryRecord', 'channels', 'users.roleRecord'])
             ->latest()
             ->get()
             ->map(fn ($b) => [
-                'id'        => (string) $b->id,
+                'id'        => (string) $b->getKey(),
                 'type'      => $b->category,
                 'title'     => $b->title,
                 'audience'  => match($b->audience) {
@@ -62,11 +64,11 @@ class BroadcastController extends Controller
             return [
                 'month'      => $date->format('M'),
                 'pengumuman' => Broadcast::active()
-                                    ->where('category', 'pengumuman')
+                                    ->whereHas('categoryRecord', fn ($query) => $query->where('name', 'pengumuman'))
                                     ->whereBetween('created_at', [$start, $end])
                                     ->count(),
                 'darurat'    => Broadcast::active()
-                                    ->where('category', 'darurat')
+                                    ->whereHas('categoryRecord', fn ($query) => $query->where('name', 'darurat'))
                                     ->whereBetween('created_at', [$start, $end])
                                     ->count(),
             ];
@@ -79,8 +81,8 @@ class BroadcastController extends Controller
             ->take(3)
             ->get()
             ->map(function ($b) {
-                $broadcastId = (string) $b->id;
-                $notifs      = \App\Models\Notification::where('data.broadcast_id', $broadcastId)->get();
+                $broadcastId = (string) $b->getKey();
+                $notifs      = \App\Models\Notification::whereJsonContains('data->broadcast_id', $broadcastId)->get();
                 $sent        = $notifs->count();
                 $read        = $notifs->whereNotNull('read_at')->count();
                 $rate        = $sent > 0 ? round(($read / $sent) * 100) : 0;
@@ -141,14 +143,17 @@ class BroadcastController extends Controller
             'created_by'   => auth()->id(),
             'title'        => $validated['title'],
             'message'      => $validated['message'],
-            'category'     => $validated['category'],
-            'channels'     => $validated['channels'],
-            'audience'     => $validated['audience'],
+            'categoryID'   => BroadcastCategory::where('name', $validated['category'])->value('categoryID'),
             'send_mode'    => $validated['send_mode'],
             'status'       => $validated['send_mode'] === 'now' ? 'dikirim' : 'terjadwal',
             'sent_at'      => $validated['send_mode'] === 'now' ? now() : null,
             'scheduled_at' => $scheduledAt,
         ]);
+
+        $broadcast->channels()->sync(
+            Channel::whereIn('name', $validated['channels'])->pluck('channelID')
+        );
+        $broadcast->users()->sync($this->getTargetUsers($validated['audience'])->modelKeys());
 
         if ($validated['send_mode'] === 'now') {
             $this->sendToUsers($broadcast);
@@ -161,13 +166,10 @@ class BroadcastController extends Controller
     // GET /admin/broadcasting/{broadcast}
     public function show(Broadcast $broadcast)
     {
-        $broadcast->load('creator:id,name');
-        $broadcastId = (string) $broadcast->id;
+        $broadcast->load(['creator:userID,name', 'categoryRecord', 'channels', 'users.roleRecord']);
+        $broadcastId = (string) $broadcast->getKey();
 
-        // ── Use regex since data is stored as JSON string ──
-        $allNotifications = \App\Models\Notification::whereRaw([
-            'data' => ['$regex' => $broadcastId, '$options' => 'i']
-        ])->get();
+        $allNotifications = \App\Models\Notification::whereJsonContains('data->broadcast_id', $broadcastId)->get();
 
         $totalSent = $allNotifications->count();
         $totalRead = $allNotifications->filter(fn ($n) => !is_null($n->read_at))->count();
@@ -175,11 +177,11 @@ class BroadcastController extends Controller
 
         return Inertia::render('admin/broadcasting/show', [
             'broadcast' => [
-                'id'           => (string) $broadcast->id,
+                'id'           => (string) $broadcast->getKey(),
                 'title'        => $broadcast->title,
                 'message'      => $broadcast->message,
                 'category'     => $broadcast->category,
-                'channels'     => $broadcast->channels ?? [],
+                'channels'     => $broadcast->channels->pluck('name')->all(),
                 'audience'     => $broadcast->audience,
                 'status'       => $broadcast->status,
                 'send_mode'    => $broadcast->send_mode,
@@ -188,7 +190,7 @@ class BroadcastController extends Controller
                 'archived_at'  => $broadcast->archived_at,
                 'created_at'   => $broadcast->created_at->translatedFormat('d M Y, H:i'),
                 'creator'      => $broadcast->creator
-                    ? ['id' => (string) $broadcast->creator->id, 'name' => $broadcast->creator->name]
+                    ? ['id' => (string) $broadcast->creator->getKey(), 'name' => $broadcast->creator->name]
                     : ['id' => null, 'name' => 'Admin'],
                 'stats'        => [
                     'total_sent' => $totalSent,
@@ -219,7 +221,7 @@ class BroadcastController extends Controller
             'ids' => 'required|array|min:1',
         ]);
 
-        Broadcast::whereIn('id', $request->ids)
+        Broadcast::whereIn('alertID', $request->ids)
             ->update(['archived_at' => now()]);
 
         return back()->with('success', count($request->ids) . ' siaran berhasil diarsipkan.');
@@ -237,12 +239,12 @@ class BroadcastController extends Controller
     // GET /admin/broadcasting/archived
     public function archived()
     {
-        $broadcasts = Broadcast::where('archived_at', '!=', null)
-            ->with('creator:id,name')
+        $broadcasts = Broadcast::whereNotNull('archived_at')
+            ->with(['creator:userID,name', 'categoryRecord', 'users.roleRecord'])
             ->latest('archived_at')
             ->get()
             ->map(fn ($b) => [
-                'id'          => (string) $b->id,
+                'id'          => (string) $b->getKey(),
                 'type'        => $b->category,
                 'title'       => $b->title,
                 'audience'    => match($b->audience) {
@@ -276,8 +278,9 @@ class BroadcastController extends Controller
 
     private function sendToUsers(Broadcast $broadcast): void
     {
-        $users    = $this->getTargetUsers($broadcast->audience);
-        $channels = $broadcast->channels ?? [];
+        $broadcast->loadMissing(['users.roleRecord', 'channels']);
+        $users    = $broadcast->users;
+        $channels = $broadcast->channels->pluck('name')->all();
         $message  = "[{$broadcast->category}] {$broadcast->title}\n\n{$broadcast->message}";
 
         // ── Debug ──
@@ -340,8 +343,8 @@ class BroadcastController extends Controller
     private function getTargetUsers(string $audience)
     {
         return match($audience) {
-            'karyawan' => User::whereIn('role', ['admin', 'moderator'])->get(),
-            default    => User::whereIn('role', ['villager', 'admin', 'moderator'])->get(),
+            'karyawan' => User::whereHas('roleRecord', fn ($query) => $query->whereIn('name', ['admin', 'moderator']))->get(),
+            default    => User::whereHas('roleRecord', fn ($query) => $query->whereIn('name', ['villager', 'admin', 'moderator']))->get(),
         };
     }
 

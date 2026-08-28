@@ -2,33 +2,27 @@
 
 namespace App\Models;
 
-use Illuminate\Contracts\Auth\MustVerifyEmail;
-use Database\Factories\UserFactory;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-use MongoDB\Laravel\Auth\User as Authenticatable;
-use Illuminate\Notifications\Notifiable;
+use App\Models\Notification as NotificationModel;
 use Illuminate\Auth\Notifications\VerifyEmail;
-use App\Models\Notification as MongoNotification;
+use Illuminate\Contracts\Auth\MustVerifyEmail;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Notifications\Notifiable;
 use Illuminate\Notifications\Notification;
 use Laravel\Fortify\TwoFactorAuthenticatable;
-use Laravel\Sanctum\HasApiTokens;  // ← ADDED BACK
+use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable implements MustVerifyEmail
 {
-    use HasFactory, Notifiable, TwoFactorAuthenticatable, HasApiTokens;  // ← ADDED BACK
+    use HasFactory, Notifiable, TwoFactorAuthenticatable, HasApiTokens;
 
-    protected $connection = 'mongodb';
+    protected $primaryKey = 'userID';
 
     protected $fillable = [
         'name',
-        'email',
         'password',
-        'role',
-        'phone',
-        'phone_verified_at',
-        'phone_otp',
-        'phone_otp_expires_at',
         'push_token',
+        'roleID',
     ];
 
     protected $hidden = [
@@ -38,10 +32,76 @@ class User extends Authenticatable implements MustVerifyEmail
         'remember_token',
     ];
 
+    protected $appends = [
+        'id',
+        'email',
+        'email_verified_at',
+        'phone',
+        'phone_verified_at',
+        'phone_otp',
+        'phone_otp_expires_at',
+        'role',
+    ];
+
     public function notifications()
     {
-        return $this->morphMany(MongoNotification::class, 'notifiable')
+        return $this->morphMany(NotificationModel::class, 'notifiable', 'notifiable_type', 'notifiable_id', 'userID')
                     ->orderBy('created_at', 'desc');
+    }
+
+    public function emailRecord()
+    {
+        return $this->hasOne(Email::class, 'userID', 'userID');
+    }
+
+    public function phoneRecord()
+    {
+        return $this->hasOne(Phone::class, 'userID', 'userID');
+    }
+
+    public function roleRecord()
+    {
+        return $this->belongsTo(UserRole::class, 'roleID', 'roleID');
+    }
+
+    public function getEmailAttribute(): ?string
+    {
+        return $this->emailRecord?->getKey();
+    }
+
+    public function getIdAttribute(): int
+    {
+        return (int) $this->getKey();
+    }
+
+    public function getEmailVerifiedAtAttribute()
+    {
+        return $this->emailRecord?->email_verified_at;
+    }
+
+    public function getPhoneAttribute(): ?string
+    {
+        return $this->phoneRecord?->getKey();
+    }
+
+    public function getPhoneOtpAttribute()
+    {
+        return $this->phoneRecord?->phone_otp;
+    }
+
+    public function getPhoneOtpExpiresAtAttribute()
+    {
+        return $this->phoneRecord?->phone_otp_expires_at;
+    }
+
+    public function getPhoneVerifiedAtAttribute()
+    {
+        return $this->phoneRecord?->phone_verified_at;
+    }
+
+    public function getRoleAttribute(): ?string
+    {
+        return $this->roleRecord?->name;
     }
 
     public function unreadNotifications()
@@ -65,11 +125,6 @@ class User extends Authenticatable implements MustVerifyEmail
         ];
     }
 
-    public function getKey()
-    {
-        return (string) $this->_id;
-    }
-
     public function sendEmailVerificationNotification(): void
     {
         $this->notify(new VerifyEmail);
@@ -78,6 +133,24 @@ class User extends Authenticatable implements MustVerifyEmail
     public function getEmailForVerification(): string
     {
         return $this->email;
+    }
+
+    public function hasVerifiedEmail(): bool
+    {
+        return ! is_null($this->email_verified_at);
+    }
+
+    public function markEmailAsVerified(): bool
+    {
+        $email = $this->emailRecord;
+
+        if (! $email || $email->email_verified_at) {
+            return false;
+        }
+
+        $email->forceFill(['email_verified_at' => now()])->save();
+
+        return true;
     }
 
     public function routeNotificationForVonage(Notification $notification): string

@@ -5,6 +5,8 @@ namespace App\Actions\Fortify;
 use App\Concerns\PasswordValidationRules;
 use App\Concerns\ProfileValidationRules;
 use App\Models\User;
+use App\Models\Email;
+use App\Models\UserRole;
 use Illuminate\Support\Facades\Validator;
 use Laravel\Fortify\Contracts\CreatesNewUsers;
 
@@ -26,9 +28,13 @@ class CreateNewUser implements CreatesNewUsers
 
         $user = User::create([
             'name'     => $input['name'],
-            'email'    => $input['email'],
             'password' => $input['password'],
-            'role'     => 'villager',
+            'roleID'   => UserRole::firstOrCreate(['name' => 'villager'])->getKey(),
+        ]);
+
+        Email::create([
+            'email' => $input['email'],
+            'userID' => $user->getKey(),
         ]);
 
         //Trigger verification email after registration

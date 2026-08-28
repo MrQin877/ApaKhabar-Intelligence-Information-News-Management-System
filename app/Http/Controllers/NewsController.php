@@ -16,12 +16,12 @@ class NewsController extends Controller
         $query = News::latest();
 
         if ($category) {
-            $query->where('category', $category);
+            $query->category($category);
         }
 
         $news = $query->get()->map(function ($item) {
             return [
-                'id'       => (string) $item->_id,
+                'id'       => (string) $item->getKey(),
                 'title'    => $item->title,
                 'excerpt'  => $item->excerpt ?? '',
                 'image'    => $item->image ?? 'https://placehold.co/600x400',
@@ -42,22 +42,22 @@ class NewsController extends Controller
 
         abort_if(!$news, 404);
 
-        $news->increment('views');
+        $news->increment('view');
 
         return Inertia::render('newsdetails', [
             'news' => [
-                'id'            => (string) $news->_id,
+                'id'            => (string) $news->getKey(),
                 'title'         => $news->title,
                 'excerpt'       => $news->excerpt ?? '',
                 'content'       => $news->content,
                 'image'         => $news->image ?? 'https://placehold.co/800x400',
                 'date'          => optional($news->created_at)->format('d F Y') ?? '-',
                 'category'      => $news->category ?? 'Umum',
-                'views'         => $news->views ?? 0,
+                'views'         => $news->view ?? 0,
                 'likes_count'   => $news->likes_count ?? 0,
                 'liked_by_user' => auth()->check()
-                    ? Like::where('news_id', (string) $news->_id)
-                           ->where('user_id', auth()->id())
+                          ? Like::where('postID', $news->getKey())
+                              ->where('userID', auth()->id())
                            ->exists()
                     : false,
             ],

@@ -18,18 +18,18 @@ class NewsController extends Controller
         $query = News::latest();
 
         if ($category) {
-            $query->where('category', $category);
+            $query->category($category);
         }
 
         $news = $query->get()->map(fn ($item) => [
-            'id'       => (string) $item->_id,
+            'id'       => (string) $item->getKey(),
             'title'    => $item->title,
             'excerpt'  => $item->excerpt ?? '',
             'body'     => $item->content ?? '',
             'image'    => $item->image ?? 'https://placehold.co/600x400',
             'date'     => optional($item->created_at)->format('d F Y') ?? '-',
             'category' => $item->category ?? 'Umum',
-            'views'    => $item->views ?? 0,
+            'views'    => $item->view ?? 0,
             'likes'    => $item->likes_count ?? 0,
             'comments' => 0,
         ]);
@@ -46,33 +46,33 @@ class NewsController extends Controller
             return response()->json(['message' => 'Berita tidak ditemukan.'], 404);
         }
 
-        $news->increment('views');
+        $news->increment('view');
 
-        $comments = Comment::where('news_id', (string) $news->_id)
-            ->whereNull('parent_id')
+        $comments = Comment::where('newsID', $news->getKey())
+            ->whereNull('parentID')
             ->get()
             ->map(fn ($c) => [
-                'id'      => (string) $c->_id,
+                'id'      => (string) $c->getKey(),
                 'content' => $c->content,
-                'user'    => optional(User::find($c->user_id))->name ?? 'Unknown',
+                'user'    => optional(User::find($c->userID))->name ?? 'Unknown',
                 'date'    => optional($c->created_at)->diffForHumans(),
             ]);
 
         return response()->json([
             'data' => [
-                'id'            => (string) $news->_id,
+                'id'            => (string) $news->getKey(),
                 'title'         => $news->title,
                 'excerpt'       => $news->excerpt ?? '',
                 'body'          => $news->content ?? '',
                 'image'         => $news->image ?? 'https://placehold.co/800x400',
                 'date'          => optional($news->created_at)->format('d F Y') ?? '-',
                 'category'      => $news->category ?? 'Umum',
-                'views'         => $news->views ?? 0,
+                'views'         => $news->view ?? 0,
                 'likes'         => $news->likes_count ?? 0,
                 'comments'      => $comments->count(),
                 'liked_by_user' => auth()->check()
-                    ? Like::where('news_id', (string) $news->_id)
-                           ->where('user_id', auth()->id())
+                          ? Like::where('postID', $news->getKey())
+                              ->where('userID', auth()->id())
                            ->exists()
                     : false,
                 'comments_list' => $comments,
@@ -87,11 +87,11 @@ class NewsController extends Controller
             $related = News::latest()
                 ->limit(10)
                 ->get()
-                ->filter(fn ($item) => (string) $item->_id !== (string) $id)
+                ->filter(fn ($item) => (string) $item->getKey() !== (string) $id)
                 ->take(3)
                 ->values()
                 ->map(fn ($item) => [
-                    'id'       => (string) $item->_id,
+                    'id'       => (string) $item->getKey(),
                     'title'    => $item->title,
                     'category' => $item->category ?? 'Umum',
                     'image'    => $item->image ?? 'https://placehold.co/600x400',

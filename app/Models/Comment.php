@@ -2,34 +2,40 @@
 
 namespace App\Models;
 
-use MongoDB\Laravel\Eloquent\Model;
+use Illuminate\Database\Eloquent\Model;
 
 class Comment extends Model
 {
-    protected $connection = 'mongodb';
-    protected $collection = 'comments';
+    protected $primaryKey = 'commentID';
 
     protected $fillable = [
-        'news_id',
-        'user_id',
+        'newsID',
+        'userID',
         'content',
-        'likes',
-        'parent_id',   // null = top-level, set = reply
+        'parentID',
     ];
 
     protected $attributes = [
-        'likes'     => 0,
-        'parent_id' => null,
+        'parentID' => null,
     ];
 
-    // Replies are comments with this comment's id as parent_id
     public function replies()
     {
-        return $this->hasMany(Comment::class, 'parent_id');
+        return $this->hasMany(Comment::class, 'parentID', 'commentID');
+    }
+
+    public function parent()
+    {
+        return $this->belongsTo(Comment::class, 'parentID', 'commentID');
     }
 
     public function author()
     {
-        return $this->belongsTo(User::class, 'user_id');
+        return $this->belongsTo(User::class, 'userID', 'userID');
+    }
+
+    public function news()
+    {
+        return $this->belongsTo(News::class, 'newsID', 'postID');
     }
 }

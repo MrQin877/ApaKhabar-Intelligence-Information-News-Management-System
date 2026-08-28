@@ -2,15 +2,24 @@
 
 namespace App\Models;
 
-use MongoDB\Laravel\Eloquent\Model;
+use Illuminate\Database\Eloquent\Model;
 
 class Like extends Model
 {
-    protected $connection = 'mongodb';
-    protected $collection = 'likes';
+    protected $primaryKey = 'likeID';
 
     protected $fillable = [
-        'news_id',
-        'user_id',
+        'postID',
+        'userID',
     ];
+
+    public function news()
+    {
+        return $this->belongsTo(News::class, 'postID', 'postID');
+    }
+
+    public function user()
+    {
+        return $this->belongsTo(User::class, 'userID', 'userID');
+    }
 }

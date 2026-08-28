@@ -49,24 +49,28 @@ export default function SettingsLayout({ children }: PropsWithChildren) {
                         className="flex flex-col space-y-1 space-x-0"
                         aria-label="Tetapan"
                     >
-                        {sidebarNavItems.map((item, index) => (
+                        {sidebarNavItems.map((item, index) => {
+                            const href = item.href ?? '#';
+
+                            return (
                             <Button
-                                key={`${toUrl(item.href)}-${index}`}
+                                key={`${toUrl(href)}-${index}`}
                                 size="sm"
                                 variant="ghost"
                                 asChild
                                 className={cn('w-full justify-start', {
-                                    'bg-muted': isCurrentOrParentUrl(item.href),
+                                    'bg-muted': isCurrentOrParentUrl(href),
                                 })}
                             >
-                                <Link href={item.href}>
+                                <Link href={href}>
                                     {item.icon && (
                                         <item.icon className="h-4 w-4" />
                                     )}
                                     {item.title}
                                 </Link>
                             </Button>
-                        ))}
+                            );
+                        })}
                     </nav>
                 </aside>
 

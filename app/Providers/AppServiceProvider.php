@@ -3,11 +3,12 @@
 namespace App\Providers;
 
 use App\Notifications\Channels\Bulk360Channel;
-use App\Notifications\Channels\MongoDBDatabaseChannel;
 use App\Models\PersonalAccessToken;  // ← ADD THIS
+use App\Auth\NormalizedEloquentUserProvider;
 use App\Services\SmsService;
 use Carbon\CarbonImmutable;
 use Illuminate\Notifications\ChannelManager;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
@@ -24,6 +25,9 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        Auth::provider('normalized-eloquent', function ($app, array $config) {
+            return new NormalizedEloquentUserProvider($app['hash'], $config['model']);
+        });
         Sanctum::usePersonalAccessTokenModel(PersonalAccessToken::class);  // ← ADD THIS
         $this->configureDefaults();
         $this->configureNotificationChannels();
@@ -32,11 +36,6 @@ class AppServiceProvider extends ServiceProvider
     protected function configureNotificationChannels(): void
     {
         Notification::resolved(function (ChannelManager $service) {
-            // ── MongoDB in-app channel ──
-            $service->extend('mongodb', function ($app) {
-                return new MongoDBDatabaseChannel();
-            });
-
             // ── Bulk360 SMS channel ──
             $service->extend('bulk360', function ($app) {
                 return new Bulk360Channel(

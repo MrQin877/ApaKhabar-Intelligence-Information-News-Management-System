@@ -1,7 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-type RecentItem = {
+export type RecentItem = {
     id: string
     title: string
     category: string
@@ -34,7 +34,7 @@ export function AnalyticsRecent({ recent }: { recent: RecentItem[] }) {
                                 <p className="text-sm font-medium">{item.title}</p>
                                 <p className="text-xs text-muted-foreground pt-1">
                                     Dikirim {item.sent_at} ke {item.audience} ·{' '}
-                                    <span className="text-green-500">
+                                    <span className="text-brand-500">
                                         {item.read} dibuka {item.rate}%
                                     </span>
                                 </p>

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Settings;
 
 use App\Http\Controllers\Controller;
 use App\Notifications\OtpNotification;
+use App\Models\Phone;
 use Illuminate\Http\Request;
 
 class PhoneVerificationController extends Controller
@@ -18,8 +19,8 @@ class PhoneVerificationController extends Controller
         $user = auth()->user();
 
         // ── Check if phone already used by another user ──
-        $existingUser = \App\Models\User::where('phone', $request->phone)
-            ->where('_id', '!=', (string) $user->id)  // exclude current user
+        $existingUser = Phone::where('phone', $request->phone)
+            ->where('userID', '!=', $user->getKey())
             ->first();
 
         if ($existingUser) {
@@ -32,7 +33,7 @@ class PhoneVerificationController extends Controller
 
         \Log::info('Sending OTP to', ['phone' => $request->phone]);
 
-        $user->update([
+        $user->phoneRecord()->updateOrCreate(['userID' => $user->getKey()], [
             'phone'                => $request->phone,
             'phone_verified_at'    => null,
             'phone_otp'            => $otp,
@@ -66,7 +67,7 @@ class PhoneVerificationController extends Controller
             return back()->withErrors(['otp' => 'Kod OTP tidak sah.']);
         }
 
-        $user->update([
+        $user->phoneRecord()->update([
             'phone_verified_at'    => now(),
             'phone_otp'            => null,
             'phone_otp_expires_at' => null,
@@ -86,7 +87,7 @@ class PhoneVerificationController extends Controller
 
         $otp = rand(100000, 999999);
 
-        $user->update([
+        $user->phoneRecord()->update([
             'phone_otp'            => $otp,
             'phone_otp_expires_at' => now()->addMinutes(10),
             'phone_verified_at'    => null,
