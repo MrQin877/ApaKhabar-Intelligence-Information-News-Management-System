@@ -35,17 +35,17 @@ export default function Login({ status, canResetPassword, canRegister }: Props) 
                     <>
                         <div className="grid gap-6">
                             <div className="grid gap-2">
-                                <Label htmlFor="email">Alamat e-mail</Label>
+                                <Label htmlFor="email">Alamat e-mail atau nombor telefon</Label>
                                 <Input
                                     id="email"
-                                    type="email"
+                                    type="text"
                                     name="email"
                                     required
                                     autoFocus
                                     tabIndex={1}
-                                    autoComplete="email"
-                                    placeholder="email@contoh.com"
-                                />
+                                    autoComplete="username"
+                                    placeholder="email@contoh.com atau +60123456789"
+                                 />
                                 <InputError message={errors.email} />
                             </div>
  
