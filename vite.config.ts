@@ -21,7 +21,22 @@ export default defineConfig({
             formVariants: true,
         }),
     ],
+
     esbuild: {
         jsx: 'automatic',
+    },
+
+    server: {
+        host: '0.0.0.0',
+        port: 8080,
+        hmr: {
+            host: '192.168.68.54',
+            port: 8080,
+        },
+        cors: {
+            origin: '*',
+            credentials: true,
+        },
+        middlewareMode: false,
     },
 });
