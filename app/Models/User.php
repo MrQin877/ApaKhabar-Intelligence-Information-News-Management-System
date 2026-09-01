@@ -127,6 +127,10 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function sendEmailVerificationNotification(): void
     {
+        if (! $this->email) {
+            return;
+        }
+
         $this->notify(new VerifyEmail);
     }
 
@@ -137,7 +141,15 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function hasVerifiedEmail(): bool
     {
-        return ! is_null($this->email_verified_at);
+        if ($this->email && $this->email_verified_at) {
+            return true;
+        }
+
+        if ($this->phone && $this->phone_verified_at) {
+            return true;
+        }
+
+        return false;
     }
 
     public function markEmailAsVerified(): bool

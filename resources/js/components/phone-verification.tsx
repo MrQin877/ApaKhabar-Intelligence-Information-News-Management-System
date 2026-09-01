@@ -148,6 +148,7 @@ return
                 <div className="flex-1 min-w-0">
                     <PhoneInput
                         international
+                        addInternationalOption={false}
                         defaultCountry="MY"
                         countries={['MY', 'ID']}
                         value={phone}

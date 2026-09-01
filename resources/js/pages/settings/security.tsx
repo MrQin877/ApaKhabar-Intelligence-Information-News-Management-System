@@ -56,12 +56,12 @@ export default function Security({
                     resetOnSuccess
                     onError={(errors) => {
                         if (errors.password) {
-passwordInput.current?.focus();
-}
+                            passwordInput.current?.focus();
+                            }
 
                         if (errors.current_password) {
-currentPasswordInput.current?.focus();
-}
+                            currentPasswordInput.current?.focus();
+                            }
                     }}
                     className="space-y-6"
                 >
