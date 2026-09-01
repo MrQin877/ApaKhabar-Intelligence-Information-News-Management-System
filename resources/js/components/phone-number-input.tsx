@@ -14,20 +14,18 @@ const CustomInput = forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLI
 CustomInput.displayName = 'CustomInput';
 
 interface PhoneNumberInputProps {
-    name?: string;
     value: string;
     onChange: (value: string) => void;
     disabled?: boolean;
 }
 
-export function PhoneNumberInput({ name, value, onChange, disabled }: PhoneNumberInputProps) {
+export function PhoneNumberInput({ value, onChange, disabled }: PhoneNumberInputProps) {
     return (
         <PhoneInput
             international
             addInternationalOption={false}
             defaultCountry="MY"
             countries={['MY', 'ID']}
-            name={name}
             value={value}
             onChange={(val) => onChange(val ?? '')}
             inputComponent={CustomInput}

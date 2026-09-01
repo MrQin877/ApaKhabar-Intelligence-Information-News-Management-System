@@ -127,6 +127,10 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function sendEmailVerificationNotification(): void
     {
+        if (! $this->email) {
+            return;
+        }
+
         $this->notify(new VerifyEmail);
     }
 

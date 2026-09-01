@@ -68,7 +68,8 @@ export default function Register() {
 
                                 <TabsContent value="phone" className="grid gap-2 pt-4">
                                     <Label htmlFor="phone">Nombor telefon</Label>
-                                    <PhoneNumberInput name="phone" value={phone} onChange={setPhone} disabled={processing} />
+                                    <PhoneNumberInput value={phone} onChange={setPhone} disabled={processing} />
+                                    <input type="hidden" name="phone" value={phone} />
                                     <InputError message={errors.phone} />
                                     <p className="text-xs text-neutral-400">Pilih kod negara (MY / ID) dan masukkan nombor telefon anda.</p>
                                 </TabsContent>
