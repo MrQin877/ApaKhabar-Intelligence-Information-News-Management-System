@@ -3,12 +3,12 @@
 use Illuminate\Support\Facades\Route;
 use Laravel\Fortify\Features;
 use App\Http\Controllers\Admin\BroadcastController;
-use App\Http\Controllers\Villager\NotificationController;
-use App\Http\Controllers\PostLikeController;
-use App\Http\Controllers\CommentController;
-
-//news creator routes
-use App\Http\Controllers\NewsCreatorController;
+use App\Http\Controllers\Home\WelcomeController;
+use App\Http\Controllers\News\CommentController;
+use App\Http\Controllers\News\NewsController;
+use App\Http\Controllers\News\PostLikeController;
+use App\Http\Controllers\Village\NotificationController;
+use App\Http\Controllers\Admin\NewsCreatorController;
 
 
 // This route receives the click, then redirects to the mobile app.
@@ -22,20 +22,20 @@ Route::get('/mobile/reset-password', function (Illuminate\Http\Request $request)
 
 //Public routes — no auth required
 
-Route::get('/', [App\Http\Controllers\WelcomeController::class, 'index'])->name('home');
+Route::get('/', [WelcomeController::class, 'index'])->name('home');
 
-Route::get('/news', [App\Http\Controllers\NewsController::class, 'index'])->name('news.index');
+Route::get('/news', [NewsController::class, 'index'])->name('news.index');
 
-Route::get('/news/{id}', [App\Http\Controllers\NewsController::class, 'show'])->name('news.show');
+Route::get('/news/{id}', [NewsController::class, 'show'])->name('news.show');
 
 
 //Authenticated routes — login required for all but shared between villager and admin
 Route::middleware(['auth', 'verified'])->group(function () {
-    Route::get('/notifications', [App\Http\Controllers\Villager\NotificationController::class, 'index'])
+    Route::get('/notifications', [App\Http\Controllers\Village\NotificationController::class, 'index'])
         ->name('notifications.index');
-    Route::patch('/notifications/read-all', [App\Http\Controllers\Villager\NotificationController::class, 'markAllRead'])
+    Route::patch('/notifications/read-all', [App\Http\Controllers\Village\NotificationController::class, 'markAllRead'])
         ->name('notifications.read-all');
-    Route::patch('/notifications/{id}/read', [App\Http\Controllers\Villager\NotificationController::class, 'markRead'])
+    Route::patch('/notifications/{id}/read', [App\Http\Controllers\Village\NotificationController::class, 'markRead'])
         ->name('notifications.read');
 });
 

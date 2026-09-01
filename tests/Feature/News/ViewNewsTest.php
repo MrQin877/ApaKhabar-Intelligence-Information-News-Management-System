@@ -27,8 +27,12 @@
 // Negative Test Cases : TC-NEWS-08 to TC-NEWS-10
 // ================================================================
 
+use App\Http\Controllers\News\CommentController as WebCommentController;
+use App\Http\Controllers\News\NewsController as WebNewsController;
+use App\Models\Comment;
 use App\Models\News;
 use App\Models\User;
+use Illuminate\Http\Request;
 use Inertia\Testing\AssertableInertia as Assert;
 
 // ── Shared news instance for all tests ──────────────────────────
@@ -164,4 +168,31 @@ test('TC-NEWS-10: api returns empty array for related news with invalid id', fun
     // Related endpoint returns 200 with empty array for invalid id
     $response->assertStatus(200);
     $response->assertJson([]);
+});
+
+test('shared news controller returns JSON when request expects JSON', function () {
+    $controller = new WebNewsController();
+    $request = Request::create('/news', 'GET');
+    $request->headers->set('accept', 'application/json');
+
+    $response = $controller->index($request);
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and(str_contains($response->headers->get('content-type', ''), 'application/json'))->toBeTrue();
+});
+
+test('shared comment controller returns JSON when request expects JSON', function () {
+    $user = User::factory()->create();
+    $news = News::factory()->create();
+
+    $controller = new WebCommentController();
+    $request = Request::create("/news/{$news->id}/comment", 'POST', ['content' => 'This is a test comment']);
+    $request->headers->set('accept', 'application/json');
+    $request->setUserResolver(fn () => $user);
+
+    $response = $controller->store($request, $news->id);
+
+    expect($response->getStatusCode())->toBe(201)
+        ->and(str_contains($response->headers->get('content-type', ''), 'application/json'))->toBeTrue()
+        ->and(Comment::where('newsID', $news->id)->where('userID', $user->id)->count())->toBe(1);
 });

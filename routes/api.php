@@ -1,12 +1,12 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\Api\AuthController;
-use App\Http\Controllers\Api\NewsController;
-use App\Http\Controllers\Api\NotificationController;
-use App\Http\Controllers\Api\CommentController;
-use App\Http\Controllers\PostLikeController;
-use App\Http\Controllers\Api\BroadcastController;  // ← ADD THIS
+use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\Home\EmergencyBroadcastController;
+use App\Http\Controllers\News\CommentController;
+use App\Http\Controllers\News\NewsController;
+use App\Http\Controllers\News\PostLikeController;
+use App\Http\Controllers\Village\NotificationController;
 use App\Http\Middleware\ApiAuth;
 
 // Public routes
@@ -15,7 +15,7 @@ Route::post('/register', [AuthController::class, 'register']);
 Route::get('/news',      [NewsController::class, 'index']);
 Route::get('/news/{id}', [NewsController::class, 'show']);
 Route::get('/news/{id}/related', [NewsController::class, 'related']);
-Route::get('/broadcasts/darurat', [BroadcastController::class, 'darurat']);
+Route::get('/broadcasts/darurat', [EmergencyBroadcastController::class, 'darurat']);
 Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
 Route::post('/reset-password',  [AuthController::class, 'resetPassword']);
 

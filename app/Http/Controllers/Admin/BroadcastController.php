@@ -2,6 +2,16 @@
 
 namespace App\Http\Controllers\Admin;
 
+/**
+ * BroadcastController.php
+ *
+ * This controller manages the broadcasting of messages to users, including
+ * creating, sending, archiving, and restoring broadcasts. It also provides
+ * analytics on sent broadcasts.
+ *
+ * Used for Admin Panel endpoints.
+ */
+
 use App\Http\Controllers\Controller;
 use App\Models\Broadcast;
 use App\Models\BroadcastCategory;
