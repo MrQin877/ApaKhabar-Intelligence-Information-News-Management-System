@@ -19,7 +19,7 @@ export function AnalyticsStats({ totalPesan, dikirimHariIni, rateTerbuka }: Stat
     ]
 
     return (
-      <Card>
+      <Card className="h-full w-full">
         <CardHeader className="pb-2">
           <CardTitle className="text-base">Analisis</CardTitle>
         </CardHeader>
