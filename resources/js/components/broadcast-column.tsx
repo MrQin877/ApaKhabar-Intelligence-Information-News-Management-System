@@ -29,7 +29,7 @@ function TypeIcon({ type }: { type: Broadcast['type'] }) {
   if (type === 'darurat') {
     return (
       <div className="flex items-center gap-2">
-        <Siren className="h-4 w-4 text-danger-border" />
+        <Siren className="h-4 w-4 text-danger-500/75" />
         <span className="hidden sm:block text-sm font-medium text-danger-500/75">
           Darurat
         </span>
@@ -39,8 +39,8 @@ function TypeIcon({ type }: { type: Broadcast['type'] }) {
 
   return (
     <div className="flex items-center gap-2">
-      <Megaphone className="h-4 w-4 text-success-border" />
-      <span className="hidden sm:block text-sm font-medium text-success-500/75">
+      <Megaphone className="h-4 w-4 text-success-500" />
+      <span className="hidden sm:block text-sm font-medium text-success-500">
         Pengumuman
       </span>
     </div>
