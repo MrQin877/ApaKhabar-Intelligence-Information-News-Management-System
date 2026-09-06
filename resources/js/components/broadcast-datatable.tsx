@@ -93,6 +93,7 @@ const columnLabels: Record<string, string> = {
   audience: "Penerima",
   status: "Status",
   sent_time: "Waktu Terkirim",
+  archived_at: "Diarsipkan",
   actions: "Aksi",
 }
 

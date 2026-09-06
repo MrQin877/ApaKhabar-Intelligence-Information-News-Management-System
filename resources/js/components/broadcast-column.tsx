@@ -23,6 +23,7 @@ export type Broadcast = {
   audience: string
   status: string
   sent_time: string
+  sent_timestamp?: number
 }
 
 function TypeIcon({ type }: { type: Broadcast['type'] }) {
@@ -159,6 +160,8 @@ export const columns = [
 
   {
     accessorKey: "sent_time",
+    sortingFn: (a: { original: Broadcast }, b: { original: Broadcast }) =>
+      (a.original.sent_timestamp ?? 0) - (b.original.sent_timestamp ?? 0),
     header: ({ column }: { column: any }) => (
       <Button
         variant="ghost"
