@@ -5,6 +5,7 @@ namespace App\Http\Requests\Settings;
 use App\Concerns\PasswordValidationRules;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\Hash;
 
 class ProfileDeleteRequest extends FormRequest
 {
@@ -18,7 +19,17 @@ class ProfileDeleteRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'password' => $this->currentPasswordRules(),
+            'password' => [
+                'required',
+                'string',
+                function ($attribute, $value, $fail) {
+                    $user = $this->user();
+
+                    if (! $user || ! Hash::check($value, $user->getAuthPassword())) {
+                        $fail(__('The password is incorrect.'));
+                    }
+                },
+            ],
         ];
     }
 }

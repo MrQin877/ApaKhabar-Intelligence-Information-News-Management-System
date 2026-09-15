@@ -14,13 +14,18 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
+use Laravel\Fortify\Contracts\EmailVerificationNotificationSentResponse as EmailVerificationNotificationSentResponseContract;
 use Laravel\Sanctum\Sanctum;  // ← ADD THIS
+use App\Http\Responses\EmailVerificationNotificationSentResponse;
 
 class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        //
+        $this->app->singleton(
+            EmailVerificationNotificationSentResponseContract::class,
+            EmailVerificationNotificationSentResponse::class,
+        );
     }
 
     public function boot(): void

@@ -96,6 +96,32 @@ test('password can be updated', function () {
     expect(Hash::check('new-password', $user->refresh()->password))->toBeTrue();
 });
 
+test('phone-only user can update password with the correct current password', function () {
+    $user = User::factory()->create();
+    $user->emailRecord()->delete();
+    $user->phoneRecord()->create([
+        'phone' => '+1234567890',
+        'phone_verified_at' => now(),
+        'phone_otp' => '123456',
+        'phone_otp_expires_at' => now()->addMinutes(10),
+    ]);
+
+    $response = $this
+        ->actingAs($user)
+        ->from(route('security.edit'))
+        ->put(route('user-password.update'), [
+            'current_password' => 'password',
+            'password' => 'new-password',
+            'password_confirmation' => 'new-password',
+        ]);
+
+    $response
+        ->assertSessionHasNoErrors()
+        ->assertRedirect(route('security.edit'));
+
+    expect(Hash::check('new-password', $user->refresh()->password))->toBeTrue();
+});
+
 test('correct password must be provided to update password', function () {
     $user = User::factory()->create();
 

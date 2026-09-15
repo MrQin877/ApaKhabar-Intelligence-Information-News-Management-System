@@ -13,6 +13,8 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Services\Auth\AuthService;
+use App\Http\Requests\Settings\ProfileUpdateRequest;
+use App\Services\Settings\ProfileService;
 use Illuminate\Http\Request;
 
 class AuthController extends Controller
@@ -24,11 +26,16 @@ class AuthController extends Controller
     public function login(Request $request)
     {
         $request->validate([
-            'email' => 'required|email',
-            'password' => 'required',
+            'email' => ['nullable', 'email', 'required_without:phone'],
+            'phone' => ['nullable', 'string', 'required_without:email', 'regex:/^\+[1-9]\d{1,14}$/'],
+            'password' => ['required', 'string'],
         ]);
 
-        $result = $this->authService->login($request->email, $request->password);
+        $result = $this->authService->login(
+            $request->input('email'),
+            $request->input('phone'),
+            $request->password,
+        );
 
         if (! $result) {
             return response()->json(['message' => 'Invalid credentials'], 401);
@@ -40,15 +47,17 @@ class AuthController extends Controller
     public function register(Request $request)
     {
         $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => 'required|email|unique:emails,email',
-            'password' => 'required|min:8',
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['nullable', 'required_without:phone', 'email', 'max:255', 'unique:emails,email'],
+            'phone' => ['nullable', 'required_without:email', 'string', 'regex:/^\+[1-9]\d{1,14}$/', 'unique:phones,phone'],
+            'password' => ['required', 'string', 'min:8'],
         ]);
 
         $result = $this->authService->register(
             $request->name,
-            $request->email,
-            $request->password
+            $request->input('email'),
+            $request->input('phone'),
+            $request->password,
         );
 
         return response()->json($result, 201);
@@ -64,6 +73,13 @@ class AuthController extends Controller
     public function profile(Request $request)
     {
         return response()->json($this->authService->profile($request->user()));
+    }
+
+    public function updateProfile(ProfileUpdateRequest $request, ProfileService $profiles)
+    {
+        $profiles->updateProfile($request->user(), $request->validated());
+
+        return response()->json($this->authService->profile($request->user()->refresh()));
     }
 
     public function savePushToken(Request $request)

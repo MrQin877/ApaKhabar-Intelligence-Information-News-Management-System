@@ -8,6 +8,7 @@ use App\Http\Controllers\News\NewsController;
 use App\Http\Controllers\News\PostLikeController;
 use App\Http\Controllers\Village\NotificationController;
 use App\Http\Middleware\ApiAuth;
+use App\Http\Controllers\Auth\MobileEmailVerificationController;
 
 // Public routes
 Route::post('/login',    [AuthController::class, 'login']);
@@ -23,6 +24,9 @@ Route::post('/reset-password',  [AuthController::class, 'resetPassword']);
 Route::middleware(ApiAuth::class)->group(function () {
     Route::post('/logout',                       [AuthController::class, 'logout']);
     Route::get('/profile',                       [AuthController::class, 'profile']);
+    Route::patch('/profile', [AuthController::class, 'updateProfile']);
+    Route::post('/email/verification-notification', [MobileEmailVerificationController::class, 'send'])
+        ->middleware('throttle:1,1')->name('api.verification.send');
     Route::get('/notifications',                 [NotificationController::class, 'index']);
     Route::patch('/notifications/read-all',      [NotificationController::class, 'markAllRead']);
     Route::patch('/notifications/{id}/read',     [NotificationController::class, 'markRead']);

@@ -429,7 +429,7 @@ test('TC-REG-20: verification notification is sent to unverified user on request
 
     $this->actingAs($user)
         ->post(route('verification.send'))
-        ->assertRedirect(route('home'));
+        ->assertRedirect(route('verification.notice'));
 
     Notification::assertSentTo($user, VerifyEmail::class);
 });

@@ -4,19 +4,32 @@ namespace App\Services\Auth;
 
 use App\Models\Email;
 use App\Models\PersonalAccessToken;
+use App\Models\Phone;
 use App\Models\User;
 use App\Models\UserRole;
+use App\Notifications\MobileVerifyEmail;
 use Illuminate\Auth\Events\PasswordReset;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
 
 class AuthService
 {
-    public function login(string $email, string $password): ?array
+    public function login(?string $email, ?string $phone, string $password): ?array
     {
-        $user = User::whereHas('emailRecord', function ($query) use ($email) {
-            $query->where('email', $email);
-        })->first();
+        $user = null;
+
+        if ($email) {
+            $user = User::whereHas('emailRecord', function ($query) use ($email) {
+                $query->where('email', $email);
+            })->first();
+        }
+
+        if (! $user && $phone) {
+            $user = User::whereHas('phoneRecord', function ($query) use ($phone) {
+                $query->where('phone', $phone);
+            })->first();
+        }
 
         if (! $user || ! Hash::check($password, $user->password)) {
             return null;
@@ -24,36 +37,50 @@ class AuthService
 
         return [
             'token' => $user->createToken('mobile-app')->plainTextToken,
-            'user' => [
-                'id' => (string) $user->getKey(),
-                'name' => $user->name,
-                'email' => $user->email,
-                'role' => $user->role,
-            ],
+            'user' => $this->profile($user),
         ];
     }
 
-    public function register(string $name, string $email, string $password): array
+    public function register(string $name, ?string $email, ?string $phone, string $password): array
     {
-        $user = User::create([
-            'name' => $name,
-            'password' => Hash::make($password),
-            'roleID' => UserRole::firstOrCreate(['name' => 'villager'])->getKey(),
-        ]);
+        if (empty($email) && empty($phone)) {
+            throw new \InvalidArgumentException('Either email or phone is required.');
+        }
 
-        Email::create([
-            'email' => $email,
-            'userID' => $user->getKey(),
-        ]);
+        $user = DB::transaction(function () use ($name, $email, $phone, $password) {
+            $user = User::create([
+                'name' => $name,
+                'password' => Hash::make($password),
+                'roleID' => UserRole::firstOrCreate(['name' => 'villager'])->getKey(),
+            ]);
+
+            if (! empty($email)) {
+                Email::create([
+                    'email' => $email,
+                    'userID' => $user->getKey(),
+                ]);
+
+            }
+
+            if (! empty($phone)) {
+                $user->phoneRecord()->create([
+                    'phone' => $phone,
+                    'phone_otp' => null,
+                    'phone_otp_expires_at' => null,
+                    'phone_verified_at' => null,
+                ]);
+            }
+
+            return $user;
+        });
+
+        if ($user->email) {
+            $user->notify(new MobileVerifyEmail);
+        }
 
         return [
             'token' => $user->createToken('mobile-app')->plainTextToken,
-            'user' => [
-                'id' => (string) $user->getKey(),
-                'name' => $user->name,
-                'email' => $user->email,
-                'role' => $user->role,
-            ],
+            'user' => $this->profile($user),
         ];
     }
 
@@ -73,6 +100,9 @@ class AuthService
             'id' => (string) $user->getKey(),
             'name' => $user->name,
             'email' => $user->email,
+            'phone' => $user->phone,
+            'email_verified_at' => $user->email_verified_at?->toIso8601String(),
+            'phone_verified_at' => $user->phone_verified_at?->toIso8601String(),
             'role' => $user->role,
         ];
     }

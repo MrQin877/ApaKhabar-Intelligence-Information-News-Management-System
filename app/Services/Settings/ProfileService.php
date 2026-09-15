@@ -26,10 +26,13 @@ class ProfileService
         $user->save();
 
         if ($emailChanged) {
-            $user->emailRecord()->update([
-                'email' => $validated['email'],
-                'email_verified_at' => null,
-            ]);
+            Email::updateOrCreate(
+                ['userID' => $user->getKey()],
+                [
+                    'email' => $validated['email'],
+                    'email_verified_at' => null,
+                ]
+            );
         }
 
         return true;

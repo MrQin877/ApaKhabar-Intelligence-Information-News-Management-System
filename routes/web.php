@@ -9,16 +9,26 @@ use App\Http\Controllers\News\NewsController;
 use App\Http\Controllers\News\PostLikeController;
 use App\Http\Controllers\Village\NotificationController;
 use App\Http\Controllers\Admin\NewsCreatorController;
+use App\Http\Controllers\Auth\MobileEmailVerificationController;
+
+Route::get('/mobile/email/verify/{id}/{hash}', [MobileEmailVerificationController::class, 'verify'])
+    ->middleware('throttle:30,1')->name('mobile.verification.verify');
 
 
-// This route receives the click, then redirects to the mobile app.
+// Browser entry point for password-reset emails sent by the mobile API.
 Route::get('/mobile/reset-password', function (Illuminate\Http\Request $request) {
-    $token = $request->query('token');
-    $email = $request->query('email');
-    $ip    = '192.168.68.56'; // ← replace with YOUR actual IP from ipconfig
+    $parameters = $request->validate([
+        'token' => ['required', 'string'],
+        'email' => ['required', 'email'],
+    ]);
+    $destination = config('services.mobile.password_reset_return_url');
+    $separator = str_contains($destination, '?') ? '&' : '?';
+    $query = http_build_query($parameters, '', '&', PHP_QUERY_RFC3986);
 
-    return redirect("exp://{$ip}:8081/--/reset-password?token={$token}&email={$email}");
-});
+    return redirect()->away($destination.$separator.$query)
+        ->header('Referrer-Policy', 'no-referrer')
+        ->header('Cache-Control', 'no-store');
+})->name('mobile.password.reset');
 
 //Public routes — no auth required
 

@@ -44,6 +44,7 @@ export function PhoneVerification({
     const [otpSent,     setOtpSent]     = useState(initialOtpSent || status === 'otp-sent')
     const [processing,  setProcessing]  = useState(false)
     const [showSuccess, setShowSuccess] = useState(status === 'phone-verified')
+    const isDisplayedPhoneVerified = phoneVerified && phone === initialPhone
 
     // ── Only use useEffect for the timer (external side effect) ──
     useEffect(() => {
@@ -110,13 +111,13 @@ return
                         variant="outline"
                         className={cn(
                             "gap-1 text-xs",
-                            phoneVerified
+                            isDisplayedPhoneVerified
                                 ? "border-green-200 text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-950/30"
                                 : "border-yellow-200 text-yellow-700 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-950/30"
                         )}
                     >
-                        {phoneVerified
-                            ? <><ShieldCheck className="h-3 w-3" /> Approved</>
+                        {isDisplayedPhoneVerified
+                            ? <><ShieldCheck className="h-3 w-3" aria-hidden="true" /> Approved</>
                             : <><ShieldX className="h-3 w-3" /> Belum diapproved</>
                         }
                     </Badge>

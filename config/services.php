@@ -1,6 +1,10 @@
 <?php
 
 return [
+    'mobile' => [
+        'password_reset_return_url' => env('MOBILE_PASSWORD_RESET_RETURN_URL', 'apakhabarmobileapp:///reset-password'),
+        'verification_return_url' => env('MOBILE_VERIFICATION_RETURN_URL', 'apakhabarmobileapp:///verify-email'),
+    ],
 
     /*
     |--------------------------------------------------------------------------

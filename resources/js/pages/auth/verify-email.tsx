@@ -30,7 +30,7 @@ export default function VerifyEmail({ status, hasEmail, hasPhone }: Props) {
                 <Form {...send.form()} className="space-y-6 text-center">
                     {({ processing }) => (
                         <>
-                            <Button disabled={processing} variant="secondary">
+                            <Button type="submit" disabled={processing} variant="secondary">
                                 {processing && <Spinner />}
                                 Kirim ulang email konfirmasi
                             </Button>

@@ -141,8 +141,8 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function hasVerifiedEmail(): bool
     {
-        if ($this->email && $this->email_verified_at) {
-            return true;
+        if ($this->email) {
+            return $this->email_verified_at !== null;
         }
 
         if ($this->phone && $this->phone_verified_at) {
