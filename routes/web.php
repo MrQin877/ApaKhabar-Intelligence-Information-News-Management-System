@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\BroadcastController;
+use App\Http\Controllers\Admin\NewsCategoryController;
 use App\Http\Controllers\Admin\NewsCreatorController;
 use App\Http\Controllers\Admin\NewsWorkspaceController;
 use App\Http\Controllers\Auth\MobileEmailVerificationController;
@@ -29,6 +30,9 @@ Route::get('/mobile/reset-password', function (Request $request) {
         ->header('Referrer-Policy', 'no-referrer')
         ->header('Cache-Control', 'no-store');
 })->name('mobile.password.reset');
+
+Route::post('/website/translate', \App\Http\Controllers\WebsiteTranslationController::class)
+    ->middleware('throttle:60,1')->name('website.translate');
 
 // Public routes — no auth required
 
@@ -99,6 +103,13 @@ Route::prefix('admin')
         Route::post('/apakhabar-creator/drafts/{draft}/image', [NewsCreatorController::class, 'uploadDraftImage'])->name('creator.drafts.image');
         Route::post('/apakhabar-creator/recommendations', [NewsCreatorController::class, 'recommend'])->name('creator.recommendations');
         Route::get('/apakhabar-creator/archive', [NewsCreatorController::class, 'archive'])->name('creator.archive');
+
+        Route::middleware('role:admin')->group(function () {
+            Route::get('/categories', [NewsCategoryController::class, 'index'])->name('categories.index');
+            Route::post('/categories', [NewsCategoryController::class, 'store'])->name('categories.store');
+            Route::put('/categories/{category}', [NewsCategoryController::class, 'update'])->name('categories.update');
+            Route::delete('/categories/{category}', [NewsCategoryController::class, 'destroy'])->name('categories.destroy');
+        });
     });
 
 // Post-login redirect — Fortify lands here, bounce by role

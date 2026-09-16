@@ -287,7 +287,8 @@ class NewsCreatorController extends Controller
             'instructions' => $effectivePrompt,
             'user_facts' => $userFacts->values()->all(),
             'clarification_completed' => $clarificationCompleted,
-            'available_categories' => NewsCategory::query()->orderBy('name')->pluck('name')->all(),
+            'available_categories' => NewsCategory::query()->active()
+                ->orderBy('display_order')->orderBy('name')->pluck('name')->all(),
         ];
 
         try {
@@ -525,7 +526,8 @@ class NewsCreatorController extends Controller
 
     private function resolveCategoryId(array $article): int
     {
-        $categories = NewsCategory::query()->get(['categoryID', 'name']);
+        $categories = NewsCategory::query()->active()
+            ->orderBy('display_order')->get(['categoryID', 'name', 'is_default']);
         $requested = mb_strtolower(trim((string) ($article['category'] ?? '')));
         $labels = collect($article['labels'] ?? [])->map(fn ($label) => mb_strtolower((string) $label));
 
@@ -545,7 +547,8 @@ class NewsCreatorController extends Controller
                 : 'Pengumuman');
 
         return (int) $categories->firstWhere('name', $preferred)?->categoryID
-            ?: (int) $categories->first()->categoryID;
+            ?: (int) ($categories->firstWhere('is_default', true)?->categoryID
+                ?? $categories->firstOrFail()->categoryID);
     }
 
     private function storeDraftVersion(IntelligentNewsDraft $draft, int $userId, string $changeType): void

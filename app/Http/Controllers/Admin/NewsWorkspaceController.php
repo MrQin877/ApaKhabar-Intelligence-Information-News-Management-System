@@ -234,6 +234,7 @@ class NewsWorkspaceController extends Controller
 
     private function categories(): array
     {
-        return NewsCategory::orderBy('name')->get(['categoryID', 'name'])->all();
+        return NewsCategory::active()->orderBy('display_order')->orderBy('name')
+            ->get(['categoryID', 'name'])->all();
     }
 }

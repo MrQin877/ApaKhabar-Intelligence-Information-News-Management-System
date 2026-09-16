@@ -3,6 +3,7 @@ import createServer from '@inertiajs/react/server';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import ReactDOMServer from 'react-dom/server';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { WebsiteLanguage } from '@/components/website-language';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
@@ -20,6 +21,7 @@ createServer((page) =>
             return (
                 <TooltipProvider delayDuration={0}>
                     <App {...props} />
+                    <WebsiteLanguage />
                 </TooltipProvider>
             );
         },
