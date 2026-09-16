@@ -1,6 +1,7 @@
 import { Head, router, usePage } from '@inertiajs/react';
 import {
     Archive,
+    ArrowLeft,
     Bot,
     FileText,
     FolderSearch,
@@ -56,6 +57,12 @@ interface MissingQuestion {
     importance: 'required' | 'recommended';
     question: string;
     reason?: string | null;
+    options?: string[];
+    selection_type?: 'single' | 'multi' | 'ranked' | 'text';
+}
+interface UserFact {
+    field: string;
+    value: string;
 }
 interface NewsSession {
     id: number;
@@ -63,6 +70,7 @@ interface NewsSession {
     selected_document_ids: number[];
     selected_information_ids: number[];
     pending_questions: MissingQuestion[];
+    user_facts: UserFact[];
     conflicts: string[];
 }
 interface Evidence {
@@ -133,6 +141,7 @@ export default function NewsCreatorAgent({
         newsSession?.selected_document_ids ?? initialDocumentIds,
     );
     const [answers, setAnswers] = useState<Record<string, string>>({});
+    const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
     const [busy, setBusy] = useState(false);
     const [picker, setPicker] = useState(false);
     const [query, setQuery] = useState('');
@@ -141,6 +150,7 @@ export default function NewsCreatorAgent({
     );
     const [findingRelated, setFindingRelated] = useState(false);
     const questions = newsSession?.pending_questions ?? [];
+    const activeQuestion = questions[0];
     const hasSources = informationIds.length > 0 || documentIds.length > 0;
     const shownInformation = useMemo(() => {
         const needle = query.trim().toLocaleLowerCase('id');
@@ -196,7 +206,7 @@ export default function NewsCreatorAgent({
 
         setFiles((current) => [...current, ...incoming]);
     }
-    function submit() {
+    function submit(answerOverrides: Record<string, string> = {}) {
         if (files.length) {
             const data = new FormData();
             files.forEach((file) => data.append('documents[]', file));
@@ -234,8 +244,12 @@ export default function NewsCreatorAgent({
                 document_ids: documentIds,
                 prompt: prompt.trim() || null,
                 answers: manualFact.trim()
-                    ? { ...answers, additional_context: manualFact.trim() }
-                    : answers,
+                    ? {
+                          ...answers,
+                          ...answerOverrides,
+                          additional_context: manualFact.trim(),
+                      }
+                    : { ...answers, ...answerOverrides },
                 tone: 'formal',
             },
             { onFinish: () => setBusy(false) },
@@ -324,15 +338,27 @@ export default function NewsCreatorAgent({
                                 </p>
                             </div>
                         </div>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() =>
-                                router.visit(creatorRoutes.archive())
-                            }
-                        >
-                            <Archive /> Arsip
-                        </Button>
+                        <div className="flex gap-2">
+                            <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                onClick={() =>
+                                    router.visit('/admin/apakhabar-creator')
+                                }
+                                title="Kembali ke daftar berita"
+                            >
+                                <ArrowLeft />
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() =>
+                                    router.visit(creatorRoutes.archive())
+                                }
+                            >
+                                <Archive /> Dokumen
+                            </Button>
+                        </div>
                     </header>
                     <MessageScrollerProvider
                         autoScroll
@@ -359,52 +385,228 @@ export default function NewsCreatorAgent({
                                             </div>
                                         </MessageScrollerItem>
                                     )}
-                                    {questions.map((question) => (
+                                    {newsSession?.user_facts?.map((fact) => (
                                         <MessageScrollerItem
-                                            key={question.field}
-                                            messageId={`q-${question.field}`}
+                                            key={`${fact.field}-${fact.value}`}
+                                            messageId={`answer-${fact.field}`}
                                         >
-                                            <Card className="max-w-[92%] gap-3 border-warning-border bg-warning-bg py-4 shadow-none">
-                                                <CardHeader className="gap-1 px-4">
-                                                    <Badge
-                                                        variant="outline"
-                                                        className="w-fit border-warning-border text-warning-text"
-                                                    >
-                                                        Informasi diperlukan
-                                                    </Badge>
-                                                    <CardTitle className="text-sm text-warning-text">
-                                                        {question.question}
-                                                    </CardTitle>
-                                                    {question.reason && (
-                                                        <p className="text-xs text-warning-text/80">
-                                                            {question.reason}
-                                                        </p>
-                                                    )}
-                                                </CardHeader>
-                                                <CardContent className="px-4">
-                                                    <Input
-                                                        value={
-                                                            answers[
-                                                                question.field
-                                                            ] ?? ''
-                                                        }
-                                                        onChange={(event) =>
-                                                            setAnswers(
-                                                                (current) => ({
-                                                                    ...current,
-                                                                    [question.field]:
-                                                                        event
-                                                                            .target
-                                                                            .value,
-                                                                }),
-                                                            )
-                                                        }
-                                                        placeholder="Masukkan fakta yang benar…"
-                                                    />
-                                                </CardContent>
-                                            </Card>
+                                            <div className="ml-auto max-w-[88%] rounded-xl bg-primary px-4 py-3 text-sm text-primary-foreground">
+                                                {fact.value}
+                                            </div>
                                         </MessageScrollerItem>
                                     ))}
+                                    {activeQuestion && (
+                                        <MessageScrollerItem
+                                            messageId={`question-${activeQuestion.field}`}
+                                            scrollAnchor
+                                        >
+                                            <div className="max-w-[94%] space-y-3">
+                                                <p className="text-sm leading-6 text-muted-foreground">
+                                                    Saya perlu satu informasi
+                                                    penting sebelum melanjutkan.
+                                                </p>
+                                                <Card className="gap-3 border-border bg-card py-4 shadow-none">
+                                                    <CardHeader className="gap-2 px-4">
+                                                        <div className="flex items-start justify-between gap-3">
+                                                            <CardTitle className="text-sm leading-6">
+                                                                {
+                                                                    activeQuestion.question
+                                                                }
+                                                            </CardTitle>
+                                                            <Badge
+                                                                variant="outline"
+                                                                className="shrink-0 text-[10px]"
+                                                            >
+                                                                1 dari{' '}
+                                                                {
+                                                                    questions.length
+                                                                }
+                                                            </Badge>
+                                                        </div>
+                                                    </CardHeader>
+                                                    <CardContent className="space-y-3 px-4">
+                                                        {activeQuestion.options
+                                                            ?.length ? (
+                                                            <div className="grid gap-2">
+                                                                {activeQuestion.options.map(
+                                                                    (
+                                                                        option,
+                                                                        index,
+                                                                    ) => {
+                                                                        const selected =
+                                                                            selectedOptions.includes(
+                                                                                option,
+                                                                            );
+
+                                                                        return (
+                                                                            <Button
+                                                                                key={
+                                                                                    option
+                                                                                }
+                                                                                type="button"
+                                                                                variant={
+                                                                                    selected
+                                                                                        ? 'default'
+                                                                                        : 'outline'
+                                                                                }
+                                                                                className="h-auto justify-start px-4 py-3 text-left whitespace-normal"
+                                                                                disabled={
+                                                                                    busy
+                                                                                }
+                                                                                onClick={() => {
+                                                                                    if (
+                                                                                        (activeQuestion.selection_type ??
+                                                                                            'single') ===
+                                                                                        'single'
+                                                                                    ) {
+                                                                                        submit(
+                                                                                            {
+                                                                                                [activeQuestion.field]:
+                                                                                                    option,
+                                                                                            },
+                                                                                        );
+
+                                                                                        return;
+                                                                                    }
+
+                                                                                    setSelectedOptions(
+                                                                                        (
+                                                                                            current,
+                                                                                        ) =>
+                                                                                            selected
+                                                                                                ? current.filter(
+                                                                                                      (
+                                                                                                          value,
+                                                                                                      ) =>
+                                                                                                          value !==
+                                                                                                          option,
+                                                                                                  )
+                                                                                                : [
+                                                                                                      ...current,
+                                                                                                      option,
+                                                                                                  ],
+                                                                                    );
+                                                                                }}
+                                                                            >
+                                                                                {activeQuestion.selection_type ===
+                                                                                    'ranked' &&
+                                                                                    selected && (
+                                                                                        <Badge variant="secondary">
+                                                                                            {selectedOptions.indexOf(
+                                                                                                option,
+                                                                                            ) +
+                                                                                                1}
+                                                                                        </Badge>
+                                                                                    )}
+                                                                                <span>
+                                                                                    {index +
+                                                                                        1}
+
+                                                                                    .{' '}
+                                                                                    {
+                                                                                        option
+                                                                                    }
+                                                                                </span>
+                                                                            </Button>
+                                                                        );
+                                                                    },
+                                                                )}
+                                                                {activeQuestion.selection_type !==
+                                                                    'single' && (
+                                                                    <Button
+                                                                        type="button"
+                                                                        disabled={
+                                                                            busy ||
+                                                                            selectedOptions.length ===
+                                                                                0
+                                                                        }
+                                                                        onClick={() =>
+                                                                            submit(
+                                                                                {
+                                                                                    [activeQuestion.field]:
+                                                                                        selectedOptions.join(
+                                                                                            activeQuestion.selection_type ===
+                                                                                                'ranked'
+                                                                                                ? ' > '
+                                                                                                : ', ',
+                                                                                        ),
+                                                                                },
+                                                                            )
+                                                                        }
+                                                                    >
+                                                                        Konfirmasi
+                                                                        pilihan
+                                                                    </Button>
+                                                                )}
+                                                            </div>
+                                                        ) : (
+                                                            <div className="flex gap-2">
+                                                                <Input
+                                                                    value={
+                                                                        answers[
+                                                                            activeQuestion
+                                                                                .field
+                                                                        ] ?? ''
+                                                                    }
+                                                                    onChange={(
+                                                                        event,
+                                                                    ) =>
+                                                                        setAnswers(
+                                                                            (
+                                                                                current,
+                                                                            ) => ({
+                                                                                ...current,
+                                                                                [activeQuestion.field]:
+                                                                                    event
+                                                                                        .target
+                                                                                        .value,
+                                                                            }),
+                                                                        )
+                                                                    }
+                                                                    placeholder="Ketik jawaban Anda…"
+                                                                    onKeyDown={(
+                                                                        event,
+                                                                    ) => {
+                                                                        if (
+                                                                            event.key ===
+                                                                                'Enter' &&
+                                                                            answers[
+                                                                                activeQuestion
+                                                                                    .field
+                                                                            ]?.trim()
+                                                                        ) {
+                                                                            submit();
+                                                                        }
+                                                                    }}
+                                                                />
+                                                                <Button
+                                                                    type="button"
+                                                                    size="icon"
+                                                                    disabled={
+                                                                        busy ||
+                                                                        !answers[
+                                                                            activeQuestion
+                                                                                .field
+                                                                        ]?.trim()
+                                                                    }
+                                                                    onClick={() =>
+                                                                        submit()
+                                                                    }
+                                                                    aria-label="Kirim jawaban"
+                                                                >
+                                                                    {busy ? (
+                                                                        <LoaderCircle className="animate-spin" />
+                                                                    ) : (
+                                                                        <Send />
+                                                                    )}
+                                                                </Button>
+                                                            </div>
+                                                        )}
+                                                    </CardContent>
+                                                </Card>
+                                            </div>
+                                        </MessageScrollerItem>
+                                    )}
                                     {recommendations.length > 0 && (
                                         <MessageScrollerItem messageId="recommendations">
                                             <Card className="max-w-[92%] gap-3 py-4 shadow-none">
@@ -750,7 +952,7 @@ export default function NewsCreatorAgent({
                                             !prompt.trim() &&
                                             !manualFact.trim())
                                     }
-                                    onClick={submit}
+                                    onClick={() => submit()}
                                 >
                                     {busy ? (
                                         <LoaderCircle className="animate-spin" />

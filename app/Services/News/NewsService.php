@@ -11,7 +11,7 @@ class NewsService
 {
     public function listNews(?string $category = null): array
     {
-        $query = News::latest();
+        $query = News::active()->latest();
 
         if ($category) {
             $query->category($category);
@@ -35,7 +35,7 @@ class NewsService
 
     public function getNewsDetail(string $id): ?array
     {
-        $news = News::find($id);
+        $news = News::active()->find($id);
 
         if (! $news) {
             return null;
@@ -77,7 +77,7 @@ class NewsService
 
     public function getRelatedNews(string $id): array
     {
-        return News::latest()
+        return News::active()->latest()
             ->limit(10)
             ->get()
             ->filter(fn ($item) => (string) $item->getKey() !== (string) $id)

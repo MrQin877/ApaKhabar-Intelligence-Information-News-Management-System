@@ -2,9 +2,9 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Builder;
 
 class News extends Model
 {
@@ -18,12 +18,15 @@ class News extends Model
         'excerpt',
         'image',
         'category_id',
+        'status',
+        'creation_method',
+        'created_by',
         'view',
         'likes_count',
     ];
 
     protected $attributes = [
-        'view'        => 0,
+        'view' => 0,
         'likes_count' => 0,
     ];
 
@@ -43,6 +46,11 @@ class News extends Model
     public function scopeCategory(Builder $query, string $category): Builder
     {
         return $query->whereHas('categoryRecord', fn ($query) => $query->where('name', $category));
+    }
+
+    public function scopeActive(Builder $query): Builder
+    {
+        return $query->where('status', 'active');
     }
 
     public function getViewsAttribute(): int

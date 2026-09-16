@@ -1,5 +1,13 @@
 import { Link } from '@inertiajs/react';
-import { LayoutGrid, Newspaper, Radio, ChartNoAxesCombined, Bell, Archive, ExternalLink } from 'lucide-react';
+import {
+    LayoutGrid,
+    Newspaper,
+    Radio,
+    ChartNoAxesCombined,
+    Bell,
+    Archive,
+    ExternalLink,
+} from 'lucide-react';
 import AppLogo from '@/components/app-logo';
 import { NavFooter } from '@/components/nav-footer';
 import { NavMain } from '@/components/nav-main';
@@ -17,7 +25,6 @@ import { dashboard } from '@/routes';
 import adminRoutes from '@/routes/admin';
 import notifications from '@/routes/notifications';
 import type { NavItem } from '@/types';
-import creatorRoutes from '@/routes/admin/creator';
 
 const mainNavItems: NavItem[] = [
     {
@@ -25,10 +32,10 @@ const mainNavItems: NavItem[] = [
         href: dashboard(),
         icon: LayoutGrid,
     },
-    
+
     {
         title: 'Pembuat Berita',
-        href: creatorRoutes.create(),
+        href: '/admin/apakhabar-creator',
         icon: Newspaper,
     },
 
@@ -44,7 +51,7 @@ const mainNavItems: NavItem[] = [
             {
                 title: 'Arsip',
                 icon: Archive,
-                href: adminRoutes.broadcasting.archived(),  // ← use route helper
+                href: adminRoutes.broadcasting.archived(), // ← use route helper
             },
         ],
     },
@@ -57,7 +64,6 @@ const mainNavItems: NavItem[] = [
 ];
 
 const footerNavItems: NavItem[] = [
-
     {
         title: 'Lihat Website',
         href: '/',

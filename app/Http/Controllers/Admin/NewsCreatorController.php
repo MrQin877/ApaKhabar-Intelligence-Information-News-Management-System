@@ -347,6 +347,7 @@ class NewsCreatorController extends Controller
         $draft = DB::transaction(function () use ($request, $validated, $article, $items, $session) {
             $draft = IntelligentNewsDraft::create([
                 'created_by' => $request->user()->getKey(),
+                'creation_method' => 'ai',
                 'headline' => $article['headline'],
                 'subheadline' => $article['subheadline'] ?? null,
                 'lead' => $article['lead'],
