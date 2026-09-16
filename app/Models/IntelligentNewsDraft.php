@@ -10,12 +10,13 @@ class IntelligentNewsDraft extends Model
         'created_by', 'creation_method', 'category_id', 'image',
         'headline', 'subheadline', 'lead', 'body', 'summary',
         'labels', 'sources_used', 'warnings', 'user_prompt', 'status',
-        'published_news_id',
+        'published_news_id', 'version', 'reviewed_at',
     ];
 
     protected $casts = [
         'body' => 'array', 'labels' => 'array', 'sources_used' => 'array',
         'warnings' => 'array',
+        'reviewed_at' => 'datetime',
     ];
 
     public function informationSources()
@@ -36,5 +37,10 @@ class IntelligentNewsDraft extends Model
     public function category()
     {
         return $this->belongsTo(NewsCategory::class, 'category_id', 'categoryID');
+    }
+
+    public function versions()
+    {
+        return $this->hasMany(IntelligentNewsDraftVersion::class, 'draft_id')->orderByDesc('version');
     }
 }

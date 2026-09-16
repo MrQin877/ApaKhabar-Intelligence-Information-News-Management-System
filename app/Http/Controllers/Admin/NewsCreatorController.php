@@ -17,13 +17,16 @@ use App\Jobs\ProcessIntelligenceDocument;
 use App\Models\IntelligenceDocument;
 use App\Models\IntelligenceInformation;
 use App\Models\IntelligentNewsDraft;
+use App\Models\IntelligentNewsDraftVersion;
 use App\Models\IntelligentNewsSession;
+use App\Models\NewsCategory;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -47,7 +50,7 @@ class NewsCreatorController extends Controller
         $generatedArticle = null;
         if ($draftId = $request->integer('draft')) {
             $draft = IntelligentNewsDraft::query()
-                ->with('informationSources.document')
+                ->with(['informationSources.document', 'category'])
                 ->where('created_by', $request->user()->getKey())
                 ->find($draftId);
 
@@ -60,8 +63,13 @@ class NewsCreatorController extends Controller
                     'body' => $draft->body,
                     'summary' => $draft->summary,
                     'labels' => $draft->labels,
+                    'category' => $draft->category?->name,
                     'sources_used' => $draft->sources_used,
                     'warnings' => $draft->warnings,
+                    'image' => $draft->image,
+                    'version' => $draft->version,
+                    'reviewed_at' => $draft->reviewed_at?->toIso8601String(),
+                    'updated_at' => $draft->updated_at?->toIso8601String(),
                     'selected_sources' => $draft->informationSources->map(fn ($item) => [
                         'id' => $item->id,
                         'title' => $item->title,
@@ -126,6 +134,7 @@ class NewsCreatorController extends Controller
     public function storeDocument(Request $request): RedirectResponse
     {
         $validated = $request->validate([
+            'draft_id' => ['nullable', 'integer', 'exists:intelligent_news_drafts,id'],
             'documents' => ['required', 'array', 'min:1', 'max:5'],
             'documents.*' => ['required', 'file', 'max:20480', 'mimes:pdf,jpg,jpeg,png,docx,xlsx,xlsm,csv,txt'],
             'prompt' => ['nullable', 'string', 'max:2000'],
@@ -278,6 +287,7 @@ class NewsCreatorController extends Controller
             'instructions' => $effectivePrompt,
             'user_facts' => $userFacts->values()->all(),
             'clarification_completed' => $clarificationCompleted,
+            'available_categories' => NewsCategory::query()->orderBy('name')->pluck('name')->all(),
         ];
 
         try {
@@ -291,6 +301,10 @@ class NewsCreatorController extends Controller
             return back()->withErrors([
                 'generation' => 'Layanan AI tidak merespons dalam batas waktu. Pastikan FastAPI dan Ollama sedang berjalan, lalu coba lagi.',
             ]);
+        }
+
+        if ($guidance = ($result['guidance'] ?? null)) {
+            return back()->withErrors(['guidance' => $guidance]);
         }
 
         if (! ($result['article'] ?? null)) {
@@ -335,10 +349,19 @@ class NewsCreatorController extends Controller
         }
 
         $article = $result['article'];
-        $draft = DB::transaction(function () use ($request, $validated, $article, $items, $session) {
-            $draft = IntelligentNewsDraft::create([
+        $categoryId = $this->resolveCategoryId($article);
+        $draft = DB::transaction(function () use ($request, $validated, $article, $items, $session, $categoryId) {
+            $draft = isset($validated['draft_id'])
+                ? IntelligentNewsDraft::query()
+                    ->where('created_by', $request->user()->getKey())
+                    ->where('status', 'draft')
+                    ->findOrFail($validated['draft_id'])
+                : new IntelligentNewsDraft;
+            $nextVersion = $draft->exists ? $draft->version + 1 : 1;
+            $draft->fill([
                 'created_by' => $request->user()->getKey(),
                 'creation_method' => 'ai',
+                'category_id' => $categoryId,
                 'headline' => $article['headline'],
                 'subheadline' => $article['subheadline'] ?? null,
                 'lead' => $article['lead'],
@@ -348,8 +371,12 @@ class NewsCreatorController extends Controller
                 'sources_used' => $article['sources_used'] ?? [],
                 'warnings' => $article['warnings'] ?? [],
                 'user_prompt' => $validated['prompt'] ?? $session?->prompt,
+                'version' => $nextVersion,
+                'reviewed_at' => null,
             ]);
-            $draft->informationSources()->attach($items->pluck('id'));
+            $draft->save();
+            $draft->informationSources()->sync($items->pluck('id'));
+            $this->storeDraftVersion($draft, $request->user()->getKey(), $draft->wasRecentlyCreated ? 'generated' : 'regenerated');
 
             return $draft;
         });
@@ -413,6 +440,67 @@ class NewsCreatorController extends Controller
         return response()->json(['recommendations' => $recommendations]);
     }
 
+    public function updateDraft(Request $request, IntelligentNewsDraft $draft): RedirectResponse
+    {
+        abort_unless($draft->created_by === $request->user()->getKey(), 403);
+        abort_unless($draft->status === 'draft', 422, 'Only draft content can be edited.');
+
+        $validated = $request->validate([
+            'headline' => ['required', 'string', 'max:255'],
+            'subheadline' => ['nullable', 'string', 'max:255'],
+            'lead' => ['required', 'string'],
+            'body' => ['required', 'array', 'min:1'],
+            'body.*' => ['required', 'string'],
+        ]);
+
+        $draft->update([
+            ...$validated,
+            'version' => $draft->version + 1,
+            'reviewed_at' => null,
+        ]);
+        $this->storeDraftVersion($draft->fresh(), $request->user()->getKey(), 'edited');
+
+        return redirect()->route('admin.creator.create', ['draft' => $draft->id])
+            ->with('success', 'Perubahan draf berhasil disimpan. Tinjau versi baru sebelum publikasi.');
+    }
+
+    public function reviewDraft(Request $request, IntelligentNewsDraft $draft): RedirectResponse
+    {
+        abort_unless($draft->created_by === $request->user()->getKey(), 403);
+        abort_unless($draft->status === 'draft', 422, 'Only draft content can be reviewed.');
+
+        $draft->update(['reviewed_at' => now()]);
+
+        return redirect()->route('admin.creator.create', ['draft' => $draft->id])
+            ->with('success', 'Draf ditandai telah ditinjau dan siap dipublikasikan.');
+    }
+
+    public function uploadDraftImage(Request $request, IntelligentNewsDraft $draft): RedirectResponse
+    {
+        abort_unless($draft->created_by === $request->user()->getKey(), 403);
+        abort_unless($draft->status === 'draft', 422, 'Only draft content can be edited.');
+
+        $validated = $request->validate([
+            'image' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:10240'],
+        ]);
+        $disk = config('filesystems.news_media_disk', 'public');
+        $path = $validated['image']->storePublicly('news-images', $disk);
+
+        if (! $path) {
+            return back()->withErrors(['image' => 'Gambar gagal disimpan. Silakan coba lagi.']);
+        }
+
+        $draft->update([
+            'image' => Storage::disk($disk)->url($path),
+            'version' => $draft->version + 1,
+            'reviewed_at' => null,
+        ]);
+        $this->storeDraftVersion($draft->fresh(), $request->user()->getKey(), 'image_changed');
+
+        return redirect()->route('admin.creator.create', ['draft' => $draft->id])
+            ->with('success', 'Gambar berita berhasil diunggah. Tinjau versi baru sebelum publikasi.');
+    }
+
     public function archive(): Response
     {
         return $this->renderArchive();
@@ -433,6 +521,46 @@ class NewsCreatorController extends Controller
         return Http::acceptJson()
             ->connectTimeout($connectTimeout)
             ->timeout($timeout);
+    }
+
+    private function resolveCategoryId(array $article): int
+    {
+        $categories = NewsCategory::query()->get(['categoryID', 'name']);
+        $requested = mb_strtolower(trim((string) ($article['category'] ?? '')));
+        $labels = collect($article['labels'] ?? [])->map(fn ($label) => mb_strtolower((string) $label));
+
+        $exact = $categories->first(fn ($category) => mb_strtolower($category->name) === $requested
+            || $labels->contains(mb_strtolower($category->name)));
+        if ($exact) {
+            return $exact->categoryID;
+        }
+
+        $text = mb_strtolower(implode(' ', [
+            $article['headline'] ?? '', $article['summary'] ?? '', ...($article['labels'] ?? []),
+        ]));
+        $preferred = str_contains($text, 'lingkungan') || str_contains($text, 'banjir') || str_contains($text, 'sampah')
+            ? 'Lingkungan'
+            : (str_contains($text, 'pendidikan') || str_contains($text, 'sekolah') || str_contains($text, 'pelatihan')
+                ? 'Pendidikan'
+                : 'Pengumuman');
+
+        return (int) $categories->firstWhere('name', $preferred)?->categoryID
+            ?: (int) $categories->first()->categoryID;
+    }
+
+    private function storeDraftVersion(IntelligentNewsDraft $draft, int $userId, string $changeType): void
+    {
+        IntelligentNewsDraftVersion::updateOrCreate(
+            ['draft_id' => $draft->id, 'version' => $draft->version],
+            [
+                'change_type' => $changeType,
+                'created_by' => $userId,
+                'snapshot' => $draft->only([
+                    'headline', 'subheadline', 'lead', 'body', 'summary', 'labels',
+                    'sources_used', 'warnings', 'category_id', 'image', 'user_prompt',
+                ]),
+            ],
+        );
     }
 
     private function renderArchive(): Response

@@ -94,6 +94,9 @@ Route::prefix('admin')
         Route::post('/apakhabar-creator/documents', [NewsCreatorController::class, 'storeDocument'])->name('creator.documents.store');
         Route::post('/apakhabar-creator/documents/{document}/retry', [NewsCreatorController::class, 'retryDocument'])->name('creator.documents.retry');
         Route::post('/apakhabar-creator/generate', [NewsCreatorController::class, 'generate'])->name('creator.generate');
+        Route::put('/apakhabar-creator/drafts/{draft}', [NewsCreatorController::class, 'updateDraft'])->name('creator.drafts.update');
+        Route::post('/apakhabar-creator/drafts/{draft}/review', [NewsCreatorController::class, 'reviewDraft'])->name('creator.drafts.review');
+        Route::post('/apakhabar-creator/drafts/{draft}/image', [NewsCreatorController::class, 'uploadDraftImage'])->name('creator.drafts.image');
         Route::post('/apakhabar-creator/recommendations', [NewsCreatorController::class, 'recommend'])->name('creator.recommendations');
         Route::get('/apakhabar-creator/archive', [NewsCreatorController::class, 'archive'])->name('creator.archive');
     });

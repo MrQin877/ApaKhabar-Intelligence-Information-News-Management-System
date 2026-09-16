@@ -144,6 +144,7 @@ class NewsWorkspaceController extends Controller
     {
         $this->authorizeDraft($request, $draft);
         abort_unless($draft->status === 'draft', 422, 'Only draft content can be published.');
+        abort_unless($draft->reviewed_at !== null, 422, 'Review the current draft version before publishing.');
 
         DB::transaction(function () use ($request, $draft) {
             $news = News::create([
