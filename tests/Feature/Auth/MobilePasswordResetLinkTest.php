@@ -16,8 +16,8 @@ test('mobile reset link uses the configured destination and preserves encoded pa
         ->assertHeader('Referrer-Policy', 'no-referrer')
         ->assertHeader('Cache-Control', 'no-store, private');
 })->with([
-    'Expo Go' => 'exp://192.168.68.52:8081/--/reset-password',
-    'mobile website' => 'http://192.168.68.52:8081/reset-password',
+    'Expo Go' => 'exp://192.168.68.59:8081/--/reset-password',
+    'mobile website' => 'http://192.168.68.59:8081/reset-password',
     'installed app' => 'apakhabarmobileapp:///reset-password',
     'existing query' => 'https://mobile.example/reset-password?source=email',
 ]);

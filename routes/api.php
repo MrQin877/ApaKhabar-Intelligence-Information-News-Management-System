@@ -10,6 +10,8 @@ use App\Http\Controllers\Village\NotificationController;
 use App\Http\Middleware\ApiAuth;
 use App\Http\Controllers\Auth\MobileEmailVerificationController;
 
+use App\Http\Controllers\Auth\MobilePhoneVerificationController;
+
 // Public routes
 Route::post('/login',    [AuthController::class, 'login']);
 Route::post('/register', [AuthController::class, 'register']);
@@ -22,6 +24,13 @@ Route::post('/reset-password',  [AuthController::class, 'resetPassword']);
 
 // Protected routes — use our custom middleware
 Route::middleware(ApiAuth::class)->group(function () {
+    Route::get('/phone/change-verification', [\App\Http\Controllers\Auth\MobilePhoneChangeController::class, 'status']);
+    Route::post('/phone/change-verification', [\App\Http\Controllers\Auth\MobilePhoneChangeController::class, 'send']);
+    Route::post('/phone/change-verification/verify', [\App\Http\Controllers\Auth\MobilePhoneChangeController::class, 'verify'])->middleware('throttle:10,1');
+
+    Route::get('/phone/verification-status', [MobilePhoneVerificationController::class, 'status']);
+    Route::post('/phone/verification-notification', [MobilePhoneVerificationController::class, 'send']);
+    Route::post('/phone/verify', [MobilePhoneVerificationController::class, 'verify'])->middleware('throttle:10,1');
     Route::post('/logout',                       [AuthController::class, 'logout']);
     Route::get('/profile',                       [AuthController::class, 'profile']);
     Route::patch('/profile', [AuthController::class, 'updateProfile']);
