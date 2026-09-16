@@ -85,6 +85,9 @@ Route::prefix('admin')
         // News creator routes
         Route::get('/apakhabar-creator/documents', [NewsCreatorController::class, 'documents'])->name('creator.documents');
         Route::get('/apakhabar-creator/create', [NewsCreatorController::class, 'create'])->name('creator.create');
+        Route::post('/apakhabar-creator/documents', [NewsCreatorController::class, 'storeDocument'])->name('creator.documents.store');
+        Route::post('/apakhabar-creator/generate', [NewsCreatorController::class, 'generate'])->name('creator.generate');
+        Route::post('/apakhabar-creator/recommendations', [NewsCreatorController::class, 'recommend'])->name('creator.recommendations');
         Route::get('/apakhabar-creator/archive', [NewsCreatorController::class, 'archive'])->name('creator.archive');
     });
 

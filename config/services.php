@@ -1,6 +1,11 @@
 <?php
 
 return [
+    'apakhabar_ai' => [
+        'url' => env('APAKHABAR_AI_URL', 'http://127.0.0.1:8001'),
+        'timeout' => (int) env('APAKHABAR_AI_TIMEOUT', 180),
+    ],
+
     'mobile' => [
         'password_reset_return_url' => env('MOBILE_PASSWORD_RESET_RETURN_URL', 'apakhabarmobileapp:///reset-password'),
         'verification_return_url' => env('MOBILE_VERIFICATION_RETURN_URL', 'apakhabarmobileapp:///verify-email'),

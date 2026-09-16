@@ -1,90 +1,115 @@
-import React, { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { Head, router } from '@inertiajs/react';
-import AppLayout from '@/layouts/app-layout';
-import type { BreadcrumbItem } from '@/types';
-import creatorRoutes from '@/routes/admin/creator';
 import {
-  Archive,
-  History,
-  Paperclip,
-  Send,
-  Pencil,
-  ImagePlus,
-  Rocket,
-  Bold,
-  Italic,
-  Underline,
-  AlignLeft,
-  AlignCenter,
-  AlignRight,
-  List,
-  ListOrdered,
-  Undo2,
-  Redo2,
-  ChevronDown,
-  ChevronRight,
-  FileText,
-  X,
+    Archive,
+    History,
+    Paperclip,
+    Send,
+    Pencil,
+    ImagePlus,
+    Rocket,
+    Bold,
+    Italic,
+    Underline,
+    AlignLeft,
+    AlignCenter,
+    AlignRight,
+    List,
+    ListOrdered,
+    Undo2,
+    Redo2,
+    ChevronDown,
+    ChevronRight,
+    FileText,
+    X,
 } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import type { ChangeEvent } from 'react';
 import {
-  MessageScroller,
-  MessageScrollerButton,
-  MessageScrollerContent,
-  MessageScrollerItem,
-  MessageScrollerProvider,
-  MessageScrollerViewport,
+    MessageScroller,
+    MessageScrollerButton,
+    MessageScrollerContent,
+    MessageScrollerItem,
+    MessageScrollerProvider,
+    MessageScrollerViewport,
 } from '@/components/ui/message-scroller';
+import AppLayout from '@/layouts/app-layout';
+import creatorRoutes from '@/routes/admin/creator';
+import type { BreadcrumbItem } from '@/types';
 
 // ---------------------------------------------------------------------------
 // Static data
 // ---------------------------------------------------------------------------
 
-type SourceId = 0 | 1;
-
 interface Source {
-  doc: string;
-  page: string;
-  extract: string;
+    doc: string;
+    page: string;
+    extract: string;
 }
 
-const SOURCES: Source[] = [
-  {
-    doc: 'Flood Report 2025.pdf',
-    page: 'Page 14',
-    extract:
-      'Water levels in Village A and Village C rose sharply overnight, prompting district authorities to activate the emergency evacuation protocol. An estimated 150 residents were relocated to two temporary shelters within six hours of the alert being issued.',
-  },
-  {
-    doc: 'Penang Flood Statistics 2025.pdf',
-    page: 'Page 27',
-    extract:
-      'Cumulative rainfall for the affected districts exceeded the monthly average by 68%. Relief coordinators report that pre-positioned supply caches reduced the time between initial alert and full evacuation by roughly two hours compared with the 2024 season.',
-  },
-];
+interface Evidence {
+    source: string;
+    quote: string;
+}
+interface InformationItem {
+    id: number;
+    title: string;
+    summary: string;
+    labels: string[];
+    confidence: number | null;
+    document: { id: number; original_name: string };
+}
+interface GeneratedArticle {
+    headline: string;
+    subheadline: string | null;
+    lead: string;
+    body: string[];
+    summary: string;
+    labels: string[];
+    warnings: string[];
+    selected_sources: Array<{
+        id: number;
+        title: string;
+        document: string;
+        evidence: Evidence[];
+    }>;
+}
+interface Props {
+    informationItems: InformationItem[];
+    generatedArticle?: GeneratedArticle | null;
+    preselectedInformationIds?: number[];
+}
+
+function escapeHtml(value: string): string {
+    return value.replace(
+        /[&<>"']/g,
+        (character) =>
+            ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;',
+            })[character] ?? character,
+    );
+}
 
 const SUGGESTIONS = [
-  'Create a flood report',
-  'Generate awareness article',
-  'Summarize a report',
+    'Create a flood report',
+    'Generate awareness article',
+    'Summarize a report',
 ];
 
 const EMPTY_EXAMPLES = [
-  'Create a flood report for Penang',
-  'Generate a 2025 flood awareness article',
-  'Summarize this report',
+    'Create a flood report for Penang',
+    'Generate a 2025 flood awareness article',
+    'Summarize this report',
 ];
 
 const LOADING_STEPS = [
-  'Searching relevant reports...',
-  'Retrieving information...',
-  'Generating article...',
+    'Searching relevant reports...',
+    'Retrieving information...',
+    'Generating article...',
 ];
-
-interface Selections {
-  year: string | null;
-  location: string | null;
-  type: string | null;
-}
 
 type MobileTab = 'chat' | 'preview';
 
@@ -328,754 +353,1081 @@ const STYLES = `
 // Component
 // ---------------------------------------------------------------------------
 const breadcrumbs: BreadcrumbItem[] = [
-  { title: 'News Creator', href: creatorRoutes.create() },
+    { title: 'News Creator', href: creatorRoutes.create() },
 ];
 
-export default function NewsCreator() {
-  // Chat / flow state
-  const [inputValue, setInputValue] = useState('');
-  const [flowStarted, setFlowStarted] = useState(false);
-  const [selections, setSelections] = useState<Selections>({
-    year: null,
-    location: null,
-    type: null,
-  });
-  const [confirmed, setConfirmed] = useState(false);
-  const [generating, setGenerating] = useState(false);
-  const [loadingStepIndex, setLoadingStepIndex] = useState(0);
-  const [generated, setGenerated] = useState(false);
-  const [version] = useState(1);
-  const [status, setStatus] = useState<'draft' | 'saved'>('draft');
+export default function NewsCreator({
+    informationItems,
+    generatedArticle,
+    preselectedInformationIds = [],
+}: Props) {
+    // Chat / flow state
+    const [inputValue, setInputValue] = useState('');
+    const [instruction, setInstruction] = useState('');
+    const [flowStarted, setFlowStarted] = useState(
+        preselectedInformationIds.length > 0,
+    );
+    const [selectedInformation, setSelectedInformation] = useState<number[]>(
+        preselectedInformationIds,
+    );
+    const [confirmed, setConfirmed] = useState(false);
+    const [generating, setGenerating] = useState(false);
+    const [loadingStepIndex, setLoadingStepIndex] = useState(0);
+    const [generated] = useState(Boolean(generatedArticle));
+    const [version] = useState(1);
+    const [status, setStatus] = useState<'draft' | 'saved'>('draft');
 
-  // Editor state
-  const [isEditing, setIsEditing] = useState(false);
-  const [isDirty, setIsDirty] = useState(false);
-  const headlineRef = useRef<HTMLHeadingElement>(null);
-  const bodyRef = useRef<HTMLDivElement>(null);
-  const savedHeadlineHTML = useRef('');
-  const savedBodyHTML = useRef('');
-  const imageInputRef = useRef<HTMLInputElement>(null);
-  const rootRef = useRef<HTMLDivElement>(null);
+    // Editor state
+    const [isEditing, setIsEditing] = useState(false);
+    const [isDirty, setIsDirty] = useState(false);
+    const headlineRef = useRef<HTMLHeadingElement>(null);
+    const bodyRef = useRef<HTMLDivElement>(null);
+    const savedHeadlineHTML = useRef('');
+    const savedBodyHTML = useRef('');
+    const imageInputRef = useRef<HTMLInputElement>(null);
+    const rootRef = useRef<HTMLDivElement>(null);
 
-  //Thumbnail
-  const [thumbnail, setThumbnail] = useState<string | null>(null);
-  const savedThumbnail = useRef<string | null>(null);
-  const thumbnailInputRef = useRef<HTMLInputElement>(null);
+    //Thumbnail
+    const [thumbnail, setThumbnail] = useState<string | null>(null);
+    const savedThumbnail = useRef<string | null>(null);
+    const thumbnailInputRef = useRef<HTMLInputElement>(null);
 
-  // Sources / drawer
-  const [sourcesOpen, setSourcesOpen] = useState(true);
-  const [drawerSource, setDrawerSource] = useState<Source | null>(null);
+    // Sources / drawer
+    const [sourcesOpen, setSourcesOpen] = useState(true);
+    const [drawerSource, setDrawerSource] = useState<Source | null>(null);
 
-  // Misc UI
-  const [savedDropdownOpen, setSavedDropdownOpen] = useState(false);
-  const [mobileTab, setMobileTab] = useState<MobileTab>('chat');
+    // Misc UI
+    const [savedDropdownOpen, setSavedDropdownOpen] = useState(false);
+    const [mobileTab, setMobileTab] = useState<MobileTab>('chat');
 
-  // Close the "recent uploaded" dropdown on outside click
-  useEffect(() => {
-    if (!savedDropdownOpen) return;
-    const handler = () => setSavedDropdownOpen(false);
-    document.addEventListener('click', handler);
-    return () => document.removeEventListener('click', handler);
-  }, [savedDropdownOpen]);
+    // Close the "recent uploaded" dropdown on outside click
+    useEffect(() => {
+        if (!savedDropdownOpen) {
+            return;
+        }
 
-  const allSelected = Boolean(selections.year && selections.location && selections.type);
+        const handler = () => setSavedDropdownOpen(false);
+        document.addEventListener('click', handler);
 
-  function startFlow() {
-    if (flowStarted) return;
-    setFlowStarted(true);
-  }
+        return () => document.removeEventListener('click', handler);
+    }, [savedDropdownOpen]);
 
-  function sendMessage(text: string) {
-    const trimmed = text.trim();
-    if (!trimmed) return;
-    setInputValue('');
-    window.setTimeout(startFlow, 300);
-  }
+    const allSelected = selectedInformation.length > 0;
+    const sources: Source[] = (generatedArticle?.selected_sources ?? []).map(
+        (source) => ({
+            doc: source.document,
+            page:
+                source.evidence.map((evidence) => evidence.source).join(', ') ||
+                'Extracted information',
+            extract:
+                source.evidence.map((evidence) => evidence.quote).join(' ') ||
+                source.title,
+        }),
+    );
 
-  function autoGrow(el: HTMLTextAreaElement) {
-    el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 90)}px`;
-  }
+    function startFlow() {
+        if (flowStarted) {
+            return;
+        }
 
-  function selectChip(group: keyof Selections, value: string) {
-    setSelections((prev) => ({ ...prev, [group]: value }));
-  }
-
-  function confirmSelections() {
-    if (!allSelected) return;
-    setConfirmed(true);
-    window.setTimeout(runGeneration, 700);
-  }
-
-  function runGeneration() {
-    setGenerating(true);
-    setLoadingStepIndex(0);
-    setThumbnail(null);
-    let i = 0;
-    const step = () => {
-      if (i < LOADING_STEPS.length) {
-        setLoadingStepIndex(i);
-        i += 1;
-        window.setTimeout(step, 750);
-      } else {
-        setGenerating(false);
-        setGenerated(true);
-        setStatus('draft');
-        window.setTimeout(() => populateArticle(), 0);
-      }
-    };
-    step();
-  }
-
-  function populateArticle() {
-    const year = selections.year || '2025';
-    const affected = year === '2024' ? '80' : '150';
-    const html =
-      `<p>Heavy rainfall affected several areas in ${selections.location || 'Penang'} during ${year}, resulting in localized flooding and disruption to communities. Local authorities report that ${affected} residents have been displaced from their homes as water levels continued to rise through the week.<span class="ang-cite" data-source="0">1</span></p>` +
-      `<p>Evacuation teams moved quickly to relocate affected households to nearby community shelters, prioritising elderly residents and young families. Officials say the response drew on lessons from previous flood seasons, with pre-positioned supplies helping shorten the time between the initial alert and full evacuation.<span class="ang-cite" data-source="1">2</span></p>` +
-      `<p>Community volunteers have also stepped in to support the effort, distributing food, clean water, and temporary bedding to those sheltering away from home. Relief coordinators are continuing to monitor water levels and have asked residents in low-lying areas to stay alert for further advisories.</p>` +
-      `<p>Authorities expect to share an update on recovery plans once flood waters recede fully across the affected districts.</p>`;
-    if (bodyRef.current) bodyRef.current.innerHTML = html;
-    if (headlineRef.current) {
-      headlineRef.current.textContent = `Flood Situation in ${
-        selections.location || 'Penang'
-      }: ${year} Overview`;
+        setFlowStarted(true);
     }
-  }
 
-  function handleBodyClick(e: React.MouseEvent<HTMLDivElement>) {
-    const target = e.target as HTMLElement;
-    const cite = target.closest('.ang-cite') as HTMLElement | null;
-    if (!cite) return;
-    const idx = Number(cite.getAttribute('data-source')) as SourceId;
-    const source = SOURCES[idx];
-    if (source) setDrawerSource(source);
-  }
+    function sendMessage(text: string) {
+        const trimmed = text.trim();
 
-  function enterEdit() {
-    if (isEditing) return;
-    savedHeadlineHTML.current = headlineRef.current?.innerHTML ?? '';
-    savedBodyHTML.current = bodyRef.current?.innerHTML ?? '';
-    savedThumbnail.current = thumbnail;
-    setIsEditing(true);
-    setIsDirty(false);
-  }
+        if (!trimmed) {
+            return;
+        }
 
-  function cancelEdit() {
-    if (headlineRef.current) headlineRef.current.innerHTML = savedHeadlineHTML.current;
-    if (bodyRef.current) bodyRef.current.innerHTML = savedBodyHTML.current;
-    setThumbnail(savedThumbnail.current);
-    setIsEditing(false);
-  }
-
-  function saveEdit() {
-    setIsDirty(false);
-    setStatus('saved');
-    setIsEditing(false);
-  }
-
-  function markDirty() {
-    setIsDirty(true);
-  }
-
-  function execCmd(cmd: string, value?: string) {
-    document.execCommand(cmd, false, value);
-    bodyRef.current?.focus();
-    markDirty();
-  }
-
-  function onImageSelected(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      alert('Please choose an image file.');
-      return;
+        setInstruction(trimmed);
+        setInputValue('');
+        window.setTimeout(startFlow, 300);
     }
-    bodyRef.current?.focus();
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        document.execCommand('insertImage', false, reader.result);
+
+    function autoGrow(el: HTMLTextAreaElement) {
+        el.style.height = 'auto';
+        el.style.height = `${Math.min(el.scrollHeight, 90)}px`;
+    }
+
+    function toggleInformation(id: number) {
+        setSelectedInformation((current) =>
+            current.includes(id)
+                ? current.filter((value) => value !== id)
+                : [...current, id],
+        );
+    }
+
+    function confirmSelections() {
+        if (!allSelected) {
+            return;
+        }
+
+        setConfirmed(true);
+        runGeneration();
+    }
+
+    function runGeneration() {
+        setGenerating(true);
+        setLoadingStepIndex(1);
+        setThumbnail(null);
+        router.post(
+            '/admin/apakhabar-creator/generate',
+            {
+                information_ids: selectedInformation,
+                prompt: instruction || null,
+                tone: 'formal',
+            },
+            {
+                preserveScroll: true,
+                onFinish: () => setGenerating(false),
+            },
+        );
+    }
+
+    useEffect(() => {
+        if (!generatedArticle) {
+            return;
+        }
+
+        const articleSources = generatedArticle.selected_sources ?? [];
+        const paragraphs = [generatedArticle.lead, ...generatedArticle.body];
+        const html = paragraphs
+            .map(
+                (paragraph, index) =>
+                    `<p>${escapeHtml(paragraph)}${articleSources[index] ? `<span class="ang-cite" data-source="${index}">${index + 1}</span>` : ''}</p>`,
+            )
+            .join('');
+
+        if (bodyRef.current) {
+            bodyRef.current.innerHTML = html;
+        }
+
+        if (headlineRef.current) {
+            headlineRef.current.textContent = generatedArticle.headline;
+        }
+    }, [generatedArticle]);
+
+    function handleBodyClick(e: React.MouseEvent<HTMLDivElement>) {
+        const target = e.target as HTMLElement;
+        const cite = target.closest('.ang-cite') as HTMLElement | null;
+
+        if (!cite) {
+            return;
+        }
+
+        const idx = Number(cite.getAttribute('data-source'));
+        const source = sources[idx];
+
+        if (source) {
+            setDrawerSource(source);
+        }
+    }
+
+    function enterEdit() {
+        if (isEditing) {
+            return;
+        }
+
+        savedHeadlineHTML.current = headlineRef.current?.innerHTML ?? '';
+        savedBodyHTML.current = bodyRef.current?.innerHTML ?? '';
+        savedThumbnail.current = thumbnail;
+        setIsEditing(true);
+        setIsDirty(false);
+    }
+
+    function cancelEdit() {
+        if (headlineRef.current) {
+            headlineRef.current.innerHTML = savedHeadlineHTML.current;
+        }
+
+        if (bodyRef.current) {
+            bodyRef.current.innerHTML = savedBodyHTML.current;
+        }
+
+        setThumbnail(savedThumbnail.current);
+        setIsEditing(false);
+    }
+
+    function saveEdit() {
+        setIsDirty(false);
+        setStatus('saved');
+        setIsEditing(false);
+    }
+
+    function markDirty() {
+        setIsDirty(true);
+    }
+
+    function execCmd(cmd: string, value?: string) {
+        document.execCommand(cmd, false, value);
+        bodyRef.current?.focus();
         markDirty();
-      }
-    };
-    reader.readAsDataURL(file);
-  }
-
-  function onThumbnailSelected(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      alert('Please choose an image file.');
-      return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setThumbnail(reader.result);
-        markDirty();
-      }
-    };
-    reader.readAsDataURL(file);
-  }
 
-  // TODO: wire this to your publish endpoint (e.g. router.post(creatorRoutes.publish(), {...}))
-  function handlePublish() {
-    setStatus('saved');
-    setIsDirty(false);
-  }
+    function onImageSelected(e: ChangeEvent<HTMLInputElement>) {
+        const file = e.target.files?.[0];
+        e.target.value = '';
 
-  function showMobile(which: MobileTab) {
-    setMobileTab(which);
-  }
+        if (!file) {
+            return;
+        }
 
-  const wsBusy = generating;
+        if (!file.type.startsWith('image/')) {
+            alert('Please choose an image file.');
 
-  return (
-    <>
-    <Head title="Intelligent News Creator" />
-    <div className="ang-app" ref={rootRef}>
-      <style>{STYLES}</style>
+            return;
+        }
 
-      {/* HEADER */}
-      <header className="ang-header">
-        <div className="ang-header-left">
-          <div className="ang-brand-icon">
-            <FileText size={18} strokeWidth={2} color="#fff" />
-          </div>
-          <div className="ang-brand-text">
-            <span className="ang-brand-name">AI News Generator</span>
-            <span className="ang-brand-sub">AI-powered news authoring</span>
-          </div>
-        </div>
-        <div className="ang-header-right" style={{ position: 'relative' }}>
-          <button
-            className="ang-hbtn"
-            aria-label="Document Library"
-            title="Document Library"
-            onClick={() => router.visit(creatorRoutes.archive())}
-          >
-            <Archive size={14} strokeWidth={2} />
-            <span>Document Library</span>
-          </button>
-          <button
-            className="ang-hbtn"
-            onClick={(e) => {
-              e.stopPropagation();
-              setSavedDropdownOpen((o) => !o);
-            }}
-          >
-            <History size={14} strokeWidth={2} />
-            <span>Recent uploaded</span>
-          </button>
-          {savedDropdownOpen && (
-            <div className="ang-saved-dropdown" onClick={(e) => e.stopPropagation()}>
-              <div className="ang-saved-dropdown-head">2 recently uploaded</div>
-              <div className="ang-saved-dropdown-item">
-                <div className="t">Flood Displaces Dozens in Village A</div>
-                <div className="m">Uploaded · 2 days ago</div>
-              </div>
-              <div className="ang-saved-dropdown-item">
-                <div className="t">Penang Flood Awareness Guide 2025</div>
-                <div className="m">Uploaded · 5 days ago</div>
-              </div>
-            </div>
-          )}
-        </div>
-      </header>
+        bodyRef.current?.focus();
+        const reader = new FileReader();
+        reader.onload = () => {
+            if (typeof reader.result === 'string') {
+                document.execCommand('insertImage', false, reader.result);
+                markDirty();
+            }
+        };
+        reader.readAsDataURL(file);
+    }
 
-      {/* MOBILE TABS */}
-      <div className="ang-mobile-tabs">
-        <button
-          className={`ang-mtab${mobileTab === 'chat' ? ' active' : ''}`}
-          onClick={() => showMobile('chat')}
-        >
-          AI Assistant
-        </button>
-        <button
-          className={`ang-mtab${mobileTab === 'preview' ? ' active' : ''}`}
-          onClick={() => showMobile('preview')}
-        >
-          News Preview
-        </button>
-      </div>
+    function onThumbnailSelected(e: ChangeEvent<HTMLInputElement>) {
+        const file = e.target.files?.[0];
+        e.target.value = '';
 
-      {/* MAIN */}
-      <div className="ang-main">
-        {/* LEFT: CHAT */}
-        <section className={`ang-chat-panel${mobileTab === 'chat' ? ' mobile-active' : ''}`}>
-          <div className="ang-chat-head">
-            <h1>AI Assistant</h1>
-            <p>Tell me what kind of news report you want to create.</p>
-            <span className="ang-ai-status">
-              <span className="pulse" />
-              AI ready
-            </span>
-          </div>
+        if (!file) {
+            return;
+        }
 
-          <div className="ang-msgscroller-wrap">
-            <MessageScrollerProvider autoScroll defaultScrollPosition="end" scrollPreviousItemPeek={48}>
-              <MessageScroller className="ang-msgscroller">
-                <MessageScrollerViewport className="ang-msgscroller-viewport">
-                  <MessageScrollerContent className="ang-msgscroller-content">
-                    <MessageScrollerItem messageId="intro">
-                      <div className="ang-msg ai">
-                        <div className="ang-msg-label">AI Assistant</div>
-                        <div className="ang-msg-bubble">
-                          Hi! I can help you create a news report from your uploaded documents.
-                          What would you like to create today?
+        if (!file.type.startsWith('image/')) {
+            alert('Please choose an image file.');
+
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = () => {
+            if (typeof reader.result === 'string') {
+                setThumbnail(reader.result);
+                markDirty();
+            }
+        };
+        reader.readAsDataURL(file);
+    }
+
+    // TODO: wire this to your publish endpoint (e.g. router.post(creatorRoutes.publish(), {...}))
+    function handlePublish() {
+        setStatus('saved');
+        setIsDirty(false);
+    }
+
+    function showMobile(which: MobileTab) {
+        setMobileTab(which);
+    }
+
+    const wsBusy = generating;
+
+    return (
+        <>
+            <Head title="Intelligent News Creator" />
+            <div className="ang-app" ref={rootRef}>
+                <style>{STYLES}</style>
+
+                {/* HEADER */}
+                <header className="ang-header">
+                    <div className="ang-header-left">
+                        <div className="ang-brand-icon">
+                            <FileText size={18} strokeWidth={2} color="#fff" />
                         </div>
-                      </div>
-                    </MessageScrollerItem>
-
-                    {flowStarted && (
-                      <MessageScrollerItem messageId="clarify">
-                        <div className="ang-msg ai">
-                          <div className="ang-msg-label">AI Assistant</div>
-                          <div className="ang-msg-bubble">
-                            Sure, I can help you create a flood report. Before I generate the
-                            article, I need a few details.
-                          </div>
-                          <div className="ang-clar-card">
-                            <div className="ang-clar-title">Please specify:</div>
-
-                            <div className="ang-clar-group">
-                              <div className="ang-clar-group-label">Year</div>
-                              <div className="ang-chip-row">
-                                {['2024', '2025', '2026'].map((y) => (
-                                  <button
-                                    key={y}
-                                    className={`ang-chip${selections.year === y ? ' selected' : ''}`}
-                                    onClick={() => selectChip('year', y)}
-                                  >
-                                    {y}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-
-                            <div className="ang-clar-group">
-                              <div className="ang-clar-group-label">Location</div>
-                              <div className="ang-chip-row">
-                                {['Penang', 'Malaysia', 'Other'].map((loc) => (
-                                  <button
-                                    key={loc}
-                                    className={`ang-chip${selections.location === loc ? ' selected' : ''}`}
-                                    onClick={() => selectChip('location', loc)}
-                                  >
-                                    {loc}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-
-                            <div className="ang-clar-group" style={{ marginBottom: 0 }}>
-                              <div className="ang-clar-group-label">Report type</div>
-                              <div className="ang-chip-row">
-                                {['General Report', 'Specific Event', 'Awareness'].map((t) => (
-                                  <button
-                                    key={t}
-                                    className={`ang-chip${selections.type === t ? ' selected' : ''}`}
-                                    onClick={() => selectChip('type', t)}
-                                  >
-                                    {t}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-
-                            <button
-                              className={`ang-clar-continue${allSelected ? ' ready' : ''}`}
-                              onClick={confirmSelections}
-                              disabled={!allSelected}
-                            >
-                              {allSelected ? 'Continue' : 'Select all options to continue'}
-                            </button>
-                          </div>
+                        <div className="ang-brand-text">
+                            <span className="ang-brand-name">
+                                AI News Generator
+                            </span>
+                            <span className="ang-brand-sub">
+                                AI-powered news authoring
+                            </span>
                         </div>
-                      </MessageScrollerItem>
-                    )}
-
-                    {confirmed && (
-                      <MessageScrollerItem messageId="user-confirm" scrollAnchor>
-                        <div className="ang-msg user">
-                          <div className="ang-msg-bubble">
-                            {selections.year}, {selections.location}. I want a{' '}
-                            {(selections.type || '').toLowerCase()} about flooding.
-                          </div>
-                        </div>
-                      </MessageScrollerItem>
-                    )}
-
-                    {confirmed && (
-                      <MessageScrollerItem messageId="ai-ack">
-                        <div className="ang-msg ai">
-                          <div className="ang-msg-label">AI Assistant</div>
-                          <div className="ang-msg-bubble">
-                            Got it. I'll generate a flood report based on the {selections.year}{' '}
-                            information for {selections.location}.
-                          </div>
-                        </div>
-                      </MessageScrollerItem>
-                    )}
-
-                    {generating && (
-                      <MessageScrollerItem messageId="loading">
-                        <div className="ang-loading-msg">
-                          <div className="ang-loading-steps">
-                            {LOADING_STEPS.map((text, i) => (
-                              <div
-                                key={text}
-                                className={`ang-loading-step${
-                                  i < loadingStepIndex ? ' done' : i === loadingStepIndex ? ' active' : ''
-                                }`}
-                              >
-                                <span className="ang-step-marker">{i < loadingStepIndex ? '✓' : ''}</span>
-                                {text}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </MessageScrollerItem>
-                    )}
-
-                    {generated && !generating && (
-                      <MessageScrollerItem messageId="ai-draft-ready">
-                        <div className="ang-msg ai">
-                          <div className="ang-msg-label">AI Assistant</div>
-                          <div className="ang-msg-bubble">
-                            Here's your draft. You can review it on the right, edit it, or ask me
-                            to change something — I'll update the preview based on what you tell
-                            me.
-                          </div>
-                        </div>
-                      </MessageScrollerItem>
-                    )}
-                  </MessageScrollerContent>
-                </MessageScrollerViewport>
-                <MessageScrollerButton className="ang-msgscroller-btn" />
-              </MessageScroller>
-            </MessageScrollerProvider>
-          </div>
-
-          <div className="ang-suggest-row">
-            {SUGGESTIONS.map((s) => (
-              <button key={s} className="ang-suggest-chip" onClick={() => sendMessage(s)}>
-                {s}
-              </button>
-            ))}
-          </div>
-
-          <div className="ang-chat-input-wrap">
-            <div className="ang-chat-input">
-              <button className="ang-attach-btn" aria-label="Attach file">
-                <Paperclip size={16} strokeWidth={2} />
-              </button>
-              <textarea
-                rows={1}
-                placeholder="Ask AI to create or modify a news article..."
-                value={inputValue}
-                onChange={(e) => {
-                  setInputValue(e.target.value);
-                  autoGrow(e.target);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    sendMessage(inputValue);
-                  }
-                }}
-              />
-              <button className="ang-send-btn" aria-label="Send message" onClick={() => sendMessage(inputValue)}>
-                <Send size={14} strokeWidth={2.2} />
-              </button>
-            </div>
-          </div>
-        </section>
-
-        {/* RIGHT: WORKSPACE */}
-        <section className={`ang-workspace${mobileTab === 'preview' ? ' mobile-active' : ''}`}>
-          <div className="ang-ws-head">
-            <div className="ang-ws-head-left">
-              <h2>News preview</h2>
-              <div className="sub">
-                {generated ? (
-                  <>
-                    <span className={`ang-status-badge ${status}`}>
-                      {status === 'saved' ? 'Published' : 'Draft'}
-                    </span>
-                    <span>Last generated: just now</span>
-                    <span className="sep" />
-                    <span>Version {version}</span>
-                  </>
-                ) : (
-                  <span>Start a conversation to generate a draft</span>
-                )}
-              </div>
-            </div>
-            {generated && (
-              <div className="ang-ws-head-right">
-                {isDirty && <span className="ang-unsaved-flag">Unsaved changes</span>}
-                <button className="ang-wbtn" onClick={enterEdit}>
-                  <Pencil size={14} strokeWidth={2} />
-                  <span>{isEditing ? 'Editing...' : 'Edit'}</span>
-                </button>
-                <button className="ang-wbtn primary" onClick={handlePublish}>
-                  <Rocket size={14} strokeWidth={2} />
-                  <span>Publish</span>
-                </button>
-              </div>
-            )}
-          </div>
-
-          {isEditing && (
-            <div className="ang-toolbar">
-              <select className="ang-tb-select" style={{ width: 112 }} onChange={(e) => execCmd('fontName', e.target.value)}>
-                <option value="'Source Serif 4',serif">Source Serif</option>
-                <option value="Georgia,serif">Georgia</option>
-                <option value="Arial,sans-serif">Arial</option>
-                <option value="'Courier New',monospace">Courier New</option>
-              </select>
-              <select className="ang-tb-select" style={{ width: 64 }} defaultValue="3" onChange={(e) => execCmd('fontSize', e.target.value)}>
-                <option value="2">13</option>
-                <option value="3">16</option>
-                <option value="4">18</option>
-                <option value="5">22</option>
-                <option value="6">28</option>
-              </select>
-              <div className="ang-tb-divider" />
-              <button className="ang-tb-btn" title="Bold" onClick={() => execCmd('bold')}>
-                <Bold size={14} strokeWidth={2} />
-              </button>
-              <button className="ang-tb-btn" title="Italic" onClick={() => execCmd('italic')}>
-                <Italic size={14} strokeWidth={2} />
-              </button>
-              <button className="ang-tb-btn" title="Underline" onClick={() => execCmd('underline')}>
-                <Underline size={14} strokeWidth={2} />
-              </button>
-              <div className="ang-tb-divider" />
-              <button className="ang-tb-btn" title="Align left" onClick={() => execCmd('justifyLeft')}>
-                <AlignLeft size={14} strokeWidth={2} />
-              </button>
-              <button className="ang-tb-btn" title="Align center" onClick={() => execCmd('justifyCenter')}>
-                <AlignCenter size={14} strokeWidth={2} />
-              </button>
-              <button className="ang-tb-btn" title="Align right" onClick={() => execCmd('justifyRight')}>
-                <AlignRight size={14} strokeWidth={2} />
-              </button>
-              <div className="ang-tb-divider" />
-              <button className="ang-tb-btn" title="Bullet list" onClick={() => execCmd('insertUnorderedList')}>
-                <List size={14} strokeWidth={2} />
-              </button>
-              <button className="ang-tb-btn" title="Numbered list" onClick={() => execCmd('insertOrderedList')}>
-                <ListOrdered size={14} strokeWidth={2} />
-              </button>
-              <div className="ang-tb-divider" />
-              <button className="ang-tb-btn" title="Insert image" onClick={() => imageInputRef.current?.click()}>
-                <ImagePlus size={14} strokeWidth={2} />
-              </button>
-              <input
-                ref={imageInputRef}
-                type="file"
-                accept="image/*"
-                style={{ display: 'none' }}
-                onChange={onImageSelected}
-              />
-              <div className="ang-tb-divider" />
-              <div className="ang-tb-color" title="Text color">
-                <input type="color" defaultValue="#1a2233" onChange={(e) => execCmd('foreColor', e.target.value)} />
-              </div>
-              <div className="ang-tb-color" title="Highlight">
-                <input type="color" defaultValue="#fdf1c7" onChange={(e) => execCmd('hiliteColor', e.target.value)} />
-              </div>
-              <div className="ang-tb-divider" />
-              <button className="ang-tb-btn" title="Undo" onClick={() => execCmd('undo')}>
-                <Undo2 size={14} strokeWidth={2} />
-              </button>
-              <button className="ang-tb-btn" title="Redo" onClick={() => execCmd('redo')}>
-                <Redo2 size={14} strokeWidth={2} />
-              </button>
-              <div style={{ flex: 1 }} />
-              <button className="ang-wbtn" onClick={cancelEdit}>
-                Cancel
-              </button>
-              <button className="ang-wbtn primary" onClick={saveEdit}>
-                Save changes
-              </button>
-            </div>
-          )}
-
-          <div className="ang-ws-scroll">
-            {!generated && !wsBusy && (
-              <div className="ang-empty-state">
-                <div className="ang-empty-illo">
-                  <FileText size={34} strokeWidth={1.6} />
-                </div>
-                <h3>Your news article will appear here</h3>
-                <p>Start by telling the AI what kind of news report you want to create.</p>
-                <div className="ang-empty-examples">
-                  {EMPTY_EXAMPLES.map((ex) => (
-                    <button
-                      key={ex}
-                      className="ang-empty-example"
-                      onClick={() => {
-                        showMobile('chat');
-                        sendMessage(ex);
-                      }}
-                    >
-                      <ChevronRight size={13} strokeWidth={2} />
-                      {ex}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {wsBusy && (
-              <div className="ang-ws-loading">
-                <div className="ang-ws-loading-spin" />
-                <p>{LOADING_STEPS[loadingStepIndex]}</p>
-              </div>
-            )}
-
-            <div className="ang-doc-card" style={{ display: generated && !wsBusy ? 'block' : 'none' }}>
-              <span className="ang-doc-stamp">AI draft</span>
-              {(thumbnail || isEditing) && (
-                <div className="ang-thumb-wrap">
-                  {thumbnail ? (
-                    <img src={thumbnail} alt="Thumbnail" className="ang-thumb-img" />
-                  ) : (
-                    <button
-                      type="button"
-                      className="ang-thumb-empty"
-                      onClick={() => thumbnailInputRef.current?.click()}
-                    >
-                      <ImagePlus size={20} strokeWidth={1.8} />
-                      <span>Add thumbnail</span>
-                    </button>
-                  )}
-                  {isEditing && thumbnail && (
-                    <div className="ang-thumb-actions">
-                      <button
-                        type="button"
-                        className="ang-thumb-btn"
-                        onClick={() => thumbnailInputRef.current?.click()}
-                      >
-                        Change
-                      </button>
-                      <button
-                        type="button"
-                        className="ang-thumb-btn danger"
-                        onClick={() => {
-                          setThumbnail(null);
-                          markDirty();
-                        }}
-                      >
-                        Remove
-                      </button>
                     </div>
-                  )}
-                  <input
-                    ref={thumbnailInputRef}
-                    type="file"
-                    accept="image/*"
-                    style={{ display: 'none' }}
-                    onChange={onThumbnailSelected}
-                  />
+                    <div
+                        className="ang-header-right"
+                        style={{ position: 'relative' }}
+                    >
+                        <button
+                            className="ang-hbtn"
+                            aria-label="Document Library"
+                            title="Document Library"
+                            onClick={() =>
+                                router.visit(creatorRoutes.archive())
+                            }
+                        >
+                            <Archive size={14} strokeWidth={2} />
+                            <span>Document Library</span>
+                        </button>
+                        <button
+                            className="ang-hbtn"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setSavedDropdownOpen((o) => !o);
+                            }}
+                        >
+                            <History size={14} strokeWidth={2} />
+                            <span>Recent uploaded</span>
+                        </button>
+                        {savedDropdownOpen && (
+                            <div
+                                className="ang-saved-dropdown"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <div className="ang-saved-dropdown-head">
+                                    Recently extracted information
+                                </div>
+                                {informationItems.slice(0, 5).map((item) => (
+                                    <div
+                                        className="ang-saved-dropdown-item"
+                                        key={item.id}
+                                    >
+                                        <div className="t">{item.title}</div>
+                                        <div className="m">
+                                            {item.document.original_name}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </header>
+
+                {/* MOBILE TABS */}
+                <div className="ang-mobile-tabs">
+                    <button
+                        className={`ang-mtab${mobileTab === 'chat' ? 'active' : ''}`}
+                        onClick={() => showMobile('chat')}
+                    >
+                        AI Assistant
+                    </button>
+                    <button
+                        className={`ang-mtab${mobileTab === 'preview' ? 'active' : ''}`}
+                        onClick={() => showMobile('preview')}
+                    >
+                        News Preview
+                    </button>
                 </div>
-              )}
-              <div className="ang-doc-category">FLOOD REPORT</div>
-              <h2
-                className="ang-doc-headline"
-                ref={headlineRef}
-                contentEditable={isEditing}
-                suppressContentEditableWarning
-                spellCheck={false}
-                onInput={markDirty}
-              >
-                Flood Situation in Penang: 2025 Overview
-              </h2>
-              <div className="ang-doc-meta">
-                <span>
-                  {selections.location || 'Penang'} · {selections.year || '2025'}
-                </span>
-                <span className="sep" />
-                <span>Generated by AI News Generator</span>
-              </div>
-              <div className="ang-doc-divider" />
-              <div
-                className="ang-doc-body"
-                ref={bodyRef}
-                contentEditable={isEditing}
-                suppressContentEditableWarning
-                spellCheck={false}
-                onInput={markDirty}
-                onClick={handleBodyClick}
-              />
 
-              <div className="ang-sources-section">
-                <button className="ang-sources-toggle" onClick={() => setSourcesOpen((o) => !o)}>
-                  <h4>Sources used ({SOURCES.length})</h4>
-                  <ChevronDown
-                    size={14}
-                    strokeWidth={2}
-                    className={`chev${sourcesOpen ? ' open' : ''}`}
-                  />
-                </button>
-                {sourcesOpen && (
-                  <div className="ang-sources-list">
-                    {SOURCES.map((s) => (
-                      <button
-                        key={s.doc}
-                        className="ang-source-card"
-                        onClick={() => setDrawerSource(s)}
-                      >
-                        <div className="ang-source-icon">
-                          <FileText size={15} strokeWidth={2} />
+                {/* MAIN */}
+                <div className="ang-main">
+                    {/* LEFT: CHAT */}
+                    <section
+                        className={`ang-chat-panel${mobileTab === 'chat' ? 'mobile-active' : ''}`}
+                    >
+                        <div className="ang-chat-head">
+                            <h1>AI Assistant</h1>
+                            <p>
+                                Tell me what kind of news report you want to
+                                create.
+                            </p>
+                            <span className="ang-ai-status">
+                                <span className="pulse" />
+                                AI ready
+                            </span>
                         </div>
-                        <div className="ang-source-info">
-                          <div className="ang-source-name">{s.doc}</div>
-                          <div className="ang-source-page">{s.page}</div>
+
+                        <div className="ang-msgscroller-wrap">
+                            <MessageScrollerProvider
+                                autoScroll
+                                defaultScrollPosition="end"
+                                scrollPreviousItemPeek={48}
+                            >
+                                <MessageScroller className="ang-msgscroller">
+                                    <MessageScrollerViewport className="ang-msgscroller-viewport">
+                                        <MessageScrollerContent className="ang-msgscroller-content">
+                                            <MessageScrollerItem messageId="intro">
+                                                <div className="ang-msg ai">
+                                                    <div className="ang-msg-label">
+                                                        AI Assistant
+                                                    </div>
+                                                    <div className="ang-msg-bubble">
+                                                        Hi! I can help you
+                                                        create a news report
+                                                        from your uploaded
+                                                        documents. What would
+                                                        you like to create
+                                                        today?
+                                                    </div>
+                                                </div>
+                                            </MessageScrollerItem>
+
+                                            {flowStarted && (
+                                                <MessageScrollerItem messageId="clarify">
+                                                    <div className="ang-msg ai">
+                                                        <div className="ang-msg-label">
+                                                            AI Assistant
+                                                        </div>
+                                                        <div className="ang-msg-bubble">
+                                                            Pilih satu atau
+                                                            beberapa informasi
+                                                            hasil ekstraksi yang
+                                                            akan menjadi sumber
+                                                            faktual berita.
+                                                        </div>
+                                                        <div className="ang-clar-card">
+                                                            <div className="ang-clar-title">
+                                                                Informasi
+                                                                tersedia
+                                                            </div>
+
+                                                            <div className="ang-clar-group">
+                                                                <div className="ang-clar-group-label">
+                                                                    Pilih sumber
+                                                                    informasi
+                                                                </div>
+                                                                <div className="ang-chip-row">
+                                                                    {informationItems.map(
+                                                                        (
+                                                                            item,
+                                                                        ) => (
+                                                                            <button
+                                                                                key={
+                                                                                    item.id
+                                                                                }
+                                                                                className={`ang-chip${selectedInformation.includes(item.id) ? 'selected' : ''}`}
+                                                                                onClick={() =>
+                                                                                    toggleInformation(
+                                                                                        item.id,
+                                                                                    )
+                                                                                }
+                                                                                title={`${item.document.original_name} — ${item.summary}`}
+                                                                            >
+                                                                                {
+                                                                                    item.title
+                                                                                }
+                                                                            </button>
+                                                                        ),
+                                                                    )}
+                                                                </div>
+                                                            </div>
+
+                                                            <button
+                                                                className={`ang-clar-continue${allSelected ? 'ready' : ''}`}
+                                                                onClick={
+                                                                    confirmSelections
+                                                                }
+                                                                disabled={
+                                                                    !allSelected
+                                                                }
+                                                            >
+                                                                {allSelected
+                                                                    ? `Generate from ${selectedInformation.length} item(s)`
+                                                                    : 'Select at least one information item'}
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </MessageScrollerItem>
+                                            )}
+
+                                            {confirmed && (
+                                                <MessageScrollerItem
+                                                    messageId="user-confirm"
+                                                    scrollAnchor
+                                                >
+                                                    <div className="ang-msg user">
+                                                        <div className="ang-msg-bubble">
+                                                            Gunakan{' '}
+                                                            {
+                                                                selectedInformation.length
+                                                            }{' '}
+                                                            informasi yang saya
+                                                            pilih untuk membuat
+                                                            berita berbahasa
+                                                            Indonesia.
+                                                        </div>
+                                                    </div>
+                                                </MessageScrollerItem>
+                                            )}
+
+                                            {confirmed && (
+                                                <MessageScrollerItem messageId="ai-ack">
+                                                    <div className="ang-msg ai">
+                                                        <div className="ang-msg-label">
+                                                            AI Assistant
+                                                        </div>
+                                                        <div className="ang-msg-bubble">
+                                                            Baik. Saya akan
+                                                            memeriksa
+                                                            kelengkapan
+                                                            informasi dan
+                                                            membuat draf
+                                                            berdasarkan sumber
+                                                            yang dipilih.
+                                                        </div>
+                                                    </div>
+                                                </MessageScrollerItem>
+                                            )}
+
+                                            {generating && (
+                                                <MessageScrollerItem messageId="loading">
+                                                    <div className="ang-loading-msg">
+                                                        <div className="ang-loading-steps">
+                                                            {LOADING_STEPS.map(
+                                                                (text, i) => (
+                                                                    <div
+                                                                        key={
+                                                                            text
+                                                                        }
+                                                                        className={`ang-loading-step${
+                                                                            i <
+                                                                            loadingStepIndex
+                                                                                ? 'done'
+                                                                                : i ===
+                                                                                    loadingStepIndex
+                                                                                  ? 'active'
+                                                                                  : ''
+                                                                        }`}
+                                                                    >
+                                                                        <span className="ang-step-marker">
+                                                                            {i <
+                                                                            loadingStepIndex
+                                                                                ? '✓'
+                                                                                : ''}
+                                                                        </span>
+                                                                        {text}
+                                                                    </div>
+                                                                ),
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </MessageScrollerItem>
+                                            )}
+
+                                            {generated && !generating && (
+                                                <MessageScrollerItem messageId="ai-draft-ready">
+                                                    <div className="ang-msg ai">
+                                                        <div className="ang-msg-label">
+                                                            AI Assistant
+                                                        </div>
+                                                        <div className="ang-msg-bubble">
+                                                            Here's your draft.
+                                                            You can review it on
+                                                            the right, edit it,
+                                                            or ask me to change
+                                                            something — I'll
+                                                            update the preview
+                                                            based on what you
+                                                            tell me.
+                                                        </div>
+                                                    </div>
+                                                </MessageScrollerItem>
+                                            )}
+                                        </MessageScrollerContent>
+                                    </MessageScrollerViewport>
+                                    <MessageScrollerButton className="ang-msgscroller-btn" />
+                                </MessageScroller>
+                            </MessageScrollerProvider>
                         </div>
-                        <ChevronRight size={14} strokeWidth={2} className="ang-source-arrow" />
-                      </button>
-                    ))}
-                  </div>
+
+                        <div className="ang-suggest-row">
+                            {SUGGESTIONS.map((s) => (
+                                <button
+                                    key={s}
+                                    className="ang-suggest-chip"
+                                    onClick={() => sendMessage(s)}
+                                >
+                                    {s}
+                                </button>
+                            ))}
+                        </div>
+
+                        <div className="ang-chat-input-wrap">
+                            <div className="ang-chat-input">
+                                <button
+                                    className="ang-attach-btn"
+                                    aria-label="Attach file"
+                                    onClick={() =>
+                                        router.visit(creatorRoutes.archive())
+                                    }
+                                >
+                                    <Paperclip size={16} strokeWidth={2} />
+                                </button>
+                                <textarea
+                                    rows={1}
+                                    placeholder="Ask AI to create or modify a news article..."
+                                    value={inputValue}
+                                    onChange={(e) => {
+                                        setInputValue(e.target.value);
+                                        autoGrow(e.target);
+                                    }}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' && !e.shiftKey) {
+                                            e.preventDefault();
+                                            sendMessage(inputValue);
+                                        }
+                                    }}
+                                />
+                                <button
+                                    className="ang-send-btn"
+                                    aria-label="Send message"
+                                    onClick={() => sendMessage(inputValue)}
+                                >
+                                    <Send size={14} strokeWidth={2.2} />
+                                </button>
+                            </div>
+                        </div>
+                    </section>
+
+                    {/* RIGHT: WORKSPACE */}
+                    <section
+                        className={`ang-workspace${mobileTab === 'preview' ? 'mobile-active' : ''}`}
+                    >
+                        <div className="ang-ws-head">
+                            <div className="ang-ws-head-left">
+                                <h2>News preview</h2>
+                                <div className="sub">
+                                    {generated ? (
+                                        <>
+                                            <span
+                                                className={`ang-status-badge ${status}`}
+                                            >
+                                                {status === 'saved'
+                                                    ? 'Published'
+                                                    : 'Draft'}
+                                            </span>
+                                            <span>
+                                                Last generated: just now
+                                            </span>
+                                            <span className="sep" />
+                                            <span>Version {version}</span>
+                                        </>
+                                    ) : (
+                                        <span>
+                                            Start a conversation to generate a
+                                            draft
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+                            {generated && (
+                                <div className="ang-ws-head-right">
+                                    {isDirty && (
+                                        <span className="ang-unsaved-flag">
+                                            Unsaved changes
+                                        </span>
+                                    )}
+                                    <button
+                                        className="ang-wbtn"
+                                        onClick={enterEdit}
+                                    >
+                                        <Pencil size={14} strokeWidth={2} />
+                                        <span>
+                                            {isEditing ? 'Editing...' : 'Edit'}
+                                        </span>
+                                    </button>
+                                    <button
+                                        className="ang-wbtn primary"
+                                        onClick={handlePublish}
+                                    >
+                                        <Rocket size={14} strokeWidth={2} />
+                                        <span>Publish</span>
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+
+                        {isEditing && (
+                            <div className="ang-toolbar">
+                                <select
+                                    className="ang-tb-select"
+                                    style={{ width: 112 }}
+                                    onChange={(e) =>
+                                        execCmd('fontName', e.target.value)
+                                    }
+                                >
+                                    <option value="'Source Serif 4',serif">
+                                        Source Serif
+                                    </option>
+                                    <option value="Georgia,serif">
+                                        Georgia
+                                    </option>
+                                    <option value="Arial,sans-serif">
+                                        Arial
+                                    </option>
+                                    <option value="'Courier New',monospace">
+                                        Courier New
+                                    </option>
+                                </select>
+                                <select
+                                    className="ang-tb-select"
+                                    style={{ width: 64 }}
+                                    defaultValue="3"
+                                    onChange={(e) =>
+                                        execCmd('fontSize', e.target.value)
+                                    }
+                                >
+                                    <option value="2">13</option>
+                                    <option value="3">16</option>
+                                    <option value="4">18</option>
+                                    <option value="5">22</option>
+                                    <option value="6">28</option>
+                                </select>
+                                <div className="ang-tb-divider" />
+                                <button
+                                    className="ang-tb-btn"
+                                    title="Bold"
+                                    onClick={() => execCmd('bold')}
+                                >
+                                    <Bold size={14} strokeWidth={2} />
+                                </button>
+                                <button
+                                    className="ang-tb-btn"
+                                    title="Italic"
+                                    onClick={() => execCmd('italic')}
+                                >
+                                    <Italic size={14} strokeWidth={2} />
+                                </button>
+                                <button
+                                    className="ang-tb-btn"
+                                    title="Underline"
+                                    onClick={() => execCmd('underline')}
+                                >
+                                    <Underline size={14} strokeWidth={2} />
+                                </button>
+                                <div className="ang-tb-divider" />
+                                <button
+                                    className="ang-tb-btn"
+                                    title="Align left"
+                                    onClick={() => execCmd('justifyLeft')}
+                                >
+                                    <AlignLeft size={14} strokeWidth={2} />
+                                </button>
+                                <button
+                                    className="ang-tb-btn"
+                                    title="Align center"
+                                    onClick={() => execCmd('justifyCenter')}
+                                >
+                                    <AlignCenter size={14} strokeWidth={2} />
+                                </button>
+                                <button
+                                    className="ang-tb-btn"
+                                    title="Align right"
+                                    onClick={() => execCmd('justifyRight')}
+                                >
+                                    <AlignRight size={14} strokeWidth={2} />
+                                </button>
+                                <div className="ang-tb-divider" />
+                                <button
+                                    className="ang-tb-btn"
+                                    title="Bullet list"
+                                    onClick={() =>
+                                        execCmd('insertUnorderedList')
+                                    }
+                                >
+                                    <List size={14} strokeWidth={2} />
+                                </button>
+                                <button
+                                    className="ang-tb-btn"
+                                    title="Numbered list"
+                                    onClick={() => execCmd('insertOrderedList')}
+                                >
+                                    <ListOrdered size={14} strokeWidth={2} />
+                                </button>
+                                <div className="ang-tb-divider" />
+                                <button
+                                    className="ang-tb-btn"
+                                    title="Insert image"
+                                    onClick={() =>
+                                        imageInputRef.current?.click()
+                                    }
+                                >
+                                    <ImagePlus size={14} strokeWidth={2} />
+                                </button>
+                                <input
+                                    ref={imageInputRef}
+                                    type="file"
+                                    accept="image/*"
+                                    style={{ display: 'none' }}
+                                    onChange={onImageSelected}
+                                />
+                                <div className="ang-tb-divider" />
+                                <div
+                                    className="ang-tb-color"
+                                    title="Text color"
+                                >
+                                    <input
+                                        type="color"
+                                        defaultValue="#1a2233"
+                                        onChange={(e) =>
+                                            execCmd('foreColor', e.target.value)
+                                        }
+                                    />
+                                </div>
+                                <div className="ang-tb-color" title="Highlight">
+                                    <input
+                                        type="color"
+                                        defaultValue="#fdf1c7"
+                                        onChange={(e) =>
+                                            execCmd(
+                                                'hiliteColor',
+                                                e.target.value,
+                                            )
+                                        }
+                                    />
+                                </div>
+                                <div className="ang-tb-divider" />
+                                <button
+                                    className="ang-tb-btn"
+                                    title="Undo"
+                                    onClick={() => execCmd('undo')}
+                                >
+                                    <Undo2 size={14} strokeWidth={2} />
+                                </button>
+                                <button
+                                    className="ang-tb-btn"
+                                    title="Redo"
+                                    onClick={() => execCmd('redo')}
+                                >
+                                    <Redo2 size={14} strokeWidth={2} />
+                                </button>
+                                <div style={{ flex: 1 }} />
+                                <button
+                                    className="ang-wbtn"
+                                    onClick={cancelEdit}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    className="ang-wbtn primary"
+                                    onClick={saveEdit}
+                                >
+                                    Save changes
+                                </button>
+                            </div>
+                        )}
+
+                        <div className="ang-ws-scroll">
+                            {!generated && !wsBusy && (
+                                <div className="ang-empty-state">
+                                    <div className="ang-empty-illo">
+                                        <FileText size={34} strokeWidth={1.6} />
+                                    </div>
+                                    <h3>Your news article will appear here</h3>
+                                    <p>
+                                        Start by telling the AI what kind of
+                                        news report you want to create.
+                                    </p>
+                                    <div className="ang-empty-examples">
+                                        {EMPTY_EXAMPLES.map((ex) => (
+                                            <button
+                                                key={ex}
+                                                className="ang-empty-example"
+                                                onClick={() => {
+                                                    showMobile('chat');
+                                                    sendMessage(ex);
+                                                }}
+                                            >
+                                                <ChevronRight
+                                                    size={13}
+                                                    strokeWidth={2}
+                                                />
+                                                {ex}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {wsBusy && (
+                                <div className="ang-ws-loading">
+                                    <div className="ang-ws-loading-spin" />
+                                    <p>{LOADING_STEPS[loadingStepIndex]}</p>
+                                </div>
+                            )}
+
+                            <div
+                                className="ang-doc-card"
+                                style={{
+                                    display:
+                                        generated && !wsBusy ? 'block' : 'none',
+                                }}
+                            >
+                                <span className="ang-doc-stamp">AI draft</span>
+                                {(thumbnail || isEditing) && (
+                                    <div className="ang-thumb-wrap">
+                                        {thumbnail ? (
+                                            <img
+                                                src={thumbnail}
+                                                alt="Thumbnail"
+                                                className="ang-thumb-img"
+                                            />
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                className="ang-thumb-empty"
+                                                onClick={() =>
+                                                    thumbnailInputRef.current?.click()
+                                                }
+                                            >
+                                                <ImagePlus
+                                                    size={20}
+                                                    strokeWidth={1.8}
+                                                />
+                                                <span>Add thumbnail</span>
+                                            </button>
+                                        )}
+                                        {isEditing && thumbnail && (
+                                            <div className="ang-thumb-actions">
+                                                <button
+                                                    type="button"
+                                                    className="ang-thumb-btn"
+                                                    onClick={() =>
+                                                        thumbnailInputRef.current?.click()
+                                                    }
+                                                >
+                                                    Change
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className="ang-thumb-btn danger"
+                                                    onClick={() => {
+                                                        setThumbnail(null);
+                                                        markDirty();
+                                                    }}
+                                                >
+                                                    Remove
+                                                </button>
+                                            </div>
+                                        )}
+                                        <input
+                                            ref={thumbnailInputRef}
+                                            type="file"
+                                            accept="image/*"
+                                            style={{ display: 'none' }}
+                                            onChange={onThumbnailSelected}
+                                        />
+                                    </div>
+                                )}
+                                <div className="ang-doc-category">
+                                    FLOOD REPORT
+                                </div>
+                                <h2
+                                    className="ang-doc-headline"
+                                    ref={headlineRef}
+                                    contentEditable={isEditing}
+                                    suppressContentEditableWarning
+                                    spellCheck={false}
+                                    onInput={markDirty}
+                                >
+                                    Flood Situation in Penang: 2025 Overview
+                                </h2>
+                                <div className="ang-doc-meta">
+                                    <span>
+                                        Bahasa Indonesia ·{' '}
+                                        {generatedArticle?.labels.join(', ') ||
+                                            'Berita'}
+                                    </span>
+                                    <span className="sep" />
+                                    <span>Generated by AI News Generator</span>
+                                </div>
+                                <div className="ang-doc-divider" />
+                                <div
+                                    className="ang-doc-body"
+                                    ref={bodyRef}
+                                    contentEditable={isEditing}
+                                    suppressContentEditableWarning
+                                    spellCheck={false}
+                                    onInput={markDirty}
+                                    onClick={handleBodyClick}
+                                />
+
+                                <div className="ang-sources-section">
+                                    <button
+                                        className="ang-sources-toggle"
+                                        onClick={() =>
+                                            setSourcesOpen((o) => !o)
+                                        }
+                                    >
+                                        <h4>Sources used ({sources.length})</h4>
+                                        <ChevronDown
+                                            size={14}
+                                            strokeWidth={2}
+                                            className={`chev${sourcesOpen ? 'open' : ''}`}
+                                        />
+                                    </button>
+                                    {sourcesOpen && (
+                                        <div className="ang-sources-list">
+                                            {sources.map((s) => (
+                                                <button
+                                                    key={s.doc}
+                                                    className="ang-source-card"
+                                                    onClick={() =>
+                                                        setDrawerSource(s)
+                                                    }
+                                                >
+                                                    <div className="ang-source-icon">
+                                                        <FileText
+                                                            size={15}
+                                                            strokeWidth={2}
+                                                        />
+                                                    </div>
+                                                    <div className="ang-source-info">
+                                                        <div className="ang-source-name">
+                                                            {s.doc}
+                                                        </div>
+                                                        <div className="ang-source-page">
+                                                            {s.page}
+                                                        </div>
+                                                    </div>
+                                                    <ChevronRight
+                                                        size={14}
+                                                        strokeWidth={2}
+                                                        className="ang-source-arrow"
+                                                    />
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+
+                {/* SOURCES DRAWER */}
+                {drawerSource && (
+                    <div
+                        className="ang-drawer-overlay"
+                        onClick={() => setDrawerSource(null)}
+                    >
+                        <div
+                            className="ang-drawer"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="ang-drawer-head">
+                                <h3>Source detail</h3>
+                                <button
+                                    className="ang-drawer-close"
+                                    aria-label="Close"
+                                    onClick={() => setDrawerSource(null)}
+                                >
+                                    <X size={16} strokeWidth={2} />
+                                </button>
+                            </div>
+                            <div className="ang-drawer-body">
+                                <div className="ang-drawer-doc-icon">
+                                    <FileText size={20} strokeWidth={2} />
+                                </div>
+                                <h4>{drawerSource.doc}</h4>
+                                <div className="page">{drawerSource.page}</div>
+                                <div className="ang-drawer-extract-label">
+                                    Relevant extract
+                                </div>
+                                <div className="ang-drawer-extract">
+                                    {drawerSource.extract}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 )}
-              </div>
             </div>
-          </div>
-        </section>
-      </div>
-
-      {/* SOURCES DRAWER */}
-      {drawerSource && (
-        <div className="ang-drawer-overlay" onClick={() => setDrawerSource(null)}>
-          <div className="ang-drawer" onClick={(e) => e.stopPropagation()}>
-            <div className="ang-drawer-head">
-              <h3>Source detail</h3>
-              <button className="ang-drawer-close" aria-label="Close" onClick={() => setDrawerSource(null)}>
-                <X size={16} strokeWidth={2} />
-              </button>
-            </div>
-            <div className="ang-drawer-body">
-              <div className="ang-drawer-doc-icon">
-                <FileText size={20} strokeWidth={2} />
-              </div>
-              <h4>{drawerSource.doc}</h4>
-              <div className="page">{drawerSource.page}</div>
-              <div className="ang-drawer-extract-label">Relevant extract</div>
-              <div className="ang-drawer-extract">{drawerSource.extract}</div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-    </>
-  );
+        </>
+    );
 }
 NewsCreator.layout = (page: React.ReactNode) => (
     <AppLayout breadcrumbs={breadcrumbs}>{page}</AppLayout>
-    );
+);
