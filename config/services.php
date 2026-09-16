@@ -4,6 +4,7 @@ return [
     'apakhabar_ai' => [
         'url' => env('APAKHABAR_AI_URL', 'http://127.0.0.1:8001'),
         'timeout' => (int) env('APAKHABAR_AI_TIMEOUT', 180),
+        'connect_timeout' => (int) env('APAKHABAR_AI_CONNECT_TIMEOUT', 5),
     ],
 
     'mobile' => [
@@ -50,7 +51,7 @@ return [
         'from'           => env('TWILIO_FROM'),
         'whatsapp_from'  => env('TWILIO_WHATSAPP_FROM'),
     ],
-    
+
     'vonage' => [
         'key'    => env('VONAGE_KEY'),
         'secret' => env('VONAGE_SECRET'),
@@ -58,13 +59,13 @@ return [
     ],
     */
     'bulk360' => [
-        'app_key'    => env('BULK360_APP_KEY'),
+        'app_key' => env('BULK360_APP_KEY'),
         'app_secret' => env('BULK360_APP_SECRET'),
-        'from'       => env('BULK360_FROM', '68068'),
+        'from' => env('BULK360_FROM', '68068'),
     ],
 
     'whapi' => [
-        'token'          => env('WHAPI_TOKEN'),
+        'token' => env('WHAPI_TOKEN'),
         'villager_group' => env('WHAPI_VILLAGER_GROUP'),
         'employee_group' => env('WHAPI_EMPLOYEE_GROUP'),
     ],

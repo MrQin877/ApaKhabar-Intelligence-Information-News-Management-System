@@ -10,9 +10,13 @@ class IntelligenceDocument extends Model
         'uploaded_by', 'ai_document_id', 'original_name', 'storage_disk', 'storage_path',
         'mime_type', 'file_size', 'sha256', 'status', 'character_count',
         'embedding_status', 'error_message', 'processed_at',
+        'processing_attempts', 'last_attempted_at',
     ];
 
-    protected $casts = ['processed_at' => 'datetime'];
+    protected $casts = [
+        'processed_at' => 'datetime',
+        'last_attempted_at' => 'datetime',
+    ];
 
     public function information()
     {

@@ -55,10 +55,23 @@ interface DocumentItem {
 interface MissingQuestion {
     field: string;
     importance: 'required' | 'recommended';
+    kind?:
+        | 'unverified_subject'
+        | 'possible_typo'
+        | 'format_choice'
+        | 'missing_fact'
+        | 'conflict';
     question: string;
     reason?: string | null;
     options?: string[];
     selection_type?: 'single' | 'multi' | 'ranked' | 'text';
+    sources?: Array<{
+        title: string;
+        url: string;
+        snippet: string;
+        published_at?: string | null;
+        source?: string;
+    }>;
 }
 interface UserFact {
     field: string;
@@ -66,6 +79,12 @@ interface UserFact {
 }
 interface NewsSession {
     id: number;
+    status:
+        | 'collecting_sources'
+        | 'processing_files'
+        | 'awaiting_answers'
+        | 'ready_to_generate'
+        | 'draft_generated';
     prompt: string | null;
     selected_document_ids: number[];
     selected_information_ids: number[];
@@ -141,7 +160,6 @@ export default function NewsCreatorAgent({
         newsSession?.selected_document_ids ?? initialDocumentIds,
     );
     const [answers, setAnswers] = useState<Record<string, string>>({});
-    const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
     const [busy, setBusy] = useState(false);
     const [picker, setPicker] = useState(false);
     const [query, setQuery] = useState('');
@@ -150,7 +168,10 @@ export default function NewsCreatorAgent({
     );
     const [findingRelated, setFindingRelated] = useState(false);
     const questions = newsSession?.pending_questions ?? [];
-    const activeQuestion = questions[0];
+    const allQuestionsAnswered =
+        questions.length > 0 &&
+        questions.every((question) => Boolean(answers[question.field]?.trim()));
+    const processingFiles = newsSession?.status === 'processing_files';
     const hasSources = informationIds.length > 0 || documentIds.length > 0;
     const shownInformation = useMemo(() => {
         const needle = query.trim().toLocaleLowerCase('id');
@@ -319,6 +340,22 @@ export default function NewsCreatorAgent({
         preselectedInformationIds,
     ]);
 
+    useEffect(() => {
+        if (!processingFiles) {
+            return;
+        }
+
+        const timer = window.setInterval(
+            () =>
+                router.reload({
+                    only: ['newsSession', 'documents', 'informationItems'],
+                }),
+            5000,
+        );
+
+        return () => window.clearInterval(timer);
+    }, [processingFiles]);
+
     return (
         <>
             <Head title="Intelligent News Creator" />
@@ -385,6 +422,26 @@ export default function NewsCreatorAgent({
                                             </div>
                                         </MessageScrollerItem>
                                     )}
+                                    {processingFiles && (
+                                        <MessageScrollerItem
+                                            messageId="processing-files"
+                                            scrollAnchor
+                                        >
+                                            <div className="max-w-[88%] rounded-xl border bg-muted/50 p-4 text-sm leading-6">
+                                                <div className="flex items-center gap-2 font-medium">
+                                                    <LoaderCircle className="size-4 animate-spin text-primary" />
+                                                    Dokumen sedang diproses
+                                                </div>
+                                                <p className="mt-1 text-muted-foreground">
+                                                    Anda boleh meninggalkan
+                                                    halaman ini. Pemrosesan akan
+                                                    dilanjutkan oleh antrean dan
+                                                    percakapan dapat dibuka
+                                                    kembali dari daftar draf.
+                                                </p>
+                                            </div>
+                                        </MessageScrollerItem>
+                                    )}
                                     {newsSession?.user_facts?.map((fact) => (
                                         <MessageScrollerItem
                                             key={`${fact.field}-${fact.value}`}
@@ -395,213 +452,255 @@ export default function NewsCreatorAgent({
                                             </div>
                                         </MessageScrollerItem>
                                     ))}
-                                    {activeQuestion && (
+                                    {questions.length > 0 && (
                                         <MessageScrollerItem
-                                            messageId={`question-${activeQuestion.field}`}
+                                            messageId="clarification-round"
                                             scrollAnchor
                                         >
                                             <div className="max-w-[94%] space-y-3">
                                                 <p className="text-sm leading-6 text-muted-foreground">
-                                                    Saya perlu satu informasi
-                                                    penting sebelum melanjutkan.
+                                                    Jawab pertanyaan penting ini
+                                                    bersama-sama. Setelah itu,
+                                                    AI langsung membuat draf
+                                                    tanpa pertanyaan tambahan.
                                                 </p>
                                                 <Card className="gap-3 border-border bg-card py-4 shadow-none">
                                                     <CardHeader className="gap-2 px-4">
                                                         <div className="flex items-start justify-between gap-3">
                                                             <CardTitle className="text-sm leading-6">
-                                                                {
-                                                                    activeQuestion.question
-                                                                }
+                                                                Satu klarifikasi
+                                                                sebelum membuat
+                                                                draf
                                                             </CardTitle>
                                                             <Badge
                                                                 variant="outline"
                                                                 className="shrink-0 text-[10px]"
                                                             >
-                                                                1 dari{' '}
                                                                 {
                                                                     questions.length
-                                                                }
+                                                                }{' '}
+                                                                pertanyaan
                                                             </Badge>
                                                         </div>
                                                     </CardHeader>
                                                     <CardContent className="space-y-3 px-4">
-                                                        {activeQuestion.options
-                                                            ?.length ? (
-                                                            <div className="grid gap-2">
-                                                                {activeQuestion.options.map(
+                                                        {questions.map(
+                                                            (
+                                                                question,
+                                                                questionIndex,
+                                                            ) => {
+                                                                const selectionType =
+                                                                    question.selection_type ??
+                                                                    'single';
+                                                                const selectedValues =
                                                                     (
-                                                                        option,
-                                                                        index,
-                                                                    ) => {
-                                                                        const selected =
-                                                                            selectedOptions.includes(
-                                                                                option,
-                                                                            );
-
-                                                                        return (
-                                                                            <Button
-                                                                                key={
-                                                                                    option
-                                                                                }
-                                                                                type="button"
-                                                                                variant={
-                                                                                    selected
-                                                                                        ? 'default'
-                                                                                        : 'outline'
-                                                                                }
-                                                                                className="h-auto justify-start px-4 py-3 text-left whitespace-normal"
-                                                                                disabled={
-                                                                                    busy
-                                                                                }
-                                                                                onClick={() => {
-                                                                                    if (
-                                                                                        (activeQuestion.selection_type ??
-                                                                                            'single') ===
-                                                                                        'single'
-                                                                                    ) {
-                                                                                        submit(
-                                                                                            {
-                                                                                                [activeQuestion.field]:
-                                                                                                    option,
-                                                                                            },
-                                                                                        );
-
-                                                                                        return;
-                                                                                    }
-
-                                                                                    setSelectedOptions(
-                                                                                        (
-                                                                                            current,
-                                                                                        ) =>
-                                                                                            selected
-                                                                                                ? current.filter(
-                                                                                                      (
-                                                                                                          value,
-                                                                                                      ) =>
-                                                                                                          value !==
-                                                                                                          option,
-                                                                                                  )
-                                                                                                : [
-                                                                                                      ...current,
-                                                                                                      option,
-                                                                                                  ],
-                                                                                    );
-                                                                                }}
-                                                                            >
-                                                                                {activeQuestion.selection_type ===
-                                                                                    'ranked' &&
-                                                                                    selected && (
-                                                                                        <Badge variant="secondary">
-                                                                                            {selectedOptions.indexOf(
-                                                                                                option,
-                                                                                            ) +
-                                                                                                1}
-                                                                                        </Badge>
-                                                                                    )}
-                                                                                <span>
-                                                                                    {index +
-                                                                                        1}
-
-                                                                                    .{' '}
-                                                                                    {
-                                                                                        option
-                                                                                    }
-                                                                                </span>
-                                                                            </Button>
-                                                                        );
-                                                                    },
-                                                                )}
-                                                                {activeQuestion.selection_type !==
-                                                                    'single' && (
-                                                                    <Button
-                                                                        type="button"
-                                                                        disabled={
-                                                                            busy ||
-                                                                            selectedOptions.length ===
-                                                                                0
-                                                                        }
-                                                                        onClick={() =>
-                                                                            submit(
-                                                                                {
-                                                                                    [activeQuestion.field]:
-                                                                                        selectedOptions.join(
-                                                                                            activeQuestion.selection_type ===
-                                                                                                'ranked'
-                                                                                                ? ' > '
-                                                                                                : ', ',
-                                                                                        ),
-                                                                                },
-                                                                            )
-                                                                        }
-                                                                    >
-                                                                        Konfirmasi
-                                                                        pilihan
-                                                                    </Button>
-                                                                )}
-                                                            </div>
-                                                        ) : (
-                                                            <div className="flex gap-2">
-                                                                <Input
-                                                                    value={
                                                                         answers[
-                                                                            activeQuestion
+                                                                            question
                                                                                 .field
                                                                         ] ?? ''
-                                                                    }
-                                                                    onChange={(
-                                                                        event,
-                                                                    ) =>
-                                                                        setAnswers(
-                                                                            (
-                                                                                current,
-                                                                            ) => ({
-                                                                                ...current,
-                                                                                [activeQuestion.field]:
-                                                                                    event
-                                                                                        .target
-                                                                                        .value,
-                                                                            }),
+                                                                    )
+                                                                        .split(
+                                                                            selectionType ===
+                                                                                'ranked'
+                                                                                ? ' > '
+                                                                                : ', ',
                                                                         )
-                                                                    }
-                                                                    placeholder="Ketik jawaban Anda…"
-                                                                    onKeyDown={(
-                                                                        event,
-                                                                    ) => {
-                                                                        if (
-                                                                            event.key ===
-                                                                                'Enter' &&
-                                                                            answers[
-                                                                                activeQuestion
-                                                                                    .field
-                                                                            ]?.trim()
-                                                                        ) {
-                                                                            submit();
+                                                                        .filter(
+                                                                            Boolean,
+                                                                        );
+
+                                                                return (
+                                                                    <div
+                                                                        key={
+                                                                            question.field
                                                                         }
-                                                                    }}
-                                                                />
-                                                                <Button
-                                                                    type="button"
-                                                                    size="icon"
-                                                                    disabled={
-                                                                        busy ||
-                                                                        !answers[
-                                                                            activeQuestion
-                                                                                .field
-                                                                        ]?.trim()
-                                                                    }
-                                                                    onClick={() =>
-                                                                        submit()
-                                                                    }
-                                                                    aria-label="Kirim jawaban"
-                                                                >
-                                                                    {busy ? (
-                                                                        <LoaderCircle className="animate-spin" />
-                                                                    ) : (
-                                                                        <Send />
-                                                                    )}
-                                                                </Button>
-                                                            </div>
+                                                                        className="space-y-3 rounded-xl border border-border p-3"
+                                                                    >
+                                                                        <div className="space-y-1">
+                                                                            <p className="text-xs font-medium text-primary">
+                                                                                {questionIndex +
+                                                                                    1}
+
+                                                                                .
+                                                                            </p>
+                                                                            <p className="text-sm leading-6 font-medium">
+                                                                                {
+                                                                                    question.question
+                                                                                }
+                                                                            </p>
+                                                                            {question.reason && (
+                                                                                <p className="text-xs leading-5 text-muted-foreground">
+                                                                                    {
+                                                                                        question.reason
+                                                                                    }
+                                                                                </p>
+                                                                            )}
+                                                                        </div>
+                                                                        {question.sources?.map(
+                                                                            (
+                                                                                source,
+                                                                            ) => (
+                                                                                <a
+                                                                                    key={
+                                                                                        source.url
+                                                                                    }
+                                                                                    href={
+                                                                                        source.url
+                                                                                    }
+                                                                                    target="_blank"
+                                                                                    rel="noreferrer"
+                                                                                    className="block rounded-lg border p-3 transition-colors hover:border-primary/50 hover:bg-muted/40"
+                                                                                >
+                                                                                    <span className="line-clamp-1 text-sm font-medium">
+                                                                                        {
+                                                                                            source.title
+                                                                                        }
+                                                                                    </span>
+                                                                                    <span className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
+                                                                                        {
+                                                                                            source.snippet
+                                                                                        }
+                                                                                    </span>
+                                                                                </a>
+                                                                            ),
+                                                                        )}
+                                                                        {question
+                                                                            .options
+                                                                            ?.length ? (
+                                                                            <div className="grid gap-2">
+                                                                                {question.options.map(
+                                                                                    (
+                                                                                        option,
+                                                                                        optionIndex,
+                                                                                    ) => {
+                                                                                        const selected =
+                                                                                            selectedValues.includes(
+                                                                                                option,
+                                                                                            );
+                                                                                        return (
+                                                                                            <Button
+                                                                                                key={
+                                                                                                    option
+                                                                                                }
+                                                                                                type="button"
+                                                                                                variant={
+                                                                                                    selected
+                                                                                                        ? 'default'
+                                                                                                        : 'outline'
+                                                                                                }
+                                                                                                className="h-auto justify-start px-4 py-3 text-left whitespace-normal"
+                                                                                                disabled={
+                                                                                                    busy
+                                                                                                }
+                                                                                                onClick={() => {
+                                                                                                    const next =
+                                                                                                        selectionType ===
+                                                                                                        'single'
+                                                                                                            ? [
+                                                                                                                  option,
+                                                                                                              ]
+                                                                                                            : selected
+                                                                                                              ? selectedValues.filter(
+                                                                                                                    (
+                                                                                                                        value,
+                                                                                                                    ) =>
+                                                                                                                        value !==
+                                                                                                                        option,
+                                                                                                                )
+                                                                                                              : [
+                                                                                                                    ...selectedValues,
+                                                                                                                    option,
+                                                                                                                ];
+                                                                                                    setAnswers(
+                                                                                                        (
+                                                                                                            current,
+                                                                                                        ) => ({
+                                                                                                            ...current,
+                                                                                                            [question.field]:
+                                                                                                                next.join(
+                                                                                                                    selectionType ===
+                                                                                                                        'ranked'
+                                                                                                                        ? ' > '
+                                                                                                                        : ', ',
+                                                                                                                ),
+                                                                                                        }),
+                                                                                                    );
+                                                                                                }}
+                                                                                            >
+                                                                                                {selectionType ===
+                                                                                                    'ranked' &&
+                                                                                                    selected && (
+                                                                                                        <Badge variant="secondary">
+                                                                                                            {selectedValues.indexOf(
+                                                                                                                option,
+                                                                                                            ) +
+                                                                                                                1}
+                                                                                                        </Badge>
+                                                                                                    )}
+                                                                                                <span>
+                                                                                                    {optionIndex +
+                                                                                                        1}
+
+                                                                                                    .{' '}
+                                                                                                    {
+                                                                                                        option
+                                                                                                    }
+                                                                                                </span>
+                                                                                            </Button>
+                                                                                        );
+                                                                                    },
+                                                                                )}
+                                                                            </div>
+                                                                        ) : (
+                                                                            <Input
+                                                                                value={
+                                                                                    answers[
+                                                                                        question
+                                                                                            .field
+                                                                                    ] ??
+                                                                                    ''
+                                                                                }
+                                                                                onChange={(
+                                                                                    event,
+                                                                                ) =>
+                                                                                    setAnswers(
+                                                                                        (
+                                                                                            current,
+                                                                                        ) => ({
+                                                                                            ...current,
+                                                                                            [question.field]:
+                                                                                                event
+                                                                                                    .target
+                                                                                                    .value,
+                                                                                        }),
+                                                                                    )
+                                                                                }
+                                                                                placeholder="Ketik jawaban Anda…"
+                                                                            />
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            },
                                                         )}
+                                                        <Button
+                                                            type="button"
+                                                            className="w-full"
+                                                            disabled={
+                                                                busy ||
+                                                                !allQuestionsAnswered
+                                                            }
+                                                            onClick={() =>
+                                                                submit()
+                                                            }
+                                                        >
+                                                            {busy ? (
+                                                                <LoaderCircle className="animate-spin" />
+                                                            ) : (
+                                                                <Send />
+                                                            )}
+                                                            Gunakan jawaban dan
+                                                            buat draf
+                                                        </Button>
                                                     </CardContent>
                                                 </Card>
                                             </div>
@@ -946,6 +1045,7 @@ export default function NewsCreatorAgent({
                                     size="icon"
                                     disabled={
                                         busy ||
+                                        processingFiles ||
                                         (!files.length &&
                                             !hasSources &&
                                             !newsSession &&

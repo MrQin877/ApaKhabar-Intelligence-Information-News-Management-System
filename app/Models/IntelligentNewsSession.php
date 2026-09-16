@@ -9,7 +9,7 @@ class IntelligentNewsSession extends Model
     protected $fillable = [
         'created_by', 'status', 'prompt', 'selected_document_ids',
         'selected_information_ids', 'user_facts', 'pending_questions',
-        'conflicts', 'draft_id', 'archived_at',
+        'conflicts', 'clarification_rounds', 'draft_id', 'archived_at',
     ];
 
     protected $casts = [
@@ -19,5 +19,6 @@ class IntelligentNewsSession extends Model
         'pending_questions' => 'array',
         'conflicts' => 'array',
         'archived_at' => 'datetime',
+        'clarification_rounds' => 'integer',
     ];
 }

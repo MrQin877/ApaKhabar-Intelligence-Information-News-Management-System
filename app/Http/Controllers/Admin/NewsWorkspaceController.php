@@ -82,7 +82,7 @@ class NewsWorkspaceController extends Controller
                 'can_publish' => false,
             ]);
 
-        return Inertia::render('admin/intelligentnewscreator/workspace', [
+        return Inertia::render('admin/intelligentnewscreator/index', [
             'items' => $drafts->concat($sessions)->concat($published)
                 ->sortByDesc('updated_at')->values(),
             'counts' => [
@@ -95,7 +95,7 @@ class NewsWorkspaceController extends Controller
 
     public function create(): Response
     {
-        return Inertia::render('admin/intelligentnewscreator/manual-editor', [
+        return Inertia::render('admin/intelligentnewscreator/editor', [
             'draft' => null,
             'categories' => $this->categories(),
         ]);
@@ -114,7 +114,7 @@ class NewsWorkspaceController extends Controller
     {
         $this->authorizeDraft($request, $draft);
 
-        return Inertia::render('admin/intelligentnewscreator/manual-editor', [
+        return Inertia::render('admin/intelligentnewscreator/editor', [
             'draft' => [
                 'id' => $draft->id,
                 'headline' => $draft->headline,

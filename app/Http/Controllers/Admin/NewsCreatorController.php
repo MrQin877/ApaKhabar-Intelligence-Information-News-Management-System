@@ -13,16 +13,17 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\ProcessIntelligenceDocument;
 use App\Models\IntelligenceDocument;
 use App\Models\IntelligenceInformation;
 use App\Models\IntelligentNewsDraft;
 use App\Models\IntelligentNewsSession;
+use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -109,7 +110,7 @@ class NewsCreatorController extends Controller
                 ->find($sessionId);
         }
 
-        return inertia('admin/intelligentnewscreator/newscreator-agent', [
+        return inertia('admin/intelligentnewscreator/chat', [
             'informationItems' => $information,
             'documents' => $documents,
             'generatedArticle' => $generatedArticle,
@@ -154,92 +155,45 @@ class NewsCreatorController extends Controller
             ]);
         });
 
-        try {
-            $pending = Http::timeout(config('services.apakhabar_ai.timeout'));
-            foreach ($documents as $document) {
-                $pending = $pending->attach(
-                    'files',
-                    Storage::disk($document->storage_disk)->get($document->storage_path),
-                    $document->original_name,
-                );
-            }
-            $results = $pending
-                ->post(rtrim(config('services.apakhabar_ai.url'), '/').'/documents/batch-extract')
-                ->throw()
-                ->json('results', []);
+        $documents->each(fn (IntelligenceDocument $document) => ProcessIntelligenceDocument::dispatch($document->id)
+            ->onQueue('documents'));
 
-            foreach ($documents->values() as $position => $document) {
-                $result = $results[$position] ?? ['status' => 'failed', 'error' => 'No result returned.'];
-                if (($result['status'] ?? null) !== 'ready' || empty($result['extraction']['information'])) {
-                    $document->update([
-                        'status' => 'failed',
-                        'embedding_status' => 'failed',
-                        'error_message' => $result['error'] ?? 'No information was extracted.',
-                    ]);
-
-                    continue;
-                }
-
-                DB::transaction(function () use ($document, $result): void {
-                    foreach ($result['extraction']['information'] as $index => $item) {
-                        IntelligenceInformation::create([
-                            'document_id' => $document->id,
-                            'item_index' => $index,
-                            'type' => $item['type'],
-                            'title' => $item['title'],
-                            'summary' => $item['summary'],
-                            'labels' => $item['labels'] ?? [],
-                            'fields' => $item['fields'] ?? [],
-                            'evidence' => $item['evidence'] ?? [],
-                            'confidence' => $item['confidence'] ?? null,
-                            'search_text' => implode(' ', [
-                                $item['title'], $item['summary'],
-                                json_encode($item['labels'] ?? []),
-                                json_encode($item['fields'] ?? []),
-                            ]),
-                        ]);
-                    }
-
-                    $document->update([
-                        'ai_document_id' => $result['document']['document_id'] ?? null,
-                        'character_count' => $result['document']['character_count'] ?? null,
-                        'status' => 'ready',
-                        'embedding_status' => ($result['chunks_indexed'] ?? 0) > 0 ? 'ready' : 'failed',
-                        'processed_at' => now(),
-                    ]);
-                });
-            }
-        } catch (\Throwable $exception) {
-            $documents->each->update([
-                'status' => 'failed', 'embedding_status' => 'failed',
-                'error_message' => $exception->getMessage(),
-            ]);
-            report($exception);
-
-            return back()->withErrors([
-                'document' => 'The document was saved, but AI extraction failed. Check the AI service and OCR configuration.',
-            ]);
-        }
-
-        $ready = $documents->filter(fn ($document) => $document->fresh()->status === 'ready')->count();
-
-        if (filled($validated['prompt'] ?? null) && $ready > 0) {
-            $readyIds = $documents->filter(fn ($document) => $document->status === 'ready')->pluck('id');
-            $documentIds = $readyIds->merge($validated['document_ids'] ?? [])->unique();
-            $informationIds = collect($validated['information_ids'] ?? [])->merge(
-                IntelligenceInformation::query()->whereIn('document_id', $documentIds)->pluck('id'),
-            )->unique();
-
-            return redirect()->route('admin.creator.create', [
-                'documents' => $documentIds->join(','),
-                'information' => $informationIds->join(','),
+        if (filled($validated['prompt'] ?? null)) {
+            $session = IntelligentNewsSession::create([
+                'created_by' => $request->user()->getKey(),
+                'status' => 'processing_files',
                 'prompt' => $validated['prompt'],
-                'fact' => $validated['manual_fact'] ?? null,
-                'generate' => 1,
+                'selected_document_ids' => $documents->pluck('id')
+                    ->merge($validated['document_ids'] ?? [])->unique()->values()->all(),
+                'selected_information_ids' => collect($validated['information_ids'] ?? [])->unique()->values()->all(),
+                'user_facts' => filled($validated['manual_fact'] ?? null)
+                    ? [['field' => 'additional_context', 'value' => $validated['manual_fact']]]
+                    : [],
+                'pending_questions' => [],
+                'conflicts' => [],
             ]);
+
+            return redirect()->route('admin.creator.create', ['session' => $session->id])
+                ->with('success', 'Dokumen disimpan dan sedang diproses di latar belakang.');
         }
 
-        return back()->with('success', "$ready of {$documents->count()} documents processed successfully.");
+        return back()->with('success', "{$documents->count()} dokumen masuk antrean pemrosesan.");
+    }
+
+    public function retryDocument(IntelligenceDocument $document): RedirectResponse
+    {
+        if ($document->status === 'ready') {
+            return back()->withErrors(['document' => 'Dokumen ini sudah selesai diproses.']);
+        }
+
+        $document->update([
+            'status' => 'processing',
+            'embedding_status' => 'pending',
+            'error_message' => null,
+        ]);
+        ProcessIntelligenceDocument::dispatch($document->id)->onQueue('documents');
+
+        return back()->with('success', 'Dokumen dimasukkan kembali ke antrean.');
     }
 
     public function generate(Request $request): RedirectResponse
@@ -278,11 +232,21 @@ class NewsCreatorController extends Controller
         $informationIds = $informationIds->unique()->values();
 
         $userFacts = collect($session?->user_facts ?? []);
+        $submittedAnswers = collect($validated['answers'] ?? [])->filter(fn ($value) => filled($value));
         foreach (($validated['answers'] ?? []) as $field => $value) {
             if (filled($value)) {
                 $userFacts = $userFacts->reject(fn ($fact) => ($fact['field'] ?? null) === $field);
                 $userFacts->push(['field' => $field, 'value' => $value]);
             }
+        }
+        $clarificationCompleted = (bool) $session && (
+            (int) $session->clarification_rounds >= 1 || $submittedAnswers->isNotEmpty()
+        );
+        if ($session && $submittedAnswers->isNotEmpty()) {
+            $session->update([
+                'user_facts' => $userFacts->values()->all(),
+                'clarification_rounds' => 1,
+            ]);
         }
 
         $effectivePrompt = $validated['prompt'] ?? $session?->prompt;
@@ -313,20 +277,47 @@ class NewsCreatorController extends Controller
             'tone' => $validated['tone'] ?? 'formal',
             'instructions' => $effectivePrompt,
             'user_facts' => $userFacts->values()->all(),
+            'clarification_completed' => $clarificationCompleted,
         ];
 
         try {
-            $result = Http::timeout(config('services.apakhabar_ai.timeout'))
+            $result = $this->aiClient()
                 ->post(rtrim(config('services.apakhabar_ai.url'), '/').'/news/generate', $payload)
                 ->throw()
                 ->json();
         } catch (\Throwable $exception) {
             report($exception);
 
-            return back()->withErrors(['generation' => 'The AI news service is unavailable.']);
+            return back()->withErrors([
+                'generation' => 'Layanan AI tidak merespons dalam batas waktu. Pastikan FastAPI dan Ollama sedang berjalan, lalu coba lagi.',
+            ]);
         }
 
         if (! ($result['article'] ?? null)) {
+            if ($clarificationCompleted) {
+                return back()->withErrors([
+                    'generation' => 'Klarifikasi sudah selesai, tetapi AI gagal membuat draf. Coba lagi tanpa menjawab pertanyaan tambahan.',
+                ]);
+            }
+            $pendingQuestions = $result['completeness']['missing'] ?? [];
+            $toolCalls = $result['tool_calls'] ?? [];
+            if (empty($toolCalls) && ($result['tool_call'] ?? null)) {
+                $toolCalls = [$result['tool_call']];
+            }
+            if (! empty($toolCalls)) {
+                $pendingQuestions = collect($toolCalls)->take(3)->map(
+                    fn ($call, $index) => [
+                        'field' => data_get($call, 'arguments.field'),
+                        'importance' => 'required',
+                        'kind' => data_get($pendingQuestions, "$index.kind", 'missing_fact'),
+                        'reason' => data_get($call, 'arguments.lead_in'),
+                        'question' => data_get($call, 'arguments.question'),
+                        'options' => data_get($call, 'arguments.options', []),
+                        'selection_type' => data_get($call, 'arguments.select_type', 'single'),
+                        'sources' => $index === 0 ? ($result['web_sources'] ?? []) : [],
+                    ]
+                )->values()->all();
+            }
             $session ??= new IntelligentNewsSession;
             $session->fill([
                 'created_by' => $request->user()->getKey(),
@@ -335,7 +326,7 @@ class NewsCreatorController extends Controller
                 'selected_document_ids' => $documentIds->values()->all(),
                 'selected_information_ids' => $informationIds->all(),
                 'user_facts' => $userFacts->values()->all(),
-                'pending_questions' => $result['completeness']['missing'] ?? [],
+                'pending_questions' => $pendingQuestions,
                 'conflicts' => $result['completeness']['conflicts'] ?? [],
             ]);
             $session->save();
@@ -382,13 +373,22 @@ class NewsCreatorController extends Controller
             'query' => ['required', 'string', 'max:2000'],
         ]);
 
-        $response = Http::timeout(config('services.apakhabar_ai.timeout'))
-            ->post(rtrim(config('services.apakhabar_ai.url'), '/').'/rag/search', [
-                'query' => $validated['query'],
-                'top_k' => 8,
-            ])
-            ->throw()
-            ->json('results', []);
+        try {
+            $response = $this->aiClient()
+                ->post(rtrim(config('services.apakhabar_ai.url'), '/').'/rag/search', [
+                    'query' => $validated['query'],
+                    'top_k' => 8,
+                ])
+                ->throw()
+                ->json('results', []);
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return response()->json([
+                'recommendations' => [],
+                'message' => 'Layanan pencarian AI tidak tersedia. Pastikan FastAPI dan Ollama sedang berjalan.',
+            ], 503);
+        }
 
         $documents = IntelligenceDocument::query()
             ->whereIn('ai_document_id', collect($response)->pluck('document_id')->unique())
@@ -418,6 +418,23 @@ class NewsCreatorController extends Controller
         return $this->renderArchive();
     }
 
+    private function aiClient(): PendingRequest
+    {
+        $timeout = max(1, (int) config('services.apakhabar_ai.timeout', 180));
+        $connectTimeout = max(1, (int) config('services.apakhabar_ai.connect_timeout', 5));
+
+        // Local OCR and Ollama inference can legitimately exceed PHP's default
+        // 30-second request limit. Keep PHP alive slightly longer than Guzzle so
+        // timeout exceptions can be handled and returned to the interface.
+        if (function_exists('set_time_limit')) {
+            @set_time_limit($timeout + 10);
+        }
+
+        return Http::acceptJson()
+            ->connectTimeout($connectTimeout)
+            ->timeout($timeout);
+    }
+
     private function renderArchive(): Response
     {
         $documents = IntelligenceDocument::query()
@@ -435,6 +452,8 @@ class NewsCreatorController extends Controller
                 'size' => number_format($document->file_size / 1024 / 1024, 2).' MB',
                 'date' => $document->created_at->diffForHumans(),
                 'status' => $document->status,
+                'error' => $document->error_message,
+                'attempts' => $document->processing_attempts,
                 'category' => 'Information',
                 'extract' => $document->information->map(fn ($item) => [
                     'year' => data_get($item->fields, 'date', 'Information'),
@@ -442,7 +461,7 @@ class NewsCreatorController extends Controller
                 ])->values(),
             ]);
 
-        return Inertia::render('admin/intelligentnewscreator/docarchive', [
+        return Inertia::render('admin/intelligentnewscreator/documents', [
             'documents' => $documents,
         ]);
     }

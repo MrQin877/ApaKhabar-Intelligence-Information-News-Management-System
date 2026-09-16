@@ -1,6 +1,8 @@
 import { Head, router } from '@inertiajs/react';
-import React, { useRef, useState } from 'react';
+import { RotateCcw } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, DragEvent } from 'react';
+import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/app-layout';
 import creatorRoutes from '@/routes/admin/creator';
 import type { BreadcrumbItem } from '@/types';
@@ -22,6 +24,8 @@ interface DocumentItem {
     status: DocStatus;
     category: DocCategory;
     extract: { year: string; text: string }[];
+    error?: string | null;
+    attempts?: number;
 }
 
 const CATEGORIES: (DocCategory | 'All')[] = [
@@ -170,7 +174,7 @@ interface Props {
 }
 
 export default function DocumentArchive({ documents }: Props) {
-    const docs = documents ?? [];
+    const docs = useMemo(() => documents ?? [], [documents]);
     const [activeCategory, setActiveCategory] = useState<DocCategory | 'All'>(
         'All',
     );
@@ -188,6 +192,19 @@ export default function DocumentArchive({ documents }: Props) {
             ? docs
             : docs.filter((d) => d.category === activeCategory);
     const readyCount = docs.filter((d) => d.status === 'ready').length;
+
+    useEffect(() => {
+        if (!docs.some((document) => document.status === 'processing')) {
+            return;
+        }
+
+        const timer = window.setInterval(
+            () => router.reload({ only: ['documents'] }),
+            5000,
+        );
+
+        return () => window.clearInterval(timer);
+    }, [docs]);
 
     function handleFiles(files: File[]) {
         if (files.length > 5) {
@@ -452,6 +469,23 @@ export default function DocumentArchive({ documents }: Props) {
                                 </div>
                                 <div className="ang-doc-row-date">{d.date}</div>
                                 <div className="ang-row-actions">
+                                    {d.status !== 'ready' && (
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon-sm"
+                                            title="Retry processing"
+                                            onClick={() =>
+                                                router.post(
+                                                    `/admin/apakhabar-creator/documents/${d.id}/retry`,
+                                                    {},
+                                                    { preserveScroll: true },
+                                                )
+                                            }
+                                        >
+                                            <RotateCcw />
+                                        </Button>
+                                    )}
                                     <button
                                         className="ang-icon-btn"
                                         title="View"
