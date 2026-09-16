@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Settings;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Settings\ProfileDeleteRequest;
 use App\Http\Requests\Settings\ProfileUpdateRequest;
+use App\Services\Settings\PhoneOtpRateLimiter;
 use App\Services\Settings\ProfileService;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Http\RedirectResponse;
@@ -14,9 +15,7 @@ use Inertia\Inertia;
 
 class ProfileController extends Controller
 {
-    public function __construct(protected ProfileService $profileService)
-    {
-    }
+    public function __construct(protected ProfileService $profileService) {}
 
     public function edit(Request $request)
     {
@@ -26,6 +25,7 @@ class ProfileController extends Controller
             'phone' => $request->user()->phone,
             'phoneVerified' => $request->user()->hasVerifiedPhone(),
             'otpSent' => session('status') === 'otp-sent',
+            'otpRateLimit' => app(PhoneOtpRateLimiter::class)->status($request->user(), $request->user()->phone),
         ]);
     }
 
