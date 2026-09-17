@@ -1,8 +1,8 @@
 # English / Indonesian website translation
 
-The language picker appears at the bottom-right of public, authentication and admin pages. The choice is saved as `apakhabar-language` in this browser. Indonesian is the default.
+The compact header button shows ID by default; clicking it switches to EN, and clicking again switches back. It appears in public, authentication and admin headers, including mobile navigation. The choice is saved as `apakhabar-language` in this browser. Indonesian is the default.
 
-Common interface labels have reviewed wording in `resources/js/lib/translation/dictionary.ts`. Other displayed text is translated by Laravel through the local LibreTranslate service. Original database content, input values and editable drafts are not changed. Language switching restores original text before applying the new language. Errors leave originals visible and offer Retry.
+Common interface labels have reviewed wording in `resources/js/lib/translation/dictionary.ts`. Other displayed text is translated by Laravel through the local LibreTranslate service. Original database content, input values and editable drafts are not changed. Language switching restores original text before applying the new language. Errors leave originals visible. The button tooltip reports failure; switch languages to retry.
 
 ## Local service
 
