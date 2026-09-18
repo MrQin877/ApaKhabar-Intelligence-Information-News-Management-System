@@ -274,3 +274,19 @@ Validation
 - Full TypeScript checking remains blocked by errors in the nested starter app and unrelated existing components. No errors were reported in the OTP files.
 - Broader legacy RegistrationTest run has six failures using the obsolete users.email schema; those tests were not modified.
 - Provider requests were mocked. Real SMS delivery and an on-device walkthrough still need testing with the configured Bulk360 account.
+
+- Change New Number: removed the password field and renamed the action to Verifikasi Nomor Telepon; submitting sends OTP and opens verification.
+- Pending phone changes: retain the current verified number until the new number passes OTP verification; leaving, expiry, incorrect codes or failed delivery never replace it.
+- Automatic OTP: registration and other saved-number verification entry flows send the first OTP automatically, while reusing an existing valid code and respecting cooldowns.
+- OTP entry: six digit boxes with next-box focus, previous-box backspace, numeric filtering and full-code paste/autofill support.
+- OTP limits: pending-number sends/resends share the existing 60-second cooldown and five-requests-per-day allowance; verification attempts remain limited.
+- Profile refresh: successful verification applies the new number atomically and refreshes the account status.
+
+- OTP page: removed Ganti Nomor Baru; Kembali is the only page navigation action. Verification failures remain on the page for retry/resend.
+- Phone ownership: phone changes treat only successfully verified numbers as used. OTP requests do not claim a number; an unverified record is reassigned only after successful OTP confirmation.
+- Number replacement: verification rechecks ownership under a database lock and replaces the old number atomically; failed or abandoned verification leaves it unchanged.
+- OTP retry: retain the pending change session for seven days so expired ten-minute codes can be resent without leaving the page; existing cooldown and daily limits remain unchanged.
+
+- Phone password reset: web and mobile share verified-number recovery, Bulk360 delivery, OTP validation, resend cooldown and daily limits. A valid OTP grants a short-lived single-use reset token; password changes preserve email/phone verification. Web reuses its country selector, OTP boxes and reset-password fields; email reset remains unchanged.
+
+- Web phone-reset OTP: send the Sanctum CSRF token with session cookies; initialize missing tokens and refresh/retry once on an expired-session response. OTP validation and limits remain unchanged.

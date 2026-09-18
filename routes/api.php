@@ -12,6 +12,14 @@ use App\Http\Controllers\Auth\MobileEmailVerificationController;
 
 use App\Http\Controllers\Auth\MobilePhoneVerificationController;
 
+// Public phone recovery is purpose-scoped and shared by browser and mobile clients.
+Route::prefix('phone/password')->middleware('throttle:30,1')->group(function () {
+    Route::get('/status', [\App\Http\Controllers\Auth\PhonePasswordResetController::class, 'status']);
+    Route::post('/send', [\App\Http\Controllers\Auth\PhonePasswordResetController::class, 'send']);
+    Route::post('/verify', [\App\Http\Controllers\Auth\PhonePasswordResetController::class, 'verify']);
+    Route::post('/reset', [\App\Http\Controllers\Auth\PhonePasswordResetController::class, 'reset']);
+});
+
 // Public routes
 Route::post('/login',    [AuthController::class, 'login']);
 Route::post('/register', [AuthController::class, 'register']);

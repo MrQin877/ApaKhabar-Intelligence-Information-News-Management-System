@@ -13,7 +13,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
+use App\Services\Settings\PhoneOtpChallenge;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -77,8 +77,8 @@ class MobilePhoneChangeController extends Controller
             if ($pending['phone'] === $user->phone) {
                 return response()->json(['message' => 'Sila masukkan nombor telefon yang baharu.'], 422);
             }
-            if (Phone::whereKey($pending['phone'])->exists()) {
-                return response()->json(['message' => 'Nombor telefon ini telah didaftarkan oleh pengguna lain.'], 422);
+            if (Phone::whereKey($pending['phone'])->whereNotNull('phone_verified_at')->exists()) {
+                return response()->json(['message' => 'Nombor telefon ini telah disahkan oleh akaun lain.'], 422);
             }
             if ($pending['original_phone'] !== $user->phone) {
                 return response()->json(['message' => 'Nombor semasa telah berubah. Sila mulakan semula.'], 409);
@@ -98,34 +98,33 @@ class MobilePhoneChangeController extends Controller
             if (!$sms->sendMobileOtp($message['to'], $message['message'])) {
                 return response()->json(['message' => 'Gagal menghantar OTP. Sila cuba lagi selepas tempoh menunggu.', ...$this->payload($user, $pending)], 503);
             }
-            $pending['otp_hash'] = Hash::make($otp);
-            $pending['attempts'] = 0;
-            $pending['expires_at'] = now()->addMinutes(10)->timestamp;
-            Cache::put($this->key($user), $pending, now()->addMinutes(10));
+            $pending = array_replace($pending, PhoneOtpChallenge::issue($otp));
+            Cache::put($this->key($user), $pending, now()->addDays(7));
             return response()->json(['status' => 'otp-sent', ...$this->payload($user, $pending)]);
         });
     }
 
     public function verify(Request $request)
     {
-        $data = $request->validate(['challenge' => ['required', 'uuid'], 'otp' => ['required', 'string', 'regex:/^[0-9]{6}$/']]);
+        $data = $request->validate(['challenge' => ['required', 'uuid'], 'otp' => PhoneOtpChallenge::rules()]);
         $user = $request->user();
         return $this->locked($user, function () use ($user, $data) {
             $pending = $this->pending($user, $data['challenge']);
             if (isset($pending['verified_at'])) return response()->json(['status' => 'already-verified', ...$this->payload($user, $pending)]);
-            if ($pending['expires_at'] <= now()->timestamp) return response()->json(['message' => 'Kod OTP telah tamat tempoh.'], 422);
-            if ($pending['attempts'] >= 5) return response()->json(['message' => 'Terlalu banyak kod yang salah. Sila minta OTP baharu.'], 429);
-            if (!Hash::check($data['otp'], $pending['otp_hash'])) {
-                $pending['attempts']++;
-                Cache::put($this->key($user), $pending, $pending['expires_at'] - now()->timestamp);
-                return response()->json(['message' => 'Kod OTP tidak sah.'], 422);
+            if ($failure = PhoneOtpChallenge::check($pending, $data['otp'])) {
+                Cache::put($this->key($user), $pending, now()->addDays(7));
+                return response()->json(['message' => $failure['message']], $failure['code']);
             }
             try {
                 $result = DB::transaction(function () use ($user, $pending) {
                     User::whereKey($user->getKey())->lockForUpdate()->firstOrFail();
                     $record = $user->phoneRecord()->lockForUpdate()->first();
                     if ($record?->getKey() !== $pending['original_phone']) return false;
-                    if (Phone::whereKey($pending['phone'])->exists()) return false;
+                    // Only a verified number is owned. Reclaim an unverified record
+                    // only here, after proof of possession, and under a row lock.
+                    $target = Phone::whereKey($pending['phone'])->lockForUpdate()->first();
+                    if ($target?->phone_verified_at) return false;
+                    if ($target) $target->delete();
                     $values = ['phone' => $pending['phone'], 'phone_verified_at' => now(), 'phone_otp' => null, 'phone_otp_expires_at' => null];
                     if ($record) $record->update($values);
                     else $user->phoneRecord()->create($values);
@@ -138,7 +137,7 @@ class MobilePhoneChangeController extends Controller
             if (!$result) return response()->json(['message' => 'Nombor telefon telah berubah atau tidak tersedia. Sila mulakan semula.'], 409);
             unset($pending['otp_hash']);
             $pending['verified_at'] = $user->fresh()->phone_verified_at->toIso8601String();
-            Cache::put($this->key($user), $pending, now()->addMinutes(10));
+            Cache::put($this->key($user), $pending, now()->addDays(7));
             return response()->json(['status' => 'phone-verified', ...$this->payload($user, $pending)]);
         });
     }
