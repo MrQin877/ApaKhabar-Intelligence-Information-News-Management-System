@@ -11,6 +11,16 @@ use App\Http\Controllers\Village\NotificationController;
 use App\Http\Middleware\ApiAuth;
 use Illuminate\Support\Facades\Route;
 
+use App\Http\Controllers\Auth\MobilePhoneVerificationController;
+
+// Public phone recovery is purpose-scoped and shared by browser and mobile clients.
+Route::prefix('phone/password')->middleware('throttle:30,1')->group(function () {
+    Route::get('/status', [\App\Http\Controllers\Auth\PhonePasswordResetController::class, 'status']);
+    Route::post('/send', [\App\Http\Controllers\Auth\PhonePasswordResetController::class, 'send']);
+    Route::post('/verify', [\App\Http\Controllers\Auth\PhonePasswordResetController::class, 'verify']);
+    Route::post('/reset', [\App\Http\Controllers\Auth\PhonePasswordResetController::class, 'reset']);
+});
+
 // Public routes
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/register', [AuthController::class, 'register']);
@@ -28,6 +38,15 @@ Route::middleware(ApiAuth::class)->group(function () {
     Route::post('/categories', [NewsCategoryController::class, 'store']);
     Route::put('/categories/{category}', [NewsCategoryController::class, 'update']);
     Route::delete('/categories/{category}', [NewsCategoryController::class, 'destroy']);
+
+    Route::get('/phone/change-verification', [\App\Http\Controllers\Auth\MobilePhoneChangeController::class, 'status']);
+    Route::post('/phone/change-verification', [\App\Http\Controllers\Auth\MobilePhoneChangeController::class, 'send']);
+    Route::post('/phone/change-verification/verify', [\App\Http\Controllers\Auth\MobilePhoneChangeController::class, 'verify'])->middleware('throttle:10,1');
+
+    Route::get('/phone/verification-status', [MobilePhoneVerificationController::class, 'status']);
+    Route::post('/phone/verification-notification', [MobilePhoneVerificationController::class, 'send']);
+    Route::post('/phone/verify', [MobilePhoneVerificationController::class, 'verify'])->middleware('throttle:10,1');
+
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/profile', [AuthController::class, 'profile']);
     Route::patch('/profile', [AuthController::class, 'updateProfile']);

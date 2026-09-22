@@ -96,6 +96,9 @@ class AuthService
 
     public function profile(User $user): array
     {
+        // Verification may have changed since these relations were first loaded.
+        $user->load(['emailRecord', 'phoneRecord']);
+
         return [
             'id' => (string) $user->getKey(),
             'name' => $user->name,

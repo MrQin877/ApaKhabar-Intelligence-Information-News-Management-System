@@ -16,8 +16,8 @@ test('mobile reset link uses the configured destination and preserves encoded pa
         ->assertHeader('Referrer-Policy', 'no-referrer')
         ->assertHeader('Cache-Control', 'no-store, private');
 })->with([
-    'Expo Go' => 'exp://192.168.68.52:8081/--/reset-password',
-    'mobile website' => 'http://192.168.68.52:8081/reset-password',
+    'Expo Go' => 'exp://192.168.68.63:8081/--/reset-password',
+    'mobile website' => 'http://192.168.68.50:8081/reset-password',
     'installed app' => 'apakhabarmobileapp:///reset-password',
     'existing query' => 'https://mobile.example/reset-password?source=email',
 ]);
@@ -34,22 +34,22 @@ test('mobile reset redirect rejects incomplete or malformed parameters', functio
 
 test('mobile password email leads through the browser redirect and its token resets the password once', function () {
     Notification::fake();
-    config(['services.mobile.password_reset_return_url' => 'exp://192.168.68.52:8081/--/reset-password']);
+    config(['services.mobile.password_reset_return_url' => 'exp://192.168.68.50:8081/--/reset-password']);
     $user = User::factory()->create();
     $user->emailRecord()->update(['email' => 'person+mobile@example.com']);
     $user->refresh();
     $previousCallback = ResetPassword::$createUrlCallback;
 
     try {
-        $this->postJson('http://192.168.68.52:8000/api/forgot-password', ['email' => $user->email])->assertOk();
+        $this->postJson('http://192.168.68.50:8000/api/forgot-password', ['email' => $user->email])->assertOk();
         $notification = Notification::sent($user, ResetPassword::class)->sole();
         $url = $notification->toMail($user)->actionUrl;
-        expect(parse_url($url, PHP_URL_HOST))->toBe('192.168.68.52');
+        expect(parse_url($url, PHP_URL_HOST))->toBe('192.168.68.50');
         expect(parse_url($url, PHP_URL_PORT))->toBe(8000);
         expect(parse_url($url, PHP_URL_PATH))->toBe('/mobile/reset-password');
         parse_str(parse_url($url, PHP_URL_QUERY), $parameters);
         expect($parameters['email'])->toBe($user->email);
-        $this->get($url)->assertRedirect('exp://192.168.68.52:8081/--/reset-password?'.http_build_query($parameters, '', '&', PHP_QUERY_RFC3986));
+        $this->get($url)->assertRedirect('exp://192.168.68.50:8081/--/reset-password?'.http_build_query($parameters, '', '&', PHP_QUERY_RFC3986));
 
         $payload = [...$parameters, 'password' => 'NewPassword123!', 'password_confirmation' => 'NewPassword123!'];
         $this->postJson('/api/reset-password', $payload)->assertOk();
