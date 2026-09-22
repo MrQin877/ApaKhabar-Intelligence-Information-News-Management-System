@@ -6,7 +6,9 @@ import {
     ChartNoAxesCombined,
     Bell,
     Archive,
+    Bot,
     ExternalLink,
+    FolderArchive,
     Tags,
 } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
@@ -76,8 +78,13 @@ export function AppSidebar() {
     const { auth } = usePage<SharedData>().props;
     const newsItems: NavItem[] = [
         {
-            title: 'Pembuat Berita',
-            href: '/admin/apakhabar-creator',
+            title: 'Daftar Berita',
+            href: '/admin/news',
+            icon: Newspaper,
+        },
+        {
+            title: 'Tulis Manual',
+            href: '/admin/news/manual/create',
             icon: Newspaper,
         },
         ...(auth.user?.role === 'admin'
@@ -92,6 +99,16 @@ export function AppSidebar() {
     ];
     const visibleMainNavItems: NavItem[] = [
         mainNavItems[0],
+        {
+            title: 'Asisten AI',
+            href: '/admin/ai-assistant',
+            icon: Bot,
+        },
+        {
+            title: 'Dokumen',
+            href: '/admin/documents',
+            icon: FolderArchive,
+        },
         {
             title: 'Berita',
             icon: Newspaper,

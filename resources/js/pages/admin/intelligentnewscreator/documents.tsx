@@ -4,7 +4,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, DragEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/app-layout';
-import creatorRoutes from '@/routes/admin/creator';
 import type { BreadcrumbItem } from '@/types';
 
 // ---------------------------------------------------------------------------
@@ -23,7 +22,15 @@ interface DocumentItem {
     date: string;
     status: DocStatus;
     category: DocCategory;
-    extract: { year: string; text: string }[];
+    extract: {
+        id: number;
+        year: string;
+        text: string;
+        confidence: number | null;
+        quality_score: number | null;
+        review_status: 'pending' | 'approved' | 'rejected';
+        embedding_status: 'pending' | 'ready' | 'failed';
+    }[];
     error?: string | null;
     attempts?: number;
 }
@@ -243,7 +250,9 @@ export default function DocumentArchive({ documents }: Props) {
         setUploadProgress({ name: uploadLabel, pct: 0 });
         const data = new FormData();
         files.forEach((file) => data.append('documents[]', file));
-        router.post('/admin/apakhabar-creator/documents', data, {
+        data.append('intent', 'extract_information');
+        data.append('extraction_mode', 'general');
+        router.post('/admin/documents', data, {
             forceFormData: true,
             preserveScroll: true,
             onProgress: (progress) =>
@@ -274,7 +283,7 @@ export default function DocumentArchive({ documents }: Props) {
 
     function openInCreator(doc: DocumentItem) {
         setModalDoc(null);
-        router.visit(`${creatorRoutes.create()}?doc=${doc.id}`);
+        router.visit(`/admin/ai-assistant?doc=${doc.id}`);
     }
 
     return (
@@ -287,7 +296,7 @@ export default function DocumentArchive({ documents }: Props) {
                     <div className="ang-archive-head">
                         <button
                             className="ang-back-btn"
-                            onClick={() => router.visit(creatorRoutes.create())}
+                            onClick={() => router.visit('/admin/ai-assistant')}
                         >
                             <svg
                                 width="14"
@@ -301,7 +310,7 @@ export default function DocumentArchive({ documents }: Props) {
                             >
                                 <path d="M19 12H5M12 19l-7-7 7-7" />
                             </svg>
-                            Back to News Creator
+                            Back to AI Assistant
                         </button>
                         <div className="ang-archive-eyebrow">
                             Source material
@@ -477,7 +486,7 @@ export default function DocumentArchive({ documents }: Props) {
                                             title="Retry processing"
                                             onClick={() =>
                                                 router.post(
-                                                    `/admin/apakhabar-creator/documents/${d.id}/retry`,
+                                                    `/admin/documents/${d.id}/retry`,
                                                     {},
                                                     { preserveScroll: true },
                                                 )
@@ -579,6 +588,52 @@ export default function DocumentArchive({ documents }: Props) {
                                                 {e.year}
                                             </div>
                                             <div>{e.text}</div>
+                                            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                                                <span className="rounded-full border px-2 py-1">
+                                                    Estimated quality:{' '}
+                                                    {e.quality_score == null
+                                                        ? 'Not available'
+                                                        : `${e.quality_score.toFixed(1)}%`}
+                                                </span>
+                                                <span className="rounded-full border px-2 py-1">
+                                                    Extraction confidence:{' '}
+                                                    {e.confidence == null
+                                                        ? 'Not available'
+                                                        : `${Math.round(e.confidence * 100)}%`}
+                                                </span>
+                                                <span className="rounded-full border px-2 py-1">
+                                                    Review: {e.review_status}
+                                                </span>
+                                            </div>
+                                            {e.review_status === 'pending' && (
+                                                <div className="mt-2 flex gap-2">
+                                                    <Button
+                                                        size="sm"
+                                                        onClick={() =>
+                                                            router.post(
+                                                                `/admin/information/${e.id}/review`,
+                                                                { decision: 'approved' },
+                                                                { preserveScroll: true },
+                                                            )
+                                                        }
+                                                    >
+                                                        Approve
+                                                    </Button>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="outline"
+                                                        onClick={() =>
+                                                            router.post(
+                                                                `/admin/information/${e.id}/review`,
+                                                                { decision: 'rejected' },
+                                                                { preserveScroll: true },
+                                                            )
+                                                        }
+                                                    >
+                                                        Reject
+                                                    </Button>
+                                                </div>
+                                            )}
                                         </div>
                                     ))}
                                 </div>
@@ -605,8 +660,7 @@ export default function DocumentArchive({ documents }: Props) {
     );
 }
 const breadcrumbs: BreadcrumbItem[] = [
-    { title: 'News Creator', href: creatorRoutes.create() },
-    { title: 'Document Library', href: creatorRoutes.archive() },
+    { title: 'Dokumen', href: '/admin/documents' },
 ];
 DocumentArchive.layout = (page: React.ReactNode) => (
     <AppLayout breadcrumbs={breadcrumbs}>{page}</AppLayout>

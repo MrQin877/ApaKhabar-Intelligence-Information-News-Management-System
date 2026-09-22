@@ -21,4 +21,9 @@ class IntelligentNewsSession extends Model
         'archived_at' => 'datetime',
         'clarification_rounds' => 'integer',
     ];
+
+    public function messages()
+    {
+        return $this->hasMany(IntelligentNewsMessage::class, 'session_id')->oldest();
+    }
 }

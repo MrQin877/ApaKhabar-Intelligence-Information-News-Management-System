@@ -38,8 +38,8 @@ interface Props {
 }
 
 const breadcrumbs: BreadcrumbItem[] = [
-    { title: 'Pembuat Berita', href: '/admin/apakhabar-creator' },
-    { title: 'Editor Manual', href: '/admin/apakhabar-creator/manual/create' },
+    { title: 'Berita', href: '/admin/news' },
+    { title: 'Editor Manual', href: '/admin/news/manual/create' },
 ];
 
 function FieldError({ message }: { message?: string }) {
@@ -63,9 +63,9 @@ export default function ManualEditor({ draft, categories }: Props) {
         const options = { preserveScroll: true };
 
         if (draft) {
-            form.put(`/admin/apakhabar-creator/manual/${draft.id}`, options);
+            form.put(`/admin/news/manual/${draft.id}`, options);
         } else {
-            form.post('/admin/apakhabar-creator/manual', options);
+            form.post('/admin/news/manual', options);
         }
     };
 
@@ -81,7 +81,7 @@ export default function ManualEditor({ draft, categories }: Props) {
                         <div className="flex items-center gap-3">
                             <Button variant="outline" size="icon" asChild>
                                 <Link
-                                    href="/admin/apakhabar-creator"
+                                    href="/admin/news"
                                     aria-label="Kembali"
                                 >
                                     <ArrowLeft />

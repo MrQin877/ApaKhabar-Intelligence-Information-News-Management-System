@@ -68,7 +68,6 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import AppLayout from '@/layouts/app-layout';
-import creatorRoutes from '@/routes/admin/creator';
 import type { BreadcrumbItem } from '@/types';
 
 interface InformationItem {
@@ -109,6 +108,14 @@ interface UserFact {
     field: string;
     value: string;
 }
+interface SessionMessage {
+    id: number;
+    role: 'user' | 'assistant' | 'tool' | 'system';
+    intent: string | null;
+    content: string | null;
+    payload: Record<string, unknown> | null;
+    created_at: string;
+}
 interface NewsSession {
     id: number;
     status:
@@ -123,6 +130,7 @@ interface NewsSession {
     pending_questions: MissingQuestion[];
     user_facts: UserFact[];
     conflicts: string[];
+    messages?: SessionMessage[];
 }
 interface Evidence {
     source: string;
@@ -141,6 +149,13 @@ interface Article {
     version: number;
     reviewed_at: string | null;
     updated_at: string | null;
+    quality?: {
+        overall_score: number;
+        quality_label: string;
+        publish_blocked: boolean;
+        dimensions: Record<string, number>;
+        warnings: string[];
+    } | null;
     selected_sources: Array<{
         id: number;
         title: string;
@@ -149,6 +164,7 @@ interface Article {
     }>;
 }
 interface Recommendation {
+    information_id: number;
     document_id: number;
     name: string;
     source: string;
@@ -168,7 +184,7 @@ interface Props {
 }
 
 const breadcrumbs: BreadcrumbItem[] = [
-    { title: 'Intelligent News Creator', href: creatorRoutes.create() },
+    { title: 'Asisten AI', href: '/admin/ai-assistant' },
 ];
 
 export default function NewsCreatorAgent({
@@ -265,9 +281,9 @@ export default function NewsCreatorAgent({
                     'Buat pengumuman',
                 ]
               : [
-                    'Buat draf berita',
-                    'Pilih sumber informasi',
-                    'Unggah dokumen',
+                    'Buat berita tentang…',
+                    'Ekstrak semua informasi penting dari file',
+                    'Ekstrak informasi tertentu dari file',
                 ];
 
     function handleQuickAction(action: string) {
@@ -280,7 +296,11 @@ export default function NewsCreatorAgent({
             return;
         }
 
-        if (action === 'Unggah dokumen') {
+        if (
+            action === 'Unggah dokumen' ||
+            action.includes('dari file')
+        ) {
+            setPrompt(action);
             fileInput.current?.click();
 
             return;
@@ -341,6 +361,25 @@ export default function NewsCreatorAgent({
             if (prompt.trim()) {
                 data.append('prompt', prompt.trim());
             }
+            const generationIntent = /\b(generate|create|write|buat|bikin|tulis)\b.{0,30}\b(news|article|berita|artikel|laporan)\b/i.test(
+                prompt,
+            );
+            const generalExtraction =
+                !prompt.trim() ||
+                /\b(all|everything|semua|seluruh|tidak tahu|don't know)\b/i.test(
+                    prompt,
+                );
+            data.append(
+                'intent',
+                generationIntent ? 'generate_news' : 'extract_information',
+            );
+            data.append(
+                'extraction_mode',
+                generalExtraction ? 'general' : 'targeted',
+            );
+            if (!generalExtraction && prompt.trim()) {
+                data.append('extraction_query', prompt.trim());
+            }
 
             if (manualFact.trim()) {
                 data.append('manual_fact', manualFact.trim());
@@ -355,7 +394,7 @@ export default function NewsCreatorAgent({
 
             setBusy(true);
             setElapsedSeconds(0);
-            router.post('/admin/apakhabar-creator/documents', data, {
+            router.post('/admin/documents', data, {
                 forceFormData: true,
                 onFinish: () => setBusy(false),
             });
@@ -366,7 +405,7 @@ export default function NewsCreatorAgent({
         setBusy(true);
         setElapsedSeconds(0);
         router.post(
-            '/admin/apakhabar-creator/generate',
+            '/admin/ai-assistant/generate',
             {
                 draft_id: editedArticle?.draft_id ?? null,
                 session_id: newsSession?.id ?? null,
@@ -392,7 +431,7 @@ export default function NewsCreatorAgent({
         }
 
         router.put(
-            `/admin/apakhabar-creator/drafts/${editedArticle.draft_id}`,
+            `/admin/ai-assistant/drafts/${editedArticle.draft_id}`,
             {
                 headline: editedArticle.headline,
                 subheadline: editedArticle.subheadline,
@@ -413,7 +452,7 @@ export default function NewsCreatorAgent({
         }
 
         router.post(
-            `/admin/apakhabar-creator/drafts/${editedArticle.draft_id}/review`,
+            `/admin/ai-assistant/drafts/${editedArticle.draft_id}/review`,
         );
     }
 
@@ -423,7 +462,7 @@ export default function NewsCreatorAgent({
         }
 
         router.post(
-            `/admin/apakhabar-creator/drafts/${editedArticle.draft_id}/publish`,
+            `/admin/news/drafts/${editedArticle.draft_id}/publish`,
         );
     }
 
@@ -435,7 +474,7 @@ export default function NewsCreatorAgent({
         const data = new FormData();
         data.append('image', file);
         router.post(
-            `/admin/apakhabar-creator/drafts/${editedArticle.draft_id}/image`,
+            `/admin/ai-assistant/drafts/${editedArticle.draft_id}/image`,
             data,
             { forceFormData: true },
         );
@@ -453,7 +492,7 @@ export default function NewsCreatorAgent({
                     'meta[name="csrf-token"]',
                 )?.content ?? '';
             const response = await fetch(
-                '/admin/apakhabar-creator/recommendations',
+                '/admin/ai-assistant/recommendations',
                 {
                     method: 'POST',
                     headers: {
@@ -484,7 +523,7 @@ export default function NewsCreatorAgent({
         autoGenerated.current = true;
         setBusy(true);
         router.post(
-            '/admin/apakhabar-creator/generate',
+            '/admin/ai-assistant/generate',
             {
                 information_ids: preselectedInformationIds,
                 document_ids: initialDocumentIds,
@@ -539,7 +578,7 @@ export default function NewsCreatorAgent({
 
     return (
         <>
-            <Head title="Intelligent News Creator" />
+            <Head title="Asisten AI" />
             <div className="dark flex h-[calc(100vh-4rem)] min-h-[640px] flex-col overflow-hidden bg-background text-foreground lg:flex-row">
                 <section className="flex min-h-0 flex-1 flex-col border-b bg-background lg:w-[42%] lg:max-w-[620px] lg:border-r lg:border-b-0">
                     <header className="flex shrink-0 items-center justify-between border-b px-5 py-4">
@@ -548,11 +587,9 @@ export default function NewsCreatorAgent({
                                 <Bot className="size-5" />
                             </div>
                             <div>
-                                <h1 className="font-semibold">
-                                    Asisten Berita AI
-                                </h1>
+                                <h1 className="font-semibold">Asisten AI</h1>
                                 <p className="text-xs text-muted-foreground">
-                                    Sumber dikendalikan moderator
+                                    Ekstraksi dokumen dan pembuatan berita
                                 </p>
                             </div>
                         </div>
@@ -561,7 +598,7 @@ export default function NewsCreatorAgent({
                                 variant="ghost"
                                 size="icon-sm"
                                 onClick={() =>
-                                    router.visit('/admin/apakhabar-creator')
+                                    router.visit('/admin/news')
                                 }
                                 title="Kembali ke daftar berita"
                             >
@@ -571,7 +608,7 @@ export default function NewsCreatorAgent({
                                 variant="outline"
                                 size="sm"
                                 onClick={() =>
-                                    router.visit(creatorRoutes.archive())
+                                    router.visit('/admin/documents')
                                 }
                             >
                                 <Archive /> Dokumen
@@ -593,6 +630,24 @@ export default function NewsCreatorAgent({
                                             kelengkapan sebelum membuat draf.
                                         </div>
                                     </MessageScrollerItem>
+                                    {(newsSession?.messages ?? []).map(
+                                        (message) => (
+                                            <MessageScrollerItem
+                                                key={message.id}
+                                                messageId={`history-${message.id}`}
+                                            >
+                                                <div
+                                                    className={
+                                                        message.role === 'user'
+                                                            ? 'ml-auto max-w-[88%] rounded-xl bg-primary p-4 text-sm text-primary-foreground'
+                                                            : 'max-w-[88%] rounded-xl border bg-muted/50 p-4 text-sm leading-6'
+                                                    }
+                                                >
+                                                    {message.content}
+                                                </div>
+                                            </MessageScrollerItem>
+                                        ),
+                                    )}
                                     {hasSources && (
                                         <MessageScrollerItem messageId="sources">
                                             <div className="ml-auto max-w-[88%] rounded-xl bg-primary p-4 text-sm text-primary-foreground">
@@ -990,7 +1045,7 @@ export default function NewsCreatorAgent({
                                                         (item) => (
                                                             <div
                                                                 key={
-                                                                    item.document_id
+                                                                    item.information_id
                                                                 }
                                                                 className="rounded-lg border p-3"
                                                             >
@@ -1005,8 +1060,8 @@ export default function NewsCreatorAgent({
                                                                 <Button
                                                                     className="mt-2"
                                                                     variant={
-                                                                        documentIds.includes(
-                                                                            item.document_id,
+                                                                        informationIds.includes(
+                                                                            item.information_id,
                                                                         )
                                                                             ? 'secondary'
                                                                             : 'outline'
@@ -1014,14 +1069,14 @@ export default function NewsCreatorAgent({
                                                                     size="xs"
                                                                     onClick={() =>
                                                                         toggle(
-                                                                            documentIds,
-                                                                            item.document_id,
-                                                                            setDocumentIds,
+                                                                            informationIds,
+                                                                            item.information_id,
+                                                                            setInformationIds,
                                                                         )
                                                                     }
                                                                 >
-                                                                    {documentIds.includes(
-                                                                        item.document_id,
+                                                                    {informationIds.includes(
+                                                                        item.information_id,
                                                                     )
                                                                         ? 'Disetujui'
                                                                         : 'Setujui sumber'}
@@ -1379,6 +1434,22 @@ export default function NewsCreatorAgent({
                                         <Badge variant="secondary">
                                             DRAF AI
                                         </Badge>
+                                        {editedArticle.quality && (
+                                            <Badge
+                                                variant={
+                                                    editedArticle.quality
+                                                        .publish_blocked
+                                                        ? 'destructive'
+                                                        : 'outline'
+                                                }
+                                            >
+                                                Kualitas{' '}
+                                                {editedArticle.quality.overall_score.toFixed(
+                                                    1,
+                                                )}
+                                                %
+                                            </Badge>
+                                        )}
                                     </div>
                                     <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
                                         <span className="flex items-center gap-1">
@@ -1436,7 +1507,12 @@ export default function NewsCreatorAgent({
                                                 <AlertDialogTrigger asChild>
                                                     <Button
                                                         disabled={
-                                                            !editedArticle.reviewed_at
+                                                            !editedArticle.reviewed_at ||
+                                                            Boolean(
+                                                                editedArticle
+                                                                    .quality
+                                                                    ?.publish_blocked,
+                                                            )
                                                         }
                                                     >
                                                         Publikasikan

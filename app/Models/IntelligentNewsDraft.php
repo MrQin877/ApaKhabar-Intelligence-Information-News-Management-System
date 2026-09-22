@@ -43,4 +43,9 @@ class IntelligentNewsDraft extends Model
     {
         return $this->hasMany(IntelligentNewsDraftVersion::class, 'draft_id')->orderByDesc('version');
     }
+
+    public function qualityEvaluations()
+    {
+        return $this->hasMany(AiQualityEvaluation::class, 'draft_id')->latest();
+    }
 }

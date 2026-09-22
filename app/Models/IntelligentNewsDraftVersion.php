@@ -6,7 +6,10 @@ use Illuminate\Database\Eloquent\Model;
 
 class IntelligentNewsDraftVersion extends Model
 {
-    protected $fillable = ['draft_id', 'version', 'change_type', 'snapshot', 'created_by'];
+    protected $fillable = [
+        'draft_id', 'version', 'change_type', 'revision_source',
+        'revision_instruction', 'snapshot', 'created_by',
+    ];
 
     protected $casts = ['snapshot' => 'array'];
 

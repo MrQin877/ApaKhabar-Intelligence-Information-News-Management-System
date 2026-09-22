@@ -84,25 +84,36 @@ Route::prefix('admin')
         Route::post('/broadcasting/{broadcast}/archive', [BroadcastController::class, 'archiveSingle'])->name('broadcasting.archive-single');
         Route::post('/broadcasting/{broadcast}/restore', [BroadcastController::class, 'restore'])->name('broadcasting.restore');
 
-        // News creator routes
-        Route::get('/apakhabar-creator', [NewsWorkspaceController::class, 'index'])->name('creator.index');
-        Route::get('/apakhabar-creator/manual/create', [NewsWorkspaceController::class, 'create'])->name('creator.manual.create');
-        Route::post('/apakhabar-creator/manual', [NewsWorkspaceController::class, 'store'])->name('creator.manual.store');
-        Route::get('/apakhabar-creator/manual/{draft}/edit', [NewsWorkspaceController::class, 'edit'])->name('creator.manual.edit');
-        Route::put('/apakhabar-creator/manual/{draft}', [NewsWorkspaceController::class, 'update'])->name('creator.manual.update');
-        Route::post('/apakhabar-creator/drafts/{draft}/publish', [NewsWorkspaceController::class, 'publish'])->name('creator.drafts.publish');
-        Route::post('/apakhabar-creator/{type}/{id}/archive', [NewsWorkspaceController::class, 'archive'])->name('creator.items.archive');
-        Route::post('/apakhabar-creator/{type}/{id}/restore', [NewsWorkspaceController::class, 'restore'])->name('creator.items.restore');
-        Route::get('/apakhabar-creator/documents', [NewsCreatorController::class, 'documents'])->name('creator.documents');
-        Route::get('/apakhabar-creator/create', [NewsCreatorController::class, 'create'])->name('creator.create');
-        Route::post('/apakhabar-creator/documents', [NewsCreatorController::class, 'storeDocument'])->name('creator.documents.store');
-        Route::post('/apakhabar-creator/documents/{document}/retry', [NewsCreatorController::class, 'retryDocument'])->name('creator.documents.retry');
-        Route::post('/apakhabar-creator/generate', [NewsCreatorController::class, 'generate'])->name('creator.generate');
-        Route::put('/apakhabar-creator/drafts/{draft}', [NewsCreatorController::class, 'updateDraft'])->name('creator.drafts.update');
-        Route::post('/apakhabar-creator/drafts/{draft}/review', [NewsCreatorController::class, 'reviewDraft'])->name('creator.drafts.review');
-        Route::post('/apakhabar-creator/drafts/{draft}/image', [NewsCreatorController::class, 'uploadDraftImage'])->name('creator.drafts.image');
-        Route::post('/apakhabar-creator/recommendations', [NewsCreatorController::class, 'recommend'])->name('creator.recommendations');
-        Route::get('/apakhabar-creator/archive', [NewsCreatorController::class, 'archive'])->name('creator.archive');
+        // General AI assistant. News generation and document extraction are
+        // capabilities of this workspace, not its navigation parent.
+        Route::get('/ai-assistant', [NewsCreatorController::class, 'create'])->name('assistant.index');
+        Route::post('/ai-assistant/generate', [NewsCreatorController::class, 'generate'])->name('assistant.generate');
+        Route::post('/ai-assistant/recommendations', [NewsCreatorController::class, 'recommend'])->name('assistant.recommendations');
+        Route::put('/ai-assistant/drafts/{draft}', [NewsCreatorController::class, 'updateDraft'])->name('assistant.drafts.update');
+        Route::post('/ai-assistant/drafts/{draft}/review', [NewsCreatorController::class, 'reviewDraft'])->name('assistant.drafts.review');
+        Route::post('/ai-assistant/drafts/{draft}/image', [NewsCreatorController::class, 'uploadDraftImage'])->name('assistant.drafts.image');
+
+        // Independent document and extracted-information library.
+        Route::get('/documents', [NewsCreatorController::class, 'documents'])->name('documents.index');
+        Route::post('/documents', [NewsCreatorController::class, 'storeDocument'])->name('documents.store');
+        Route::post('/documents/{document}/retry', [NewsCreatorController::class, 'retryDocument'])->name('documents.retry');
+        Route::post('/information/{information}/review', [NewsCreatorController::class, 'reviewInformation'])->name('information.review');
+
+        // News management, including manual drafts and AI-produced drafts.
+        Route::get('/news', [NewsWorkspaceController::class, 'index'])->name('news-workspace.index');
+        Route::get('/news/manual/create', [NewsWorkspaceController::class, 'create'])->name('news-workspace.manual.create');
+        Route::post('/news/manual', [NewsWorkspaceController::class, 'store'])->name('news-workspace.manual.store');
+        Route::get('/news/manual/{draft}/edit', [NewsWorkspaceController::class, 'edit'])->name('news-workspace.manual.edit');
+        Route::put('/news/manual/{draft}', [NewsWorkspaceController::class, 'update'])->name('news-workspace.manual.update');
+        Route::post('/news/drafts/{draft}/publish', [NewsWorkspaceController::class, 'publish'])->name('news-workspace.drafts.publish');
+        Route::post('/news/{type}/{id}/archive', [NewsWorkspaceController::class, 'archive'])->name('news-workspace.items.archive');
+        Route::post('/news/{type}/{id}/restore', [NewsWorkspaceController::class, 'restore'])->name('news-workspace.items.restore');
+
+        // Compatibility for existing bookmarks and saved links.
+        Route::get('/apakhabar-creator', fn () => redirect()->route('admin.news-workspace.index'));
+        Route::get('/apakhabar-creator/create', fn (Request $request) => redirect()->route('admin.assistant.index', $request->query()));
+        Route::get('/apakhabar-creator/documents', fn () => redirect()->route('admin.documents.index'));
+        Route::get('/apakhabar-creator/archive', fn () => redirect()->route('admin.documents.index'));
 
         Route::middleware('role:admin')->group(function () {
             Route::get('/categories', [NewsCategoryController::class, 'index'])->name('categories.index');

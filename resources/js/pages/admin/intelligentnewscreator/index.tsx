@@ -50,6 +50,9 @@ interface WorkspaceItem {
     updated_at: string | null;
     resume_url: string;
     can_publish: boolean;
+    quality_score: number | null;
+    quality_label: string | null;
+    publish_blocked: boolean;
 }
 
 interface Props {
@@ -58,7 +61,7 @@ interface Props {
 }
 
 const breadcrumbs: BreadcrumbItem[] = [
-    { title: 'Pembuat Berita', href: '/admin/apakhabar-creator' },
+    { title: 'Berita', href: '/admin/news' },
 ];
 
 const statusNames: Record<Status, string> = {
@@ -71,7 +74,7 @@ function ItemActions({ item }: { item: WorkspaceItem }) {
     const changeArchiveState = () => {
         const action = item.status === 'archived' ? 'restore' : 'archive';
         router.post(
-            `/admin/apakhabar-creator/${item.record_type}/${item.id}/${action}`,
+            `/admin/news/${item.record_type}/${item.id}/${action}`,
             {},
             { preserveScroll: true },
         );
@@ -101,7 +104,7 @@ function ItemActions({ item }: { item: WorkspaceItem }) {
                     <DropdownMenuItem
                         onSelect={() =>
                             router.post(
-                                `/admin/apakhabar-creator/drafts/${item.id}/publish`,
+                                `/admin/news/drafts/${item.id}/publish`,
                             )
                         }
                     >
@@ -139,7 +142,7 @@ export default function NewsWorkspace({ items, counts }: Props) {
 
     return (
         <>
-            <Head title="Pembuat Berita" />
+            <Head title="Manajemen Berita" />
             <div className="min-h-full bg-background p-4 text-foreground md:p-6">
                 <div className="mx-auto flex max-w-7xl flex-col gap-6">
                     <header className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
@@ -150,7 +153,7 @@ export default function NewsWorkspace({ items, counts }: Props) {
                                 </div>
                                 <div>
                                     <h1 className="text-2xl font-semibold">
-                                        Pembuat Berita
+                                        Manajemen Berita
                                     </h1>
                                     <p className="text-sm text-muted-foreground">
                                         Kelola draf manual, percakapan AI, dan
@@ -161,7 +164,7 @@ export default function NewsWorkspace({ items, counts }: Props) {
                         </div>
                         <div className="flex flex-wrap gap-2">
                             <Button variant="outline" asChild>
-                                <Link href="/admin/apakhabar-creator/documents">
+                                <Link href="/admin/documents">
                                     <FileArchive /> Arsip dokumen
                                 </Link>
                             </Button>
@@ -176,12 +179,12 @@ export default function NewsWorkspace({ items, counts }: Props) {
                                     className="w-56"
                                 >
                                     <DropdownMenuItem asChild>
-                                        <Link href="/admin/apakhabar-creator/manual/create">
+                                        <Link href="/admin/news/manual/create">
                                             <FilePenLine /> Tulis manual
                                         </Link>
                                     </DropdownMenuItem>
                                     <DropdownMenuItem asChild>
-                                        <Link href="/admin/apakhabar-creator/create">
+                                        <Link href="/admin/ai-assistant">
                                             <Bot /> Buat dengan AI
                                         </Link>
                                     </DropdownMenuItem>
@@ -302,6 +305,17 @@ export default function NewsWorkspace({ items, counts }: Props) {
                                                     {item.category}
                                                 </Badge>
                                             )}
+                                            {item.quality_score !== null && (
+                                                <Badge
+                                                    variant={
+                                                        item.publish_blocked
+                                                            ? 'destructive'
+                                                            : 'outline'
+                                                    }
+                                                >
+                                                    Kualitas {item.quality_score.toFixed(1)}%
+                                                </Badge>
+                                            )}
                                         </div>
                                         <ItemActions item={item} />
                                     </CardHeader>
@@ -374,6 +388,18 @@ export default function NewsWorkspace({ items, counts }: Props) {
                                             ? 'AI'
                                             : 'Manual'}
                                     </Badge>
+                                    {item.quality_score !== null && (
+                                        <Badge
+                                            variant={
+                                                item.publish_blocked
+                                                    ? 'destructive'
+                                                    : 'outline'
+                                            }
+                                            className="hidden sm:flex"
+                                        >
+                                            {item.quality_score.toFixed(1)}%
+                                        </Badge>
+                                    )}
                                     <span className="hidden text-xs text-muted-foreground md:block">
                                         {item.updated_at
                                             ? new Date(

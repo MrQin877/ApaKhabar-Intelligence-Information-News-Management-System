@@ -27,7 +27,6 @@ Route::middleware(ApiAuth::class)->group(function () {
     Route::get('/categories/all', [NewsCategoryController::class, 'all']);
     Route::post('/categories', [NewsCategoryController::class, 'store']);
     Route::put('/categories/{category}', [NewsCategoryController::class, 'update']);
-    Route::patch('/categories/{category}', [NewsCategoryController::class, 'update']);
     Route::delete('/categories/{category}', [NewsCategoryController::class, 'destroy']);
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/profile', [AuthController::class, 'profile']);

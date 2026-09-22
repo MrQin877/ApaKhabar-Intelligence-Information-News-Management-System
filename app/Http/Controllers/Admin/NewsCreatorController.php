@@ -14,11 +14,14 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\ProcessIntelligenceDocument;
+use App\Models\AiQualityEvaluation;
 use App\Models\IntelligenceDocument;
+use App\Models\IntelligenceExtractionRequest;
 use App\Models\IntelligenceInformation;
 use App\Models\IntelligentNewsDraft;
 use App\Models\IntelligentNewsDraftVersion;
 use App\Models\IntelligentNewsSession;
+use App\Models\IntelligentNewsMessage;
 use App\Models\NewsCategory;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\JsonResponse;
@@ -43,6 +46,8 @@ class NewsCreatorController extends Controller
         $information = IntelligenceInformation::query()
             ->with('document:id,original_name,status')
             ->where('is_active', true)
+            ->where('review_status', 'approved')
+            ->whereHas('document', fn ($query) => $query->where('uploaded_by', $request->user()->getKey()))
             ->latest()
             ->limit(200)
             ->get();
@@ -50,7 +55,7 @@ class NewsCreatorController extends Controller
         $generatedArticle = null;
         if ($draftId = $request->integer('draft')) {
             $draft = IntelligentNewsDraft::query()
-                ->with(['informationSources.document', 'category'])
+                ->with(['informationSources.document', 'category', 'qualityEvaluations'])
                 ->where('created_by', $request->user()->getKey())
                 ->find($draftId);
 
@@ -70,6 +75,10 @@ class NewsCreatorController extends Controller
                     'version' => $draft->version,
                     'reviewed_at' => $draft->reviewed_at?->toIso8601String(),
                     'updated_at' => $draft->updated_at?->toIso8601String(),
+                    'quality' => optional($draft->qualityEvaluations->first())->only([
+                        'overall_score', 'quality_label', 'publish_blocked', 'dimensions',
+                        'claim_checks', 'warnings', 'evaluation_version', 'evaluator_model',
+                    ]),
                     'selected_sources' => $draft->informationSources->map(fn ($item) => [
                         'id' => $item->id,
                         'title' => $item->title,
@@ -106,6 +115,7 @@ class NewsCreatorController extends Controller
             ->values();
 
         $documents = IntelligenceDocument::query()
+            ->where('uploaded_by', $request->user()->getKey())
             ->where('status', 'ready')
             ->latest()
             ->limit(200)
@@ -114,6 +124,7 @@ class NewsCreatorController extends Controller
         $newsSession = null;
         if ($sessionId = $request->integer('session')) {
             $newsSession = IntelligentNewsSession::query()
+                ->with('messages')
                 ->where('created_by', $request->user()->getKey())
                 ->find($sessionId);
         }
@@ -143,15 +154,20 @@ class NewsCreatorController extends Controller
             'information_ids.*' => ['integer', 'exists:intelligence_information,id'],
             'document_ids' => ['nullable', 'array'],
             'document_ids.*' => ['integer', 'exists:intelligence_documents,id'],
+            'intent' => ['nullable', 'in:extract_information,generate_news'],
+            'extraction_mode' => ['nullable', 'in:general,targeted'],
+            'extraction_query' => ['nullable', 'string', 'max:2000', 'required_if:extraction_mode,targeted'],
+            'keywords' => ['nullable', 'array', 'max:20'],
+            'keywords.*' => ['string', 'max:100'],
         ]);
         $disk = config('filesystems.default');
-        $documents = collect($validated['documents'])->map(function ($file) use ($request, $disk) {
+        $documents = collect($validated['documents'])->map(function ($file) use ($request, $validated, $disk) {
             $path = $file->store('intelligence-documents', $disk);
             if (! $path) {
                 throw new \RuntimeException("Unable to store {$file->getClientOriginalName()} on the {$disk} disk.");
             }
 
-            return IntelligenceDocument::create([
+            $document = IntelligenceDocument::create([
                 'uploaded_by' => $request->user()->getKey(),
                 'original_name' => $file->getClientOriginalName(),
                 'storage_disk' => $disk,
@@ -162,17 +178,33 @@ class NewsCreatorController extends Controller
                 'status' => 'processing',
                 'embedding_status' => 'pending',
             ]);
+            $mode = $validated['extraction_mode'] ?? 'general';
+            $query = trim((string) ($validated['extraction_query'] ?? '')) ?: null;
+            $extractionRequest = IntelligenceExtractionRequest::create([
+                'document_id' => $document->id,
+                'requested_by' => $request->user()->getKey(),
+                'mode' => $mode,
+                'original_prompt' => $validated['prompt'] ?? $query,
+                'normalized_query' => $mode === 'targeted'
+                    ? $query
+                    : 'Extract all distinct and important information.',
+                'keywords' => collect($validated['keywords'] ?? [])->filter()->unique()->values()->all(),
+                'status' => 'pending',
+            ]);
+
+            return [$document, $extractionRequest];
         });
 
-        $documents->each(fn (IntelligenceDocument $document) => ProcessIntelligenceDocument::dispatch($document->id)
+        $documents->each(fn (array $pair) => ProcessIntelligenceDocument::dispatch($pair[0]->id, $pair[1]->id)
             ->onQueue('documents'));
+        $documentModels = $documents->pluck(0);
 
-        if (filled($validated['prompt'] ?? null)) {
+        if (($validated['intent'] ?? 'extract_information') === 'generate_news') {
             $session = IntelligentNewsSession::create([
                 'created_by' => $request->user()->getKey(),
                 'status' => 'processing_files',
                 'prompt' => $validated['prompt'],
-                'selected_document_ids' => $documents->pluck('id')
+                'selected_document_ids' => $documentModels->pluck('id')
                     ->merge($validated['document_ids'] ?? [])->unique()->values()->all(),
                 'selected_information_ids' => collect($validated['information_ids'] ?? [])->unique()->values()->all(),
                 'user_facts' => filled($validated['manual_fact'] ?? null)
@@ -181,16 +213,24 @@ class NewsCreatorController extends Controller
                 'pending_questions' => [],
                 'conflicts' => [],
             ]);
+            IntelligentNewsMessage::create([
+                'session_id' => $session->id,
+                'role' => 'user',
+                'intent' => 'generate_news',
+                'content' => $validated['prompt'] ?? 'Buat berita dari dokumen yang dilampirkan.',
+                'payload' => ['document_ids' => $session->selected_document_ids],
+            ]);
 
-            return redirect()->route('admin.creator.create', ['session' => $session->id])
+            return redirect()->route('admin.assistant.index', ['session' => $session->id])
                 ->with('success', 'Dokumen disimpan dan sedang diproses di latar belakang.');
         }
 
-        return back()->with('success', "{$documents->count()} dokumen masuk antrean pemrosesan.");
+        return back()->with('success', "{$documentModels->count()} dokumen masuk antrean ekstraksi.");
     }
 
-    public function retryDocument(IntelligenceDocument $document): RedirectResponse
+    public function retryDocument(Request $request, IntelligenceDocument $document): RedirectResponse
     {
+        abort_unless($document->uploaded_by === $request->user()->getKey(), 403);
         if ($document->status === 'ready') {
             return back()->withErrors(['document' => 'Dokumen ini sudah selesai diproses.']);
         }
@@ -209,6 +249,7 @@ class NewsCreatorController extends Controller
     {
         $validated = $request->validate([
             'session_id' => ['nullable', 'integer', 'exists:intelligent_news_sessions,id'],
+            'draft_id' => ['nullable', 'integer', 'exists:intelligent_news_drafts,id'],
             'information_ids' => ['nullable', 'array'],
             'information_ids.*' => ['integer', 'exists:intelligence_information,id'],
             'document_ids' => ['nullable', 'array'],
@@ -228,6 +269,10 @@ class NewsCreatorController extends Controller
 
         $documentIds = collect($validated['document_ids'] ?? $session?->selected_document_ids ?? [])
             ->map(fn ($id) => (int) $id);
+        $documentIds = IntelligenceDocument::query()
+            ->where('uploaded_by', $request->user()->getKey())
+            ->whereIn('id', $documentIds)
+            ->pluck('id');
         $informationIds = collect($validated['information_ids'] ?? $session?->selected_information_ids ?? [])
             ->map(fn ($id) => (int) $id);
         if ($documentIds->isNotEmpty()) {
@@ -239,6 +284,10 @@ class NewsCreatorController extends Controller
             );
         }
         $informationIds = $informationIds->unique()->values();
+        $informationIds = IntelligenceInformation::query()
+            ->whereIn('id', $informationIds)
+            ->whereHas('document', fn ($query) => $query->where('uploaded_by', $request->user()->getKey()))
+            ->pluck('id');
 
         $userFacts = collect($session?->user_facts ?? []);
         $submittedAnswers = collect($validated['answers'] ?? [])->filter(fn ($value) => filled($value));
@@ -268,7 +317,32 @@ class NewsCreatorController extends Controller
         $items = IntelligenceInformation::with('document')
             ->whereIn('id', $informationIds)
             ->where('is_active', true)
+            ->where('review_status', 'approved')
             ->get();
+
+        if (! $session) {
+            $session = IntelligentNewsSession::create([
+                'created_by' => $request->user()->getKey(),
+                'status' => 'ready_to_generate',
+                'prompt' => $effectivePrompt,
+                'selected_document_ids' => $documentIds->values()->all(),
+                'selected_information_ids' => $informationIds->all(),
+                'user_facts' => $userFacts->values()->all(),
+                'pending_questions' => [],
+                'conflicts' => [],
+            ]);
+        }
+        IntelligentNewsMessage::create([
+            'session_id' => $session->id,
+            'role' => 'user',
+            'intent' => ($validated['draft_id'] ?? null) ? 'revise_news' : 'generate_news',
+            'content' => $effectivePrompt ?: 'Buat berita menggunakan sumber yang dipilih.',
+            'payload' => [
+                'information_ids' => $informationIds->all(),
+                'document_ids' => $documentIds->values()->all(),
+                'answers' => $validated['answers'] ?? [],
+            ],
+        ]);
 
         $payload = [
             'information' => [
@@ -346,12 +420,20 @@ class NewsCreatorController extends Controller
             ]);
             $session->save();
 
-            return redirect()->route('admin.creator.create', ['session' => $session->id]);
+            IntelligentNewsMessage::create([
+                'session_id' => $session->id,
+                'role' => 'assistant',
+                'intent' => 'clarification',
+                'content' => 'Informasi tambahan diperlukan sebelum draf dapat dibuat.',
+                'payload' => ['questions' => $pendingQuestions],
+            ]);
+
+            return redirect()->route('admin.assistant.index', ['session' => $session->id]);
         }
 
         $article = $result['article'];
         $categoryId = $this->resolveCategoryId($article);
-        $draft = DB::transaction(function () use ($request, $validated, $article, $items, $session, $categoryId) {
+        [$draft, $draftVersion] = DB::transaction(function () use ($request, $validated, $article, $items, $session, $categoryId, $result) {
             $draft = isset($validated['draft_id'])
                 ? IntelligentNewsDraft::query()
                     ->where('created_by', $request->user()->getKey())
@@ -377,9 +459,30 @@ class NewsCreatorController extends Controller
             ]);
             $draft->save();
             $draft->informationSources()->sync($items->pluck('id'));
-            $this->storeDraftVersion($draft, $request->user()->getKey(), $draft->wasRecentlyCreated ? 'generated' : 'regenerated');
+            $draftVersion = $this->storeDraftVersion(
+                $draft,
+                $request->user()->getKey(),
+                $draft->wasRecentlyCreated ? 'generated' : 'regenerated',
+                $draft->wasRecentlyCreated ? 'initial_ai' : 'ai_revision',
+                $validated['prompt'] ?? null,
+            );
 
-            return $draft;
+            if ($quality = ($result['quality'] ?? null)) {
+                AiQualityEvaluation::create([
+                    'draft_id' => $draft->id,
+                    'draft_version_id' => $draftVersion->id,
+                    'evaluation_version' => $quality['evaluation_version'] ?? 'news-quality-v1',
+                    'evaluator_model' => $quality['evaluator_model'] ?? null,
+                    'overall_score' => $quality['quality_score'],
+                    'quality_label' => $quality['quality_label'],
+                    'publish_blocked' => $quality['publish_blocked'] ?? false,
+                    'dimensions' => $quality['dimensions'] ?? [],
+                    'claim_checks' => $quality['claim_checks'] ?? [],
+                    'warnings' => $quality['warnings'] ?? [],
+                ]);
+            }
+
+            return [$draft, $draftVersion];
         });
 
         if ($session) {
@@ -392,7 +495,19 @@ class NewsCreatorController extends Controller
             ]);
         }
 
-        return redirect()->route('admin.creator.create', ['draft' => $draft->id]);
+        IntelligentNewsMessage::create([
+            'session_id' => $session->id,
+            'role' => 'assistant',
+            'intent' => 'generate_news',
+            'content' => $article['headline'],
+            'payload' => ['article' => $article, 'quality' => $result['quality'] ?? null],
+            'draft_version_id' => $draftVersion->id,
+        ]);
+
+        return redirect()->route('admin.assistant.index', [
+            'draft' => $draft->id,
+            'session' => $session->id,
+        ]);
     }
 
     public function recommend(Request $request): JsonResponse
@@ -403,8 +518,9 @@ class NewsCreatorController extends Controller
 
         try {
             $response = $this->aiClient()
-                ->post(rtrim(config('services.apakhabar_ai.url'), '/').'/rag/search', [
+                ->post(rtrim(config('services.apakhabar_ai.url'), '/').'/rag/information/search', [
                     'query' => $validated['query'],
+                    'owner_id' => (string) $request->user()->getKey(),
                     'top_k' => 8,
                 ])
                 ->throw()
@@ -418,25 +534,28 @@ class NewsCreatorController extends Controller
             ], 503);
         }
 
-        $documents = IntelligenceDocument::query()
-            ->whereIn('ai_document_id', collect($response)->pluck('document_id')->unique())
-            ->get()
-            ->keyBy('ai_document_id');
+        $information = IntelligenceInformation::query()
+            ->with('document:id,original_name')
+            ->whereIn('id', collect($response)->pluck('information_id')->map(fn ($id) => (int) $id))
+            ->where('review_status', 'approved')
+            ->whereHas('document', fn ($query) => $query->where('uploaded_by', $request->user()->getKey()))
+            ->get()->keyBy('id');
 
-        $recommendations = collect($response)->map(function ($result) use ($documents) {
-            $document = $documents->get($result['document_id']);
-            if (! $document) {
+        $recommendations = collect($response)->map(function ($result) use ($information) {
+            $item = $information->get((int) $result['information_id']);
+            if (! $item) {
                 return null;
             }
 
             return [
-                'document_id' => $document->id,
-                'name' => $document->original_name,
+                'information_id' => $item->id,
+                'document_id' => $item->document_id,
+                'name' => $item->title,
                 'source' => $result['source'],
                 'excerpt' => $result['content'],
                 'distance' => $result['distance'],
             ];
-        })->filter()->unique('document_id')->values();
+        })->filter()->unique('information_id')->values();
 
         return response()->json(['recommendations' => $recommendations]);
     }
@@ -459,9 +578,9 @@ class NewsCreatorController extends Controller
             'version' => $draft->version + 1,
             'reviewed_at' => null,
         ]);
-        $this->storeDraftVersion($draft->fresh(), $request->user()->getKey(), 'edited');
+        $this->storeDraftVersion($draft->fresh(), $request->user()->getKey(), 'edited', 'manual');
 
-        return redirect()->route('admin.creator.create', ['draft' => $draft->id])
+        return redirect()->route('admin.assistant.index', ['draft' => $draft->id])
             ->with('success', 'Perubahan draf berhasil disimpan. Tinjau versi baru sebelum publikasi.');
     }
 
@@ -472,7 +591,7 @@ class NewsCreatorController extends Controller
 
         $draft->update(['reviewed_at' => now()]);
 
-        return redirect()->route('admin.creator.create', ['draft' => $draft->id])
+        return redirect()->route('admin.assistant.index', ['draft' => $draft->id])
             ->with('success', 'Draf ditandai telah ditinjau dan siap dipublikasikan.');
     }
 
@@ -496,9 +615,9 @@ class NewsCreatorController extends Controller
             'version' => $draft->version + 1,
             'reviewed_at' => null,
         ]);
-        $this->storeDraftVersion($draft->fresh(), $request->user()->getKey(), 'image_changed');
+        $this->storeDraftVersion($draft->fresh(), $request->user()->getKey(), 'image_changed', 'manual');
 
-        return redirect()->route('admin.creator.create', ['draft' => $draft->id])
+        return redirect()->route('admin.assistant.index', ['draft' => $draft->id])
             ->with('success', 'Gambar berita berhasil diunggah. Tinjau versi baru sebelum publikasi.');
     }
 
@@ -551,12 +670,20 @@ class NewsCreatorController extends Controller
                 ?? $categories->firstOrFail()->categoryID);
     }
 
-    private function storeDraftVersion(IntelligentNewsDraft $draft, int $userId, string $changeType): void
+    private function storeDraftVersion(
+        IntelligentNewsDraft $draft,
+        int $userId,
+        string $changeType,
+        string $revisionSource = 'manual',
+        ?string $revisionInstruction = null,
+    ): IntelligentNewsDraftVersion
     {
-        IntelligentNewsDraftVersion::updateOrCreate(
+        return IntelligentNewsDraftVersion::updateOrCreate(
             ['draft_id' => $draft->id, 'version' => $draft->version],
             [
                 'change_type' => $changeType,
+                'revision_source' => $revisionSource,
+                'revision_instruction' => $revisionInstruction,
                 'created_by' => $userId,
                 'snapshot' => $draft->only([
                     'headline', 'subheadline', 'lead', 'body', 'summary', 'labels',
@@ -566,10 +693,59 @@ class NewsCreatorController extends Controller
         );
     }
 
+    public function reviewInformation(
+        Request $request,
+        IntelligenceInformation $information,
+    ): RedirectResponse {
+        abort_unless($information->document->uploaded_by === $request->user()->getKey(), 403);
+        $validated = $request->validate([
+            'decision' => ['required', 'in:approved,rejected'],
+        ]);
+        $approved = $validated['decision'] === 'approved';
+        $information->update([
+            'review_status' => $validated['decision'],
+            'is_active' => $approved,
+            'reviewed_by' => $request->user()->getKey(),
+            'reviewed_at' => now(),
+            'information_embedding_status' => $approved ? 'pending' : 'failed',
+        ]);
+
+        if ($approved) {
+            try {
+                $this->aiClient()->post(
+                    rtrim(config('services.apakhabar_ai.url'), '/').'/rag/information/index',
+                    ['items' => [[
+                        'information_id' => (string) $information->id,
+                        'document_id' => (string) $information->document_id,
+                        'title' => $information->title,
+                        'summary' => $information->summary,
+                        'labels' => $information->labels ?? [],
+                        'fields' => $information->fields ?? [],
+                        'source' => $information->document->original_name,
+                        'owner_id' => (string) $request->user()->getKey(),
+                    ]],
+                ])->throw();
+                $information->update(['information_embedding_status' => 'ready']);
+            } catch (\Throwable $exception) {
+                report($exception);
+                $information->update(['information_embedding_status' => 'failed']);
+
+                return back()->withErrors([
+                    'information' => 'Informasi disetujui, tetapi indeks pencarian belum berhasil dibuat.',
+                ]);
+            }
+        }
+
+        return back()->with('success', $approved
+            ? 'Informasi disetujui dan ditambahkan ke pustaka pencarian.'
+            : 'Informasi ditolak.');
+    }
+
     private function renderArchive(): Response
     {
         $documents = IntelligenceDocument::query()
-            ->with('information:id,document_id,title,summary,fields')
+            ->with('information:id,document_id,title,summary,fields,confidence,review_status,quality_score,information_embedding_status')
+            ->where('uploaded_by', request()->user()->getKey())
             ->latest()
             ->get()
             ->map(fn ($document) => [
@@ -587,8 +763,13 @@ class NewsCreatorController extends Controller
                 'attempts' => $document->processing_attempts,
                 'category' => 'Information',
                 'extract' => $document->information->map(fn ($item) => [
+                    'id' => $item->id,
                     'year' => data_get($item->fields, 'date', 'Information'),
                     'text' => $item->title.' — '.$item->summary,
+                    'confidence' => $item->confidence,
+                    'quality_score' => $item->quality_score,
+                    'review_status' => $item->review_status,
+                    'embedding_status' => $item->information_embedding_status,
                 ])->values(),
             ]);
 

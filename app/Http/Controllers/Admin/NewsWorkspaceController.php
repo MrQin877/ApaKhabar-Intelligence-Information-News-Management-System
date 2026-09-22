@@ -21,12 +21,15 @@ class NewsWorkspaceController extends Controller
         $userId = $request->user()->getKey();
 
         $drafts = IntelligentNewsDraft::query()
-            ->with(['category:categoryID,name', 'session:id,draft_id'])
+            ->with(['category:categoryID,name', 'session:id,draft_id', 'qualityEvaluations'])
             ->where('created_by', $userId)
             ->whereIn('status', ['draft', 'archived'])
             ->latest('updated_at')
             ->get()
-            ->map(fn (IntelligentNewsDraft $draft) => [
+            ->map(function (IntelligentNewsDraft $draft) {
+                $quality = $draft->qualityEvaluations->first();
+
+                return [
                 'key' => "draft-{$draft->id}",
                 'id' => $draft->id,
                 'record_type' => 'draft',
@@ -37,13 +40,17 @@ class NewsWorkspaceController extends Controller
                 'category' => $draft->category?->name,
                 'updated_at' => $draft->updated_at?->toISOString(),
                 'resume_url' => $draft->creation_method === 'ai'
-                    ? route('admin.creator.create', array_filter([
+                    ? route('admin.assistant.index', array_filter([
                         'session' => $draft->session?->id,
                         'draft' => $draft->id,
                     ]))
-                    : route('admin.creator.manual.edit', $draft),
-                'can_publish' => $draft->status === 'draft',
-            ]);
+                    : route('admin.news-workspace.manual.edit', $draft),
+                    'can_publish' => $draft->status === 'draft' && ! $quality?->publish_blocked,
+                    'quality_score' => $quality?->overall_score,
+                    'quality_label' => $quality?->quality_label,
+                    'publish_blocked' => $quality?->publish_blocked ?? false,
+                ];
+            });
 
         $sessions = IntelligentNewsSession::query()
             ->where('created_by', $userId)
@@ -60,8 +67,11 @@ class NewsWorkspaceController extends Controller
                 'creation_method' => 'ai',
                 'category' => null,
                 'updated_at' => $session->updated_at?->toISOString(),
-                'resume_url' => route('admin.creator.create', ['session' => $session->id]),
+                'resume_url' => route('admin.assistant.index', ['session' => $session->id]),
                 'can_publish' => false,
+                'quality_score' => null,
+                'quality_label' => null,
+                'publish_blocked' => false,
             ]);
 
         $published = News::query()
@@ -80,6 +90,9 @@ class NewsWorkspaceController extends Controller
                 'updated_at' => $news->updated_at?->toISOString(),
                 'resume_url' => route('news.show', $news->getKey()),
                 'can_publish' => false,
+                'quality_score' => null,
+                'quality_label' => null,
+                'publish_blocked' => false,
             ]);
 
         return Inertia::render('admin/intelligentnewscreator/index', [
@@ -106,7 +119,7 @@ class NewsWorkspaceController extends Controller
         $data = $this->validateDraft($request);
         $draft = IntelligentNewsDraft::create($this->draftAttributes($data, $request->user()->getKey()));
 
-        return redirect()->route('admin.creator.manual.edit', $draft)
+        return redirect()->route('admin.news-workspace.manual.edit', $draft)
             ->with('success', 'Draf manual berhasil disimpan.');
     }
 
@@ -145,6 +158,12 @@ class NewsWorkspaceController extends Controller
         $this->authorizeDraft($request, $draft);
         abort_unless($draft->status === 'draft', 422, 'Only draft content can be published.');
         abort_unless($draft->reviewed_at !== null, 422, 'Review the current draft version before publishing.');
+        $latestQuality = $draft->qualityEvaluations()->first();
+        abort_if(
+            $draft->creation_method === 'ai' && $latestQuality?->publish_blocked,
+            422,
+            'Resolve unsupported, contradicted, or unsafe content before publishing.',
+        );
 
         DB::transaction(function () use ($request, $draft) {
             $news = News::create([
@@ -160,7 +179,7 @@ class NewsWorkspaceController extends Controller
             $draft->update(['status' => 'published', 'published_news_id' => $news->getKey()]);
         });
 
-        return redirect()->route('admin.creator.index')->with('success', 'Berita berhasil dipublikasikan.');
+        return redirect()->route('admin.news-workspace.index')->with('success', 'Berita berhasil dipublikasikan.');
     }
 
     public function archive(Request $request, string $type, int $id): RedirectResponse

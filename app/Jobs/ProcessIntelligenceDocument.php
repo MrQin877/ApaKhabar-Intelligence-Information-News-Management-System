@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\IntelligenceDocument;
 use App\Models\IntelligenceInformation;
+use App\Models\IntelligenceExtractionRequest;
 use App\Models\IntelligentNewsSession;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -28,7 +29,10 @@ class ProcessIntelligenceDocument implements ShouldBeUnique, ShouldQueue
 
     public int $uniqueFor = 600;
 
-    public function __construct(public int $documentId) {}
+    public function __construct(
+        public int $documentId,
+        public ?int $extractionRequestId = null,
+    ) {}
 
     public function uniqueId(): string
     {
@@ -48,9 +52,18 @@ class ProcessIntelligenceDocument implements ShouldBeUnique, ShouldQueue
     public function handle(): void
     {
         $document = IntelligenceDocument::findOrFail($this->documentId);
-        if ($document->status === 'ready') {
+        $extractionRequest = $this->extractionRequestId
+            ? IntelligenceExtractionRequest::findOrFail($this->extractionRequestId)
+            : $document->extractionRequests()->latest()->first();
+        if ($document->status === 'ready' && ! $extractionRequest) {
             return;
         }
+
+        $extractionRequest?->update([
+            'status' => 'processing',
+            'started_at' => now(),
+            'error_message' => null,
+        ]);
 
         $document->update([
             'status' => 'processing',
@@ -60,13 +73,19 @@ class ProcessIntelligenceDocument implements ShouldBeUnique, ShouldQueue
             'last_attempted_at' => now(),
         ]);
 
-        $result = $this->client()
-            ->attach(
+        $request = $this->client()->attach(
                 'files',
                 Storage::disk($document->storage_disk)->get($document->storage_path),
                 $document->original_name,
+            );
+        $result = $request->post(
+                rtrim(config('services.apakhabar_ai.url'), '/').'/documents/batch-extract',
+                [
+                    'extraction_mode' => $extractionRequest?->mode ?? 'general',
+                    'extraction_query' => $extractionRequest?->normalized_query,
+                    'keywords_json' => json_encode($extractionRequest?->keywords ?? []),
+                ],
             )
-            ->post(rtrim(config('services.apakhabar_ai.url'), '/').'/documents/batch-extract')
             ->throw()
             ->json('results.0');
 
@@ -74,11 +93,17 @@ class ProcessIntelligenceDocument implements ShouldBeUnique, ShouldQueue
             throw new \RuntimeException($result['error'] ?? 'No information was extracted.');
         }
 
-        DB::transaction(function () use ($document, $result): void {
-            $document->information()->delete();
+        DB::transaction(function () use ($document, $extractionRequest, $result): void {
+            if ($extractionRequest) {
+                $extractionRequest->information()->delete();
+            } else {
+                $document->information()->delete();
+            }
             foreach ($result['extraction']['information'] as $index => $item) {
+                $quality = $this->extractionQuality($item);
                 IntelligenceInformation::create([
                     'document_id' => $document->id,
+                    'extraction_request_id' => $extractionRequest?->id,
                     'item_index' => $index,
                     'type' => $item['type'],
                     'title' => $item['title'],
@@ -87,6 +112,10 @@ class ProcessIntelligenceDocument implements ShouldBeUnique, ShouldQueue
                     'fields' => $item['fields'] ?? [],
                     'evidence' => $item['evidence'] ?? [],
                     'confidence' => $item['confidence'] ?? null,
+                    'quality_score' => $quality['score'],
+                    'quality_breakdown' => $quality['dimensions'],
+                    'review_status' => 'pending',
+                    'information_embedding_status' => 'pending',
                     'search_text' => implode(' ', [
                         $item['title'], $item['summary'],
                         json_encode($item['labels'] ?? []),
@@ -103,6 +132,11 @@ class ProcessIntelligenceDocument implements ShouldBeUnique, ShouldQueue
                 'error_message' => null,
                 'processed_at' => now(),
             ]);
+            $extractionRequest?->update([
+                'status' => 'completed',
+                'completed_at' => now(),
+                'error_message' => null,
+            ]);
         });
 
         $this->refreshWaitingSessions();
@@ -115,6 +149,13 @@ class ProcessIntelligenceDocument implements ShouldBeUnique, ShouldQueue
             'embedding_status' => 'failed',
             'error_message' => $exception?->getMessage() ?? 'Document processing failed.',
         ]);
+        if ($this->extractionRequestId) {
+            IntelligenceExtractionRequest::whereKey($this->extractionRequestId)->update([
+                'status' => 'failed',
+                'error_message' => $exception?->getMessage() ?? 'Extraction failed.',
+                'completed_at' => now(),
+            ]);
+        }
     }
 
     private function client(): PendingRequest
@@ -122,6 +163,35 @@ class ProcessIntelligenceDocument implements ShouldBeUnique, ShouldQueue
         return Http::acceptJson()
             ->connectTimeout(max(1, (int) config('services.apakhabar_ai.connect_timeout', 5)))
             ->timeout(max(1, (int) config('services.apakhabar_ai.timeout', 180)));
+    }
+
+    /**
+     * This is an explainable quality estimate, not ground-truth accuracy.
+     * Human approval remains required before information enters the searchable library.
+     */
+    private function extractionQuality(array $item): array
+    {
+        $evidence = collect($item['evidence'] ?? [])->filter(
+            fn ($entry) => filled($entry['source'] ?? null) && filled($entry['quote'] ?? null),
+        );
+        $evidenceScore = min(100, $evidence->count() * 50);
+        $required = ['title', 'summary', 'type'];
+        $present = collect($required)->filter(fn ($field) => filled($item[$field] ?? null))->count();
+        $completenessScore = round(($present / count($required)) * 100, 2);
+        $modelConfidence = round(max(0, min(1, (float) ($item['confidence'] ?? 0))) * 100, 2);
+        $score = round(
+            ($evidenceScore * 0.40) + ($completenessScore * 0.30) + ($modelConfidence * 0.30),
+            2,
+        );
+
+        return [
+            'score' => $score,
+            'dimensions' => [
+                'evidence_coverage' => $evidenceScore,
+                'completeness' => $completenessScore,
+                'model_confidence' => $modelConfidence,
+            ],
+        ];
     }
 
     private function refreshWaitingSessions(): void

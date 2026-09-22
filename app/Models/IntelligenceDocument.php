@@ -22,4 +22,9 @@ class IntelligenceDocument extends Model
     {
         return $this->hasMany(IntelligenceInformation::class, 'document_id');
     }
+
+    public function extractionRequests()
+    {
+        return $this->hasMany(IntelligenceExtractionRequest::class, 'document_id');
+    }
 }
