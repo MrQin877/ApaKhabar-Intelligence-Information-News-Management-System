@@ -216,6 +216,154 @@ Color-library follow-up
 	--brand-950 token is defined. This should be corrected before using dark
 	success alerts in production.
 
+AI SERVICE UPDATE
+=================
+
+Purpose
+-------
+The Intelligent News Creator was connected to the ApaKhabar AI Service so a
+moderator can upload source documents, review multiple Indonesian information
+items extracted from each document, select the relevant items, and generate a
+source-grounded Indonesian news draft.
+
+Supported source files
+----------------------
+- PDF, including image-only scanned pages through OCR.
+- JPG, JPEG, and PNG images through OCR.
+- DOCX documents.
+- XLSX and XLSM workbooks.
+- CSV and TXT files.
+
+AI extraction changes
+---------------------
+- The AI service now requests Indonesian titles, summaries, labels, and text
+	field values.
+- One document can produce multiple separate information items when it contains
+	different events, decisions, announcements, projects, or issues.
+- Each extracted summary is requested as a standalone Indonesian paragraph of
+	two to five sentences.
+- Evidence keeps its original page, paragraph, spreadsheet sheet, or row
+	reference.
+- Scanned PDFs and images use Tesseract OCR with Indonesian and English language
+	data.
+- Editorial instructions are sent separately from factual information and are
+	used only to control the focus, style, or tone of the generated news.
+- Structured evidence references are retained when the AI generates an article.
+
+Intelligent News Creator workflow
+---------------------------------
+1. The moderator uploads a supported document from the creator page.
+2. Laravel stores the original file privately and sends it to the AI service.
+3. The AI service reads or OCRs the document and extracts one or more Indonesian
+	information items.
+4. Laravel stores every information item separately.
+5. The moderator searches and selects one or more information items.
+6. The moderator may provide an optional editorial instruction and tone.
+7. Laravel sends only the selected structured information to the AI service.
+8. The AI service checks completeness and either returns missing-information
+	questions or generates an Indonesian news draft.
+9. Laravel saves the draft and links it to every information item used.
+10. The moderator reviews the draft and its supporting evidence before
+	publication.
+
+Database additions
+------------------
+- intelligence_documents stores the original filename, private storage path,
+	uploader, checksum, file metadata, AI document ID, processing status, and
+	error details. Its purpose is upload management, auditing, retry support, and
+	duplicate detection.
+- intelligence_information stores each extracted information item separately,
+	including its Indonesian title and summary, labels, flexible fields,
+	evidence, confidence, searchable text, and moderation state. Its purpose is
+	review, search, selection, and reuse.
+- intelligent_news_drafts stores generated article fields, editorial
+	instructions, labels, warnings, sources, creator, and publication state. Its
+	purpose is to keep unreviewed AI output separate from the public news table.
+- intelligent_news_draft_sources links each draft to the exact information
+	items used. Its purpose is source traceability and unsupported-claim review.
+
+Application configuration
+-------------------------
+Add these values to the web application .env file:
+
+	APAKHABAR_AI_URL=http://127.0.0.1:8001
+	APAKHABAR_AI_TIMEOUT=180
+
+The AI service must have OCR_LANGUAGES=ind+eng and Tesseract with both language
+packs installed. Start the AI API on port 8001 before uploading or generating:
+
+	uvicorn app.main:app --reload --port 8001
+
+Apply the new web application tables with:
+
+	php artisan migrate
+
+Validation completed
+--------------------
+- All 17 AI service unit tests passed.
+- A real Indonesian JPEG OCR smoke test passed.
+- Tesseract Indonesian and English language availability was verified.
+- Frontend ESLint and TypeScript checks passed.
+- PHP formatting checks passed.
+- All five Intelligent News Creator routes were registered.
+- git diff --check passed in both repositories.
+
+Current limitation and next phase
+---------------------------------
+- Document extraction currently runs synchronously and uploads one document at
+	a time. Processing the initial 80-document collection should be moved to a
+	Laravel queue with batch progress, retry, and failure reporting.
+- The current creator supports text search and moderator-controlled source
+	selection. Automatic semantic related-information recommendations should be
+	connected to the existing RAG service in the next phase; recommended items
+	should remain unselected until the moderator approves them.
+- Confidence is a model review signal, not measured extraction accuracy. OCR,
+	extraction, and news-generation accuracy must be measured separately with a
+	human-labelled evaluation dataset.
+- Human review remains required before a draft is copied to the public news
+	table.
+
+AI SERVICE UPDATE - AGENT WORKFLOW AND CREATOR UX
+=================================================
+
+- Added a production runtime news-creation skill with SKILL.md documentation,
+	version-controlled completeness and generation prompts, and a Python
+	orchestrator. The Markdown documents the skill; executable Python enforces it.
+- Added targeted Indonesian missing-information questions. Questions, moderator
+	answers, conflicts, approved sources, and explicit user facts persist in
+	intelligent_news_sessions and survive page refreshes.
+- Moderator answers are marked user_provided and are not attributed to a source
+	document. Editorial prompts remain style/focus instructions rather than facts.
+- Added POST /documents/batch-extract with a one-to-five-file limit, per-file
+	success/failure results, information extraction, and Chroma embedding.
+- Laravel batch upload now accepts up to five PDF, image, Word, spreadsheet, CSV,
+	or TXT files. A failed file does not discard successful files in the batch.
+- Added storage_disk and embedding_status to intelligence_documents. Files use
+	Laravel's configured private filesystem, allowing FILESYSTEM_DISK=local during
+	development and FILESYSTEM_DISK=s3 in cloud deployment.
+- Installed league/flysystem-aws-s3-v3 for AWS S3 support. The database stores a
+	disk and object path instead of assuming a local absolute path.
+- Rebuilt the active creator with shadcn components and app.css semantic colors.
+	The chat transcript scrolls independently while its composer remains fixed.
+- Composer supports up to five new files, existing documents, extracted
+	information, moderator-provided facts, or any mixture of these inputs.
+- Context-sensitive actions replace flood-specific examples.
+- RAG results appear as recommendations and require explicit moderator approval
+	before their documents enter the generation evidence set.
+- Newly attached files are stored, extracted, embedded, selected, checked for
+	completeness, and passed into draft generation with the original prompt.
+- The original document archive design remains and now supports real five-file
+	batch uploads.
+
+Validation
+----------
+- AI unit tests passed, including runtime prompt loading, user-fact provenance,
+	and stopping for targeted questions.
+- The news-creation SKILL.md passed the skill validator.
+- Frontend ESLint and TypeScript checks passed.
+- PHP formatting and creator route loading passed.
+
+
 PHONE NUMBER / OTP UPDATE
 
 Files changed

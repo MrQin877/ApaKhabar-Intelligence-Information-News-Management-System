@@ -2,7 +2,8 @@
 
 namespace App\Http\Middleware;
 
-use App\Models\News;
+use App\Models\NewsCategory;
+use App\Models\Notification;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -25,15 +26,18 @@ class HandleInertiaRequests extends Middleware
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
 
-            // ↓ Share unique categories from DB to all pages
-            'categories' => News::all()->pluck('category')->unique()->filter()->sort()->values(),
+            'categories' => fn () => NewsCategory::active()
+                ->orderBy('display_order')->orderBy('name')->pluck('name')->values(),
 
             'unreadNotifications' => function () use ($request) {
-                if (!$request->user()) return 0;
-                return \App\Models\Notification::where('notifiable_id', $request->user()->getKey())
+                if (! $request->user()) {
+                    return 0;
+                }
+
+                return Notification::where('notifiable_id', $request->user()->getKey())
                     ->whereNull('read_at')
                     ->count();
-            }
+            },
         ];
     }
 }

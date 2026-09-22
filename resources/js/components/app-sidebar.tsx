@@ -1,5 +1,16 @@
-import { Link } from '@inertiajs/react';
-import { LayoutGrid, Newspaper, Radio, ChartNoAxesCombined, Bell, Archive, ExternalLink } from 'lucide-react';
+import { Link, usePage } from '@inertiajs/react';
+import {
+    LayoutGrid,
+    Newspaper,
+    Radio,
+    ChartNoAxesCombined,
+    Bell,
+    Archive,
+    Bot,
+    ExternalLink,
+    FolderArchive,
+    Tags,
+} from 'lucide-react';
 import AppLogo from '@/components/app-logo';
 import { NavFooter } from '@/components/nav-footer';
 import { NavMain } from '@/components/nav-main';
@@ -16,20 +27,13 @@ import {
 import { dashboard } from '@/routes';
 import adminRoutes from '@/routes/admin';
 import notifications from '@/routes/notifications';
-import type { NavItem } from '@/types';
-import creatorRoutes from '@/routes/admin/creator';
+import type { NavItem, SharedData } from '@/types';
 
 const mainNavItems: NavItem[] = [
     {
         title: 'Dasbor',
         href: dashboard(),
         icon: LayoutGrid,
-    },
-    
-    {
-        title: 'Pembuat Berita',
-        href: creatorRoutes.create(),
-        icon: Newspaper,
     },
 
     {
@@ -44,7 +48,7 @@ const mainNavItems: NavItem[] = [
             {
                 title: 'Arsip',
                 icon: Archive,
-                href: adminRoutes.broadcasting.archived(),  // ← use route helper
+                href: adminRoutes.broadcasting.archived(), // ← use route helper
             },
         ],
     },
@@ -57,7 +61,6 @@ const mainNavItems: NavItem[] = [
 ];
 
 const footerNavItems: NavItem[] = [
-
     {
         title: 'Lihat Website',
         href: '/',
@@ -72,6 +75,48 @@ const footerNavItems: NavItem[] = [
 ];
 
 export function AppSidebar() {
+    const { auth } = usePage<SharedData>().props;
+    const newsItems: NavItem[] = [
+        {
+            title: 'Daftar Berita',
+            href: '/admin/news',
+            icon: Newspaper,
+        },
+        {
+            title: 'Tulis Manual',
+            href: '/admin/news/manual/create',
+            icon: Newspaper,
+        },
+        ...(auth.user?.role === 'admin'
+            ? [
+                  {
+                      title: 'Kategori Berita',
+                      href: '/admin/categories',
+                      icon: Tags,
+                  },
+              ]
+            : []),
+    ];
+    const visibleMainNavItems: NavItem[] = [
+        mainNavItems[0],
+        {
+            title: 'Asisten AI',
+            href: '/admin/ai-assistant',
+            icon: Bot,
+        },
+        {
+            title: 'Dokumen',
+            href: '/admin/documents',
+            icon: FolderArchive,
+        },
+        {
+            title: 'Berita',
+            icon: Newspaper,
+            items: newsItems,
+        },
+        ...mainNavItems.slice(1),
+    ];
+
     return (
         <Sidebar collapsible="icon" variant="inset">
             <SidebarHeader>
@@ -87,7 +132,7 @@ export function AppSidebar() {
             </SidebarHeader>
 
             <SidebarContent>
-                <NavMain items={mainNavItems} />
+                <NavMain items={visibleMainNavItems} />
             </SidebarContent>
 
             <SidebarFooter>

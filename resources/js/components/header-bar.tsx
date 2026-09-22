@@ -1,3 +1,4 @@
+import { WebsiteLanguage } from '@/components/website-language';
 import { Link, usePage } from '@inertiajs/react';
 import { Bell, LayoutDashboard, LogIn, LogOut, Menu, Palette, Shield, UserPlus, UserCircle } from 'lucide-react';
 import { useInitials } from '@/hooks/use-initials';
@@ -64,6 +65,7 @@ export function HeaderBar() {
 
                 {/* Auth Buttons */}
                 <div className="hidden items-center space-x-2 lg:flex">
+                    <WebsiteLanguage />
                     {auth.user ? (
                         <>
                             {canAccessAdmin && (
@@ -154,6 +156,7 @@ export function HeaderBar() {
                     )}
                 </div>
 
+                <div className="ml-auto mr-3 lg:hidden"><WebsiteLanguage /></div>
                 <Sheet>
                     <SheetTrigger asChild>
                         <Button
