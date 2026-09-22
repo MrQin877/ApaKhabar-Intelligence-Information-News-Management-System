@@ -33,7 +33,8 @@ import {
     MessageScrollerViewport,
 } from '@/components/ui/message-scroller';
 import AppLayout from '@/layouts/app-layout';
-import creatorRoutes from '@/routes/admin/creator';
+import assistantRoutes from '@/routes/admin/assistant';
+import documentRoutes from '@/routes/admin/documents';
 import type { BreadcrumbItem } from '@/types';
 
 // ---------------------------------------------------------------------------
@@ -353,7 +354,7 @@ const STYLES = `
 // Component
 // ---------------------------------------------------------------------------
 const breadcrumbs: BreadcrumbItem[] = [
-    { title: 'News Creator', href: creatorRoutes.create() },
+    { title: 'AI Assistant', href: assistantRoutes.index() },
 ];
 
 export default function NewsCreator({
@@ -656,7 +657,7 @@ export default function NewsCreator({
                             aria-label="Document Library"
                             title="Document Library"
                             onClick={() =>
-                                router.visit(creatorRoutes.archive())
+                                router.visit(documentRoutes.index())
                             }
                         >
                             <Archive size={14} strokeWidth={2} />
@@ -941,7 +942,7 @@ export default function NewsCreator({
                                     className="ang-attach-btn"
                                     aria-label="Attach file"
                                     onClick={() =>
-                                        router.visit(creatorRoutes.archive())
+                                        router.visit(documentRoutes.index())
                                     }
                                 >
                                     <Paperclip size={16} strokeWidth={2} />
