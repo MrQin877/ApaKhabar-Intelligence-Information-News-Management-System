@@ -1,11 +1,21 @@
 <?php
 
-namespace App\Http\Controllers\Api;
+/**
+ * EmergencyBroadcastController.php
+ *
+ * This controller handles the retrieval of emergency broadcast messages.
+ * It provides an endpoint to fetch the latest emergency broadcast sent within
+ * the last 24 hours.
+ *
+ * Used for Home/public display.
+ */
+
+namespace App\Http\Controllers\Home;
 
 use App\Http\Controllers\Controller;
 use App\Models\Broadcast;
 
-class BroadcastController extends Controller
+class EmergencyBroadcastController extends Controller
 {
     public function darurat()
     {

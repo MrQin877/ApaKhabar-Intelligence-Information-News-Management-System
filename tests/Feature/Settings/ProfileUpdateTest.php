@@ -50,6 +50,49 @@ test('email verification status is unchanged when the email address is unchanged
     expect($user->refresh()->email_verified_at)->not->toBeNull();
 });
 
+test('phone-only user can save an email address from their profile', function () {
+    $user = User::factory()->create();
+    $user->emailRecord()->delete();
+
+    $response = $this
+        ->actingAs($user)
+        ->patch(route('profile.update'), [
+            'name' => $user->name,
+            'email' => 'added_' . $user->id . '@example.com',
+        ]);
+
+    $response
+        ->assertSessionHasNoErrors()
+        ->assertRedirect(route('profile.edit'));
+
+    expect($user->fresh()->email)->toBe('added_' . $user->id . '@example.com');
+    expect($user->fresh()->email_verified_at)->toBeNull();
+});
+
+test('phone-only user can delete their account with the correct password', function () {
+    $user = User::factory()->create();
+    $user->emailRecord()->delete();
+    $user->phoneRecord()->create([
+        'phone' => '+1234567890',
+        'phone_verified_at' => now(),
+        'phone_otp' => '123456',
+        'phone_otp_expires_at' => now()->addMinutes(10),
+    ]);
+
+    $response = $this
+        ->actingAs($user)
+        ->delete(route('profile.destroy'), [
+            'password' => 'password',
+        ]);
+
+    $response
+        ->assertSessionHasNoErrors()
+        ->assertRedirect(route('home'));
+
+    $this->assertGuest();
+    expect($user->fresh())->toBeNull();
+});
+
 test('user can delete their account', function () {
     $user = User::factory()->create();
 

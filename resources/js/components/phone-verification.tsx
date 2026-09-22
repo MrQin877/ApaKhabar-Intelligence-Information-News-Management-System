@@ -1,35 +1,23 @@
-import { router, usePage } from '@inertiajs/react'
+import { router, usePage } from '@inertiajs/react';
+import { ShieldCheck, Send, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { PhoneNumberInput } from '@/components/phone-number-input';
+import { Button } from '@/components/ui/button';
 import {
-    Phone, ShieldCheck, ShieldX,
-    Send, RefreshCw, CheckCircle2,
-} from 'lucide-react'
-import { useState, useEffect } from 'react'  
-import { forwardRef } from 'react'
-import PhoneInput from 'react-phone-number-input'
-import 'react-phone-number-input/style.css'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { cn } from '@/lib/utils'
-
-// ── Shadcn-styled input for PhoneInput ────────────────────
-const CustomInput = forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
-    (props, ref) => (
-        <input
-            {...props}
-            ref={ref}
-            className="flex h-9 w-full rounded-md border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/50 px-3 py-1 text-sm placeholder:text-neutral-400 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-green-500 disabled:opacity-50"
-        />
-    )
-)
-CustomInput.displayName = 'CustomInput'
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogDescription,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { isValidPhoneNumber } from '@/lib/phone-validation';
 
 interface PhoneVerificationProps {
-    phone: string | null
-    phoneVerified: boolean
-    otpSent: boolean
-    status?: string
+    phone: string | null;
+    phoneVerified: boolean;
+    otpSent: boolean;
+    status?: string;
 }
 
 export function PhoneVerification({
@@ -38,96 +26,175 @@ export function PhoneVerification({
     otpSent: initialOtpSent,
     status,
 }: PhoneVerificationProps) {
-    const { errors } = usePage().props as any
-    const [phone,       setPhone]       = useState<string>(initialPhone ?? '')
-    const [otp,         setOtp]         = useState('')
-    const [otpSent,     setOtpSent]     = useState(initialOtpSent || status === 'otp-sent')
-    const [processing,  setProcessing]  = useState(false)
-    const [showSuccess, setShowSuccess] = useState(status === 'phone-verified')
+    const { errors, otpRateLimit } = usePage().props as unknown as {
+        errors: Record<string, string>;
+        otpRateLimit: {
+            retryAt: number;
+            dailyLimitReached: boolean;
+            dailyResetAt: number;
+        };
+    };
+    const [currentTime, setCurrentTime] = useState(() => Date.now());
+    const cooldown = Math.max(
+        0,
+        Math.ceil(((otpRateLimit?.retryAt ?? 0) * 1000 - currentTime) / 1000),
+    );
+    const dailyLimitReached = Boolean(
+        otpRateLimit?.dailyLimitReached &&
+        currentTime < otpRateLimit.dailyResetAt * 1000,
+    );
+    const otpRequestBlocked = cooldown > 0 || dailyLimitReached;
+    const dailyMessage =
+        'Terlalu banyak permintaan OTP. Silakan coba lagi besok.';
+    const savedPhone =
+        initialPhone && isValidPhoneNumber(initialPhone) ? initialPhone : '';
+    const [phone, setPhone] = useState<string>(savedPhone);
+    const [otp, setOtp] = useState('');
+    const [otpSent, setOtpSent] = useState(
+        initialOtpSent || status === 'otp-sent',
+    );
+    const [dialogOpen, setDialogOpen] = useState(
+        initialOtpSent || status === 'otp-sent',
+    );
+    const [validationAttempted, setValidationAttempted] = useState(false);
+    const [processing, setProcessing] = useState(false);
+    const [showSuccess, setShowSuccess] = useState(status === 'phone-verified');
+
+    useEffect(() => {
+        const timer = window.setInterval(
+            () => setCurrentTime(Date.now()),
+            1000,
+        );
+
+        return () => window.clearInterval(timer);
+    }, []);
+
+    // Keep drafts local to this visit, including browser back/forward cache restores.
+    useEffect(() => {
+        function resetDraft() {
+            setPhone(savedPhone);
+            setValidationAttempted(false);
+            setOtp('');
+            setOtpSent(false);
+            setDialogOpen(false);
+            setShowSuccess(false);
+        }
+
+        const removeStartListener = router.on('start', (event) => {
+            // OTP requests are POSTs and must retain their existing state.
+            if (
+                event.detail.visit.method === 'get' &&
+                !event.detail.visit.async
+            ) {
+                resetDraft();
+            }
+        });
+        const handlePageShow = (event: PageTransitionEvent) => {
+            if (event.persisted) {
+                resetDraft();
+            }
+        };
+
+        window.addEventListener('pagehide', resetDraft);
+        window.addEventListener('pageshow', handlePageShow);
+
+        return () => {
+            removeStartListener();
+            window.removeEventListener('pagehide', resetDraft);
+            window.removeEventListener('pageshow', handlePageShow);
+        };
+    }, [savedPhone]);
 
     // ── Only use useEffect for the timer (external side effect) ──
     useEffect(() => {
         if (!showSuccess) {
-return
-}
+            return;
+        }
 
         const timer = setTimeout(() => {
-            setShowSuccess(false)
-        }, 3000)
+            setShowSuccess(false);
+        }, 3000);
 
-        return () => clearTimeout(timer)
-    }, [showSuccess])  // ← depends on showSuccess, not status
+        return () => clearTimeout(timer);
+    }, [showSuccess]); // ← depends on showSuccess, not status
 
     function handleSendOtp() {
-        setProcessing(true)
-        router.post('/settings/phone', { phone }, {
-            preserveScroll: true,
-            onSuccess: () => {
-                setOtpSent(true)
-                setProcessing(false)
+        if (
+            processing ||
+            otpRequestBlocked ||
+            (phoneVerified && phone === savedPhone)
+        ) {
+            return;
+        }
+
+        setValidationAttempted(true);
+
+        if (!isValidPhoneNumber(phone)) {
+            return;
+        }
+
+        setProcessing(true);
+        router.post(
+            '/settings/phone',
+            { phone },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    setOtpSent(true);
+                    setDialogOpen(true);
+                    setProcessing(false);
+                },
+                onError: () => setProcessing(false),
             },
-            onError: () => setProcessing(false),
-        })
+        );
     }
 
     function handleVerify() {
-        setProcessing(true)
-        router.post('/settings/phone/verify', { otp }, {
-            preserveScroll: true,
-            onSuccess: () => {
-                setOtp('')
-                setOtpSent(false)
-                setShowSuccess(true)  // ← trigger success + timer
-                setProcessing(false)
+        setProcessing(true);
+        router.post(
+            '/settings/phone/verify',
+            { otp },
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    setOtp('');
+                    setDialogOpen(false);
+                    setOtpSent(false);
+                    setShowSuccess(true); // ← trigger success + timer
+                    setProcessing(false);
+                },
+                onError: () => setProcessing(false),
             },
-            onError: () => setProcessing(false),
-        })
+        );
     }
 
     function handleResend() {
-        setProcessing(true)
-        router.post('/settings/phone/resend', {}, {
-            preserveScroll: true,
-            onSuccess: () => {
-                setOtpSent(true)
-                setProcessing(false)
+        if (processing || otpRequestBlocked) {
+            return;
+        }
+
+        setProcessing(true);
+        router.post(
+            '/settings/phone/resend',
+            {},
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    setOtpSent(true);
+                    setDialogOpen(true);
+                    setProcessing(false);
+                },
+                onError: () => setProcessing(false),
             },
-            onError: () => setProcessing(false),
-        })
+        );
     }
 
     return (
         <div className="space-y-4">
-
-            {/* ── Title + Status badge ── */}
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                    <Phone className="h-4 w-4 text-neutral-500" />
-                    <Label className="text-sm font-medium">Nomor Telepon</Label>
-                </div>
-                {phone && (
-                    <Badge
-                        variant="outline"
-                        className={cn(
-                            "gap-1 text-xs",
-                            phoneVerified
-                                ? "border-green-200 text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-950/30"
-                                : "border-yellow-200 text-yellow-700 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-950/30"
-                        )}
-                    >
-                        {phoneVerified
-                            ? <><ShieldCheck className="h-3 w-3" /> Approved</>
-                            : <><ShieldX className="h-3 w-3" /> Belum diapproved</>
-                        }
-                    </Badge>
-                )}
-            </div>
-
-            {/* ── Success verified message ── */}
-            {showSuccess && (
-                <div className="flex items-center justify-between gap-2 rounded-lg bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 px-3 py-2">
+            {showSuccess && phoneVerified && phone === initialPhone && (
+                <div className="flex items-center justify-between gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 dark:border-green-800 dark:bg-green-950/30">
                     <div className="flex items-center gap-2">
-                        <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
+                        <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" />
                         <p className="text-sm text-green-700 dark:text-green-400">
                             Nomor telepon berjaya disahkan!
                         </p>
@@ -136,7 +203,7 @@ return
                     <button
                         type="button"
                         onClick={() => setShowSuccess(false)}
-                        className="text-green-600 hover:text-green-800 dark:hover:text-green-300 text-sm shrink-0"
+                        className="shrink-0 text-sm text-green-600 hover:text-green-800 dark:hover:text-green-300"
                     >
                         ✕
                     </button>
@@ -144,87 +211,138 @@ return
             )}
 
             {/* ── Phone input + button ── */}
-            <div className="flex flex-col sm:flex-row gap-2">
-                <div className="flex-1 min-w-0">
-                    <PhoneInput
-                        international
-                        addInternationalOption={false}
-                        defaultCountry="MY"
-                        countries={['MY', 'ID']}
-                        value={phone}
-                        onChange={(val) => setPhone(val ?? '')}
-                        inputComponent={CustomInput}
-                        disabled={processing}
-                    />
-                </div>
-                <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={handleSendOtp}
-                    disabled={processing || !phone}
-                    className="w-full sm:w-auto h-9 gap-1.5 text-sm shrink-0"
-                >
-                    <Send className="h-3.5 w-3.5" />
-                    {phoneVerified ? 'Ganti Nomor' : 'Kirim OTP'}
-                </Button>
-            </div>
+            <PhoneNumberInput
+                value={phone}
+                hideLabel
+                instruction="Pilih kode negara dan masukkan nomor telepon anda."
+                showVerificationStatus
+                validationAttempted={validationAttempted}
+                verifiedPhone={phoneVerified ? initialPhone : null}
+                onChange={(value) => {
+                    setPhone(value);
+                    setValidationAttempted(false);
+                    setOtp('');
+                    setOtpSent(false);
+                    setShowSuccess(false);
+                }}
+                disabled={processing}
+                action={
+                    <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={handleSendOtp}
+                        disabled={
+                            processing ||
+                            otpRequestBlocked ||
+                            (phoneVerified && phone === savedPhone)
+                        }
+                        className="h-9 shrink-0 gap-1.5 text-sm"
+                    >
+                        <Send className="h-3.5 w-3.5" />
+                        {cooldown > 0
+                            ? `Tunggu ${cooldown}s`
+                            : phoneVerified
+                              ? 'Ganti Nomor'
+                              : 'Kirim OTP'}
+                    </Button>
+                }
+            />
 
-            {/* ── Phone error message ── */}
-            {errors?.phone && (
-                <p className="text-xs text-red-500 -mt-2">
-                    {errors.phone}
+            {(dailyLimitReached || errors?.phone) && (
+                <p role="alert" className="-mt-2 text-xs text-red-500">
+                    {dailyLimitReached ? dailyMessage : errors.phone}
                 </p>
             )}
 
-            <p className="text-xs text-neutral-400">
-                Pilih kode negara dan masukkan nomor telepon anda.
-            </p>
-
             {/* ── OTP input section ── */}
-            {otpSent && !phoneVerified && (
-                <div className="space-y-3 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/40 p-4">
-                    <p className="text-sm text-neutral-600 dark:text-neutral-400">
-                        Kode OTP telah dikirim ke{' '}
-                        <span className="font-medium text-neutral-900 dark:text-neutral-100">
-                            {phone}
-                        </span>.
-                        Masukkan kode 6 digit di bawah.
-                    </p>
-
-                    <div className="flex gap-2">
-                        <Input
-                            type="text"
-                            inputMode="numeric"
-                            maxLength={6}
-                            placeholder="000000"
-                            value={otp}
-                            onChange={e => setOtp(e.target.value.replace(/\D/g, ''))}
-                            className="flex-1 h-9 text-sm tracking-widest font-mono text-center bg-white dark:bg-neutral-900"
-                        />
-                        <Button
-                            type="button"
-                            size="sm"
-                            onClick={handleVerify}
-                            disabled={processing || otp.length !== 6}
-                            className="h-9 gap-1.5 text-sm bg-green-600 hover:bg-green-700 text-white shrink-0"
-                        >
-                            <ShieldCheck className="h-3.5 w-3.5" />
-                            Approve
-                        </Button>
-                    </div>
-
-                    <button
-                        type="button"
-                        onClick={handleResend}
-                        disabled={processing}
-                        className="flex items-center gap-1.5 text-xs text-neutral-400 hover:text-green-600 transition-colors"
+            {otpSent && !phoneVerified && phone === initialPhone && (
+                <Dialog
+                    open={dialogOpen}
+                    onOpenChange={(open) => {
+                        if (!processing) {
+                            setDialogOpen(open);
+                        }
+                    }}
+                >
+                    <DialogContent
+                        overlayClassName="bg-black/50 backdrop-blur-sm"
+                        closeDisabled={processing}
+                        onEscapeKeyDown={(event) => {
+                            if (processing) {
+                                event.preventDefault();
+                            }
+                        }}
+                        onInteractOutside={(event) => {
+                            if (processing) {
+                                event.preventDefault();
+                            }
+                        }}
                     >
-                        <RefreshCw className="h-3 w-3" />
-                        Kirim OTP
-                    </button>
-                </div>
+                        <DialogHeader>
+                            <DialogTitle>Verifikasi Nomor Telepon</DialogTitle>
+                            <DialogDescription>
+                                Kode OTP telah dikirim ke{' '}
+                                <span className="font-medium text-neutral-900 dark:text-neutral-100">
+                                    {phone}
+                                </span>
+                                . Masukkan kode 6 digit di bawah.
+                            </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="flex gap-2">
+                            <Input
+                                type="text"
+                                aria-label="Kode OTP"
+                                autoComplete="one-time-code"
+                                disabled={processing}
+                                inputMode="numeric"
+                                maxLength={6}
+                                placeholder="000000"
+                                value={otp}
+                                onChange={(e) =>
+                                    setOtp(e.target.value.replace(/\D/g, ''))
+                                }
+                                className="h-9 flex-1 bg-white text-center font-mono text-sm tracking-widest dark:bg-neutral-900"
+                            />
+                            <Button
+                                type="button"
+                                size="sm"
+                                onClick={handleVerify}
+                                disabled={processing || otp.length !== 6}
+                                className="h-9 shrink-0 gap-1.5 bg-green-600 text-sm text-white hover:bg-green-700"
+                            >
+                                <ShieldCheck className="h-3.5 w-3.5" />
+                                Verifikasi
+                            </Button>
+                        </div>
+
+                        {errors?.otp && (
+                            <p className="text-xs text-red-500">{errors.otp}</p>
+                        )}
+
+                        {(dailyLimitReached || errors?.phone) && (
+                            <p role="alert" className="text-xs text-red-500">
+                                {dailyLimitReached
+                                    ? dailyMessage
+                                    : errors.phone}
+                            </p>
+                        )}
+
+                        <button
+                            type="button"
+                            onClick={handleResend}
+                            disabled={processing || otpRequestBlocked}
+                            className="flex items-center gap-1.5 text-xs text-neutral-400 transition-colors hover:text-green-600"
+                        >
+                            <RefreshCw className="h-3 w-3" />
+                            {cooldown > 0
+                                ? `Kirim Ulang OTP (${cooldown}s)`
+                                : 'Kirim Ulang OTP'}
+                        </button>
+                    </DialogContent>
+                </Dialog>
             )}
         </div>
-    )
+    );
 }

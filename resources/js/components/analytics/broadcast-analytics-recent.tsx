@@ -14,7 +14,7 @@ export type RecentItem = {
 
 export function AnalyticsRecent({ recent }: { recent: RecentItem[] }) {
     return (
-        <Card>
+        <Card className="h-full w-full">
             <CardHeader className="pb-2">
                 <CardTitle className="text-base">Pesan Terbaru</CardTitle>
             </CardHeader>
@@ -23,22 +23,24 @@ export function AnalyticsRecent({ recent }: { recent: RecentItem[] }) {
                     <p className="text-xs text-muted-foreground">Belum ada pesan dikirim.</p>
                 ) : (
                     recent.map(item => (
-                        <div key={item.id} className="flex items-start gap-2">
-                            <Badge
-                                variant={item.category === 'darurat' ? 'destructive' : 'outline'}
-                                className="shrink-0 rounded text-xs"
-                            >
-                                {item.category.toUpperCase()}
-                            </Badge>
-                            <div className="space-y-0.5">
+                        <div key={item.id} className="flex flex-col items-start ">
+                            <div className="flex flex-row items-center gap-2">
+                                <Badge
+                                    variant={item.category === 'darurat' ? 'destructive' : 'outline'}
+                                    className="shrink-0 text-xs"
+                                >
+                                    {item.category.toUpperCase()}
+                                </Badge>
+
                                 <p className="text-sm font-medium">{item.title}</p>
-                                <p className="text-xs text-muted-foreground pt-1">
-                                    Dikirim {item.sent_at} ke {item.audience} ·{' '}
-                                    <span className="text-brand-500">
-                                        {item.read} dibuka {item.rate}%
-                                    </span>
-                                </p>
                             </div>
+                            <p className="text-xs text-muted-foreground pt-1">
+                                Dikirim {item.sent_at} ke {item.audience} ·{' '}
+                                <span className="text-brand-500">
+                                    {item.read} dibuka {item.rate}%
+                                </span>
+                            </p>
+                            
                         </div>
                     ))
                 )}

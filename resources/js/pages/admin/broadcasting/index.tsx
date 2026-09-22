@@ -54,55 +54,47 @@ export default function BroadcastPage({ broadcasts, analytics }: Props) {
     return (
         <>
             <Head title="Manajemen Siaran" />
-            <div className="flex h-full flex-1 overflow-auto p-4 gap-4 flex-col lg:flex-row">
-
-                {/* ── Left: Main content ── */}
-                <div className="flex flex-1 flex-col gap-4 min-w-0">
-
-                    {/* Header */}
-                    <div className="flex items-center justify-between">
+            <div className="flex flex-1 p-4">
+                <div className="flex w-full min-h-0 flex-col gap-4">
+                    <div className="flex items-center justify-between gap-4">
                         <div className="flex items-center gap-3">
                             <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card">
                                 <Radio />
                             </div>
                             <div>
                                 <h1 className="text-xl font-bold text-foreground">
-                                    Manajemen Pesan
+                                    Pesan
                                 </h1>
-                                <p className="text-sm text-muted-foreground">
-                                    Kirim pengumuman dan peringatan darurat kepada pengguna Anda.
-                                </p>
+
                             </div>
                         </div>
                         <button
-                            onClick={() => router.visit('/admin/broadcasting/create')} 
-                            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-brand-700">
+                            onClick={() => router.visit('/admin/broadcasting/create')}
+                            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-brand-700"
+                        >
                             + Pesan Baru
                         </button>
                     </div>
 
-                    {/* Table — DataTable now owns filtering, sorting, and pagination */}
-                    <div className="overflow-hidden rounded-xl border border-border bg-card p-4">
+                    <div className="w-full">
                         {loading ? (
-                            <BroadcastSkeleton /> 
+                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                                <Skeleton className="h-28 w-full rounded-xl" />
+                                <Skeleton className="h-28 w-full rounded-xl" />
+                                <Skeleton className="h-28 w-full rounded-xl" />
+                            </div>
+                        ) : (
+                            <AnalyticsSidebar analytics={analytics} />
+                        )}
+                    </div>
+
+                    <div className="overflow-auto rounded-xl border border-border bg-card">
+                        {loading ? (
+                            <BroadcastSkeleton />
                         ) : (
                             <DataTable columns={columns} data={broadcasts} />
                         )}
                     </div>
-                </div>
-
-                {/* ── Right: Analytics sidebar ── */}
-                <div className="w-full lg:w-64 lg:shrink-0">
-                    {loading ? (
-                        // ← Analytics skeleton
-                        <div className="space-y-4">
-                            <Skeleton className="h-32 w-full rounded-xl" />
-                            <Skeleton className="h-48 w-full rounded-xl" />
-                            <Skeleton className="h-24 w-full rounded-xl" />
-                        </div>
-                    ) : (
-                        <AnalyticsSidebar analytics={analytics} />
-                    )}
                 </div>
             </div>
         </>
@@ -112,3 +104,5 @@ export default function BroadcastPage({ broadcasts, analytics }: Props) {
 BroadcastPage.layout = (page: React.ReactNode) => (
     <AppLayout breadcrumbs={breadcrumbs}>{page}</AppLayout>
 );
+//<p className="text-sm text-muted-foreground">Kirim pengumuman dan peringatan darurat kepada pengguna Anda. </p>
+//Manajemen 

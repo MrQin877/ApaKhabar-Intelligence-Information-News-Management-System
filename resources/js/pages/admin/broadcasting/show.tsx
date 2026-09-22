@@ -1,11 +1,20 @@
-import { Head, router } from '@inertiajs/react'
+import { Head, router } from '@inertiajs/react';
 import {
-    ArrowLeft, Megaphone, Siren, Send, Archive,
-    Clock, Users, User, MessageSquare, Smartphone,
-    Radio, CalendarDays, CheckCheck, BarChart2,
-    MailOpen, AlertTriangle,
-} from 'lucide-react'
-import { useEffect, useState } from 'react'
+    ArrowLeft,
+    Send,
+    Archive,
+    ArchiveRestore,
+    Clock,
+    Users,
+    User,
+    MessageSquare,
+    Smartphone,
+    Radio,
+    CalendarDays,
+    CheckCheck,
+    AlertTriangle,
+} from 'lucide-react';
+import { useEffect, useState } from 'react';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -16,115 +25,148 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
     AlertDialogTrigger,
-} from '@/components/ui/alert-dialog'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Separator } from '@/components/ui/separator'
-import { Skeleton } from '@/components/ui/skeleton'
-import AppLayout from '@/layouts/app-layout'
-import { cn } from '@/lib/utils'
-import type { BreadcrumbItem } from '@/types'
- 
+} from '@/components/ui/alert-dialog';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
+import AppLayout from '@/layouts/app-layout';
+import { cn } from '@/lib/utils';
+import type { BreadcrumbItem } from '@/types';
+
 // ── Types ──────────────────────────────────────────────────
 export type BroadcastDetail = {
-    id: number
-    title: string
-    message: string
-    category: 'pengumuman' | 'darurat'
-    channels: string[]
-    audience: 'semua' | 'karyawan'
-    status: 'dikirim' | 'terjadwal' | 'tertunda'
-    send_mode: 'now' | 'scheduled'
-    scheduled_at: string | null
-    sent_at: string | null
-    archived_at: string | null
-    created_at: string
-    creator: { id: string | null; name: string }
+    id: string;
+    title: string;
+    message: string;
+    category: 'pengumuman' | 'darurat';
+    channels: string[];
+    audience: 'semua' | 'karyawan';
+    status: 'dikirim' | 'terjadwal' | 'tertunda';
+    send_mode: 'now' | 'scheduled';
+    scheduled_at: string | null;
+    sent_at: string | null;
+    archived_at: string | null;
+    created_at: string;
+    creator: { id: string | null; name: string };
     stats: {
-        total_sent: number
-        total_read: number
-        read_rate: number
-    }
-}
- 
+        total_sent: number;
+        total_read: number;
+        read_rate: number;
+    };
+};
+
 type Props = {
-    broadcast: BroadcastDetail
-}
- 
+    broadcast: BroadcastDetail;
+};
+
 // ── Helpers ────────────────────────────────────────────────
 const statusMap = {
-    dikirim:   { label: 'Dikirim',   className: 'bg-success-bg text-success-text border-success-border', dot: 'bg-brand-500' },
-    terjadwal: { label: 'Terjadwal', className: 'bg-warning-bg text-warning-text border-warning-border', dot: 'bg-warning-500' },
-    tertunda:  { label: 'Tertunda',  className: 'bg-danger-bg text-danger-text border-danger-border', dot: 'bg-danger-500' },
-}
- 
+    dikirim: {
+        label: 'Dikirim',
+        className: 'bg-success-bg text-success-text border-success-border',
+        dot: 'bg-brand-500',
+    },
+    terjadwal: {
+        label: 'Terjadwal',
+        className: 'bg-warning-bg text-warning-text border-warning-border',
+        dot: 'bg-warning-500',
+    },
+    tertunda: {
+        label: 'Tertunda',
+        className: 'bg-danger-bg text-danger-text border-danger-border',
+        dot: 'bg-danger-500',
+    },
+};
+
 const channelMap: Record<string, { icon: React.ReactNode; label: string }> = {
-    whatsapp: { icon: <MessageSquare className="h-4 w-4" />, label: 'WhatsApp' },
-    sms:      { icon: <Smartphone className="h-4 w-4" />,    label: 'SMS'      },
-    aplikasi: { icon: <Radio className="h-4 w-4" />,          label: 'Aplikasi' },
-}
- 
+    whatsapp: {
+        icon: <MessageSquare className="h-4 w-4" />,
+        label: 'WhatsApp',
+    },
+    sms: { icon: <Smartphone className="h-4 w-4" />, label: 'SMS' },
+    aplikasi: { icon: <Radio className="h-4 w-4" />, label: 'Aplikasi' },
+};
+
 // ── Main Page ──────────────────────────────────────────────
 export default function BroadcastShowPage({ broadcast }: Props) {
-    const [loading, setLoading] = useState(false) 
+    const [loading, setLoading] = useState(false);
 
     // ← Listen to Inertia navigation events
     useEffect(() => {
-        const startLoading = router.on('start',  () => setLoading(true))
-        const stopLoading  = router.on('finish', () => setLoading(false))
+        const startLoading = router.on('start', () => setLoading(true));
+        const stopLoading = router.on('finish', () => setLoading(false));
 
         return () => {
-            startLoading()
-            stopLoading()
-        }
-    }, [])
- 
-    const status = statusMap[broadcast.status]
-    const isDarurat = broadcast.category === 'darurat'
-    const canResend = broadcast.status === 'dikirim'
-    const canEdit   = broadcast.status === 'tertunda' || broadcast.status === 'terjadwal'
-    const isArchived = !!broadcast.archived_at
- 
+            startLoading();
+            stopLoading();
+        };
+    }, []);
+
+    const status = statusMap[broadcast.status];
+    const isDarurat = broadcast.category === 'darurat';
+    const canResend = broadcast.status === 'dikirim';
+    const canEdit =
+        broadcast.status === 'tertunda' || broadcast.status === 'terjadwal';
+    const isArchived = !!broadcast.archived_at;
+
     function handleResend() {
-        router.post(`/admin/broadcasting/${broadcast.id}/resend`, {}, {
-            preserveScroll: true,
-        })
+        router.post(
+            `/admin/broadcasting/${broadcast.id}/resend`,
+            {},
+            {
+                preserveScroll: true,
+            },
+        );
     }
- 
+
     function handleArchive() {
-        router.post(`/admin/broadcasting/${broadcast.id}/archive`, {}, {
-            onSuccess: () => router.visit('/admin/broadcasting'),
-        })
+        router.post(
+            `/admin/broadcasting/${broadcast.id}/archive`,
+            {},
+            {
+                onSuccess: () => router.visit('/admin/broadcasting'),
+            },
+        );
     }
- 
+
     function handleRestore() {
-        router.post(`/admin/broadcasting/${broadcast.id}/restore`, {}, {
-            preserveScroll: true,
-        })
+        router.post(
+            `/admin/broadcasting/${broadcast.id}/restore`,
+            {},
+            {
+                preserveScroll: true,
+            },
+        );
     }
- 
+
     return (
         <>
             <Head title={broadcast.title} />
-            <div className="flex flex-1 flex-col gap-4 p-4 max-w-3xl mx-auto w-full">
- 
+            <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 p-4 sm:p-6">
                 {/* ── Top bar ── */}
-                <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex flex-wrap items-center justify-between gap-3">
                     <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => router.visit('/admin/broadcasting')}
-                        className="gap-1.5 text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 -ml-2"
+                        onClick={() =>
+                            router.visit(
+                                isArchived
+                                    ? '/admin/broadcasting/archived'
+                                    : '/admin/broadcasting',
+                            )
+                        }
+                        className="-ml-2 gap-1.5 text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
                     >
                         <ArrowLeft className="h-4 w-4" />
-                        Kembali ke Daftar
+                        {isArchived ? 'Kembali ke Arsip' : 'Kembali ke Daftar'}
                     </Button>
- 
+
                     <div className="flex items-center gap-2">
-                        {canResend && (
+                        {canResend && !isArchived && (
                             <Button
                                 size="sm"
                                 variant="outline"
+                                disabled={loading}
                                 onClick={handleResend}
                                 className="gap-1.5 text-sm"
                             >
@@ -132,41 +174,56 @@ export default function BroadcastShowPage({ broadcast }: Props) {
                                 Kirim Ulang
                             </Button>
                         )}
- 
-                        {canEdit && (
+
+                        {canEdit && !isArchived && (
                             <Button
                                 size="sm"
                                 variant="outline"
-                                onClick={() => router.visit(`/admin/broadcasting/${broadcast.id}/edit`)}
+                                onClick={() =>
+                                    router.visit(
+                                        `/admin/broadcasting/${broadcast.id}/edit`,
+                                    )
+                                }
                                 className="gap-1.5 text-sm"
                             >
                                 Edit
                             </Button>
                         )}
- 
+
                         {!isArchived ? (
                             <AlertDialog>
                                 <AlertDialogTrigger asChild>
-                                    <Button size="sm" variant="outline" className="gap-1.5 text-sm text-neutral-600">
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="gap-1.5 text-sm text-neutral-600"
+                                    >
                                         <Archive className="h-3.5 w-3.5" />
                                         Arsipkan
                                     </Button>
                                 </AlertDialogTrigger>
                                 <AlertDialogContent>
                                     <AlertDialogHeader>
-                                        <AlertDialogTitle>Arsipkan siaran ini?</AlertDialogTitle>
+                                        <AlertDialogTitle>
+                                            Arsipkan siaran ini?
+                                        </AlertDialogTitle>
                                         <AlertDialogDescription>
-                                            Siaran yang diarsipkan tidak akan ditampilkan dalam senarai utama,
-                                            tetapi masih boleh dipulihkan dari halaman Arsip.
+                                            Siaran yang diarsipkan tidak akan
+                                            ditampilkan dalam senarai utama,
+                                            tetapi masih boleh dipulihkan dari
+                                            halaman Arsip.
                                         </AlertDialogDescription>
                                     </AlertDialogHeader>
                                     <AlertDialogFooter>
-                                        <AlertDialogCancel>Batal</AlertDialogCancel>
+                                        <AlertDialogCancel>
+                                            Batal
+                                        </AlertDialogCancel>
                                         <AlertDialogAction
+                                            disabled={loading}
                                             onClick={handleArchive}
-                                            className="bg-neutral-700 hover:bg-neutral-800 text-white"
+                                            className="bg-neutral-700 text-white hover:bg-neutral-800"
                                         >
-                                            <Archive className="h-3.5 w-3.5 mr-1.5" />
+                                            <Archive className="mr-1.5 h-3.5 w-3.5" />
                                             Ya, Arsipkan
                                         </AlertDialogAction>
                                     </AlertDialogFooter>
@@ -176,252 +233,219 @@ export default function BroadcastShowPage({ broadcast }: Props) {
                             <Button
                                 size="sm"
                                 variant="outline"
+                                disabled={loading}
                                 onClick={handleRestore}
                                 className="gap-1.5 text-sm text-green-600"
                             >
+                                <ArchiveRestore className="size-4" />
                                 Pulihkan
                             </Button>
                         )}
                     </div>
                 </div>
- 
-                {/* ── Main card ── */}
-                {loading ? (
-                // ── Skeleton while loading ──
-                <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 overflow-hidden">
-                    {/* Header skeleton */}
-                    <div className="px-6 py-5 border-b border-neutral-100 dark:border-neutral-800">
-                        <div className="flex items-start gap-4">
-                            <Skeleton className="h-10 w-10 rounded-xl shrink-0" />
-                            <div className="flex-1 space-y-2">
-                                <Skeleton className="h-6 w-48 rounded" />
-                                <div className="flex gap-2">
-                                    <Skeleton className="h-5 w-20 rounded-full" />
-                                    <Skeleton className="h-4 w-32 rounded" />
-                                </div>
-                            </div>
-                        </div>
-                    </div>
 
-                    {/* Message skeleton */}
-                    <div className="px-6 py-5 space-y-2">
-                        <Skeleton className="h-3 w-20 rounded" />
-                        <Skeleton className="h-4 w-full rounded" />
-                        <Skeleton className="h-4 w-3/4 rounded" />
-                        <Skeleton className="h-4 w-5/6 rounded" />
-                    </div>
-
-                    <Separator className="dark:bg-neutral-800" />
-
-                    {/* Meta grid skeleton */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-0 divide-y sm:divide-y-0 sm:divide-x divide-neutral-100 dark:divide-neutral-800">
-                        {Array.from({ length: 4 }).map((_, i) => (
-                            <div key={i} className="px-6 py-4 space-y-2">
-                                <Skeleton className="h-3 w-16 rounded" />
-                                <Skeleton className="h-4 w-28 rounded" />
-                            </div>
-                        ))}
-                    </div>
-
-                    <Separator className="dark:bg-neutral-800" />
-
-                    {/* Stats skeleton */}
-                    <div className="px-6 py-5 space-y-4">
-                        <Skeleton className="h-3 w-32 rounded" />
-                        <div className="grid grid-cols-3 gap-4">
-                            {Array.from({ length: 3 }).map((_, i) => (
-                                <div key={i} className="rounded-lg border border-neutral-100 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800/40 p-4 flex flex-col items-center gap-2">
-                                    <Skeleton className="h-5 w-5 rounded" />
-                                    <Skeleton className="h-8 w-12 rounded" />
-                                    <Skeleton className="h-3 w-20 rounded" />
-                                </div>
-                            ))}
-                        </div>
-                        <Skeleton className="h-2 w-full rounded-full" />
-                    </div>
-                </div>
-                ) : (
-                <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 overflow-hidden">
- 
-                    {/* Header band */}
-                    <div className={cn(
-                        "px-6 py-5 border-b border-neutral-100 dark:border-neutral-800",
-                        isDarurat ? "bg-red-50/50 dark:bg-red-950/20" : "bg-green-50/50 dark:bg-green-950/20"
-                    )}>
-                        <div className="flex items-start gap-4">
-                            <div className={cn(
-                                "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
-                                isDarurat
-                                    ? "bg-red-100 dark:bg-red-900/40"
-                                    : "bg-green-100 dark:bg-green-900/40"
-                            )}>
-                                {isDarurat
-                                    ? <Siren className="h-5 w-5 text-red-500" />
-                                    : <Megaphone className="h-5 w-5 text-green-600" />
-                                }
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap mb-1">
-                                    <h1 className="text-lg font-bold text-neutral-900 dark:text-neutral-100 leading-snug">
-                                        {broadcast.title}
-                                    </h1>
-                                    {isDarurat && (
-                                        <Badge variant="destructive" className="gap-1 text-xs shrink-0">
-                                            <AlertTriangle className="h-3 w-3" /> Darurat
-                                        </Badge>
-                                    )}
-                                </div>
-                                <div className="flex items-center gap-3 flex-wrap">
-                                    <span className={cn(
-                                        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium",
-                                        status.className
-                                    )}>
-                                        <span className={cn("h-1.5 w-1.5 rounded-full", status.dot)} />
-                                        {status.label}
-                                    </span>
-                                    <span className="text-xs text-neutral-400">
-                                        Dibuat oleh {broadcast.creator.name}
-                                    </span>
-                                    <span className="text-xs text-neutral-400">
-                                        {broadcast.created_at}
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
- 
-                    {/* Message body */}
-                    <div className="px-6 py-5">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-2">
-                            Isi Pesan
-                        </p>
-                        <p className="text-sm text-neutral-700 dark:text-neutral-300 leading-relaxed whitespace-pre-wrap">
-                            {broadcast.message}
-                        </p>
-                    </div>
- 
-                    <Separator className="dark:bg-neutral-800" />
- 
-                    {/* Meta grid */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-0 divide-y sm:divide-y-0 sm:divide-x divide-neutral-100 dark:divide-neutral-800">
- 
-                        {/* Audience */}
-                        <div className="px-6 py-4 space-y-1">
-                            <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Penerima</p>
-                            <div className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-300">
-                                {broadcast.audience === 'semua'
-                                    ? <><Users className="h-4 w-4 text-neutral-400" /> Semua Pengguna</>
-                                    : <><User className="h-4 w-4 text-neutral-400" /> Karyawan</>
-                                }
-                            </div>
-                        </div>
- 
-                        {/* Channels */}
-                        <div className="px-6 py-4 space-y-1">
-                            <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Saluran</p>
-                            <div className="flex items-center gap-2 flex-wrap">
-                                {broadcast.channels.map(ch => (
-                                    <span key={ch} className="inline-flex items-center gap-1.5 rounded-md border border-neutral-200 dark:border-neutral-700 px-2 py-1 text-xs text-neutral-600 dark:text-neutral-400">
-                                        {channelMap[ch]?.icon}
-                                        {channelMap[ch]?.label ?? ch}
-                                    </span>
-                                ))}
-                            </div>
-                        </div>
- 
-                        {/* Sent time */}
-                        <div className="px-6 py-4 space-y-1">
-                            <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
-                                {broadcast.send_mode === 'scheduled' ? 'Dijadwalkan' : 'Waktu Terkirim'}
+                <section className="rounded-lg border bg-muted/30 p-4 sm:p-5">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                            <h1 className="text-lg leading-snug font-semibold break-words">
+                                {broadcast.title}
+                            </h1>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                                Dibuat oleh {broadcast.creator.name} ·{' '}
+                                {broadcast.created_at}
                             </p>
-                            <div className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-300">
-                                {broadcast.send_mode === 'scheduled'
-                                    ? <><CalendarDays className="h-4 w-4 text-neutral-400" /> {broadcast.scheduled_at ?? '—'}</>
-                                    : <><Clock className="h-4 w-4 text-neutral-400" /> {broadcast.sent_at ?? '—'}</>
-                                }
-                            </div>
                         </div>
- 
-                        {/* Category */}
-                        <div className="px-6 py-4 space-y-1">
-                            <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Kategori</p>
-                            <div className="flex items-center gap-2 text-sm text-neutral-700 dark:text-neutral-300">
-                                {isDarurat
-                                    ? <><Siren className="h-4 w-4 text-red-400" /> Darurat</>
-                                    : <><Megaphone className="h-4 w-4 text-green-500" /> Pengumuman</>
-                                }
-                            </div>
-                        </div>
+                        {isArchived && (
+                            <Badge variant="secondary">Diarsipkan</Badge>
+                        )}
                     </div>
- 
-                    <Separator className="dark:bg-neutral-800" />
- 
-                    {/* Stats */}
-                    <div className="px-6 py-5">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-4">
-                            Statistik Pengiriman
-                        </p>
-                        <div className="grid grid-cols-3 gap-4">
-                            <div className="rounded-lg border border-neutral-100 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800/40 p-4 text-center">
-                                <div className="flex justify-center mb-2">
-                                    <Send className="h-5 w-5 text-neutral-400" />
-                                </div>
-                                <p className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">
-                                    {broadcast.stats.total_sent}
-                                </p>
-                                <p className="text-xs text-neutral-400 mt-0.5">Total Terkirim</p>
-                            </div>
-                            <div className="rounded-lg border border-neutral-100 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800/40 p-4 text-center">
-                                <div className="flex justify-center mb-2">
-                                    <MailOpen className="h-5 w-5 text-neutral-400" />
-                                </div>
-                                <p className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">
-                                    {broadcast.stats.total_read}
-                                </p>
-                                <p className="text-xs text-neutral-400 mt-0.5">Telah Dibaca</p>
-                            </div>
-                            <div className="rounded-lg border border-neutral-100 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800/40 p-4 text-center">
-                                <div className="flex justify-center mb-2">
-                                    <BarChart2 className="h-5 w-5 text-neutral-400" />
-                                </div>
-                                <p className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">
-                                    {broadcast.stats.read_rate}%
-                                </p>
-                                <p className="text-xs text-neutral-400 mt-0.5">Rate Diakses</p>
-                            </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                        <Badge
+                            variant="outline"
+                            className={
+                                isDarurat
+                                    ? 'border-red-200 text-red-600 dark:border-red-900 dark:text-red-400'
+                                    : ''
+                            }
+                        >
+                            {isDarurat && <AlertTriangle className="size-3" />}
+                            {isDarurat ? 'Darurat' : 'Pengumuman'}
+                        </Badge>
+                        <Badge variant="outline" className={status.className}>
+                            <span
+                                className={cn(
+                                    'size-1.5 rounded-full',
+                                    status.dot,
+                                )}
+                            />
+                            {status.label}
+                        </Badge>
+                    </div>
+                </section>
+                <section aria-labelledby="message-heading">
+                    <h2
+                        id="message-heading"
+                        className="mb-3 text-sm font-semibold"
+                    >
+                        Isi pesan
+                    </h2>
+                    <p className="text-sm leading-relaxed break-words whitespace-pre-wrap text-muted-foreground">
+                        {broadcast.message}
+                    </p>
+                </section>
+                <section aria-labelledby="delivery-heading">
+                    <h2
+                        id="delivery-heading"
+                        className="mb-4 text-sm font-semibold"
+                    >
+                        Informasi pengiriman
+                    </h2>
+                    <dl className="grid grid-cols-1 gap-5 text-sm sm:grid-cols-2">
+                        <div>
+                            <dt className="mb-1.5 text-xs text-muted-foreground">
+                                Penerima
+                            </dt>
+                            <dd className="flex items-center gap-2">
+                                {broadcast.audience === 'semua' ? (
+                                    <Users className="size-4 text-muted-foreground" />
+                                ) : (
+                                    <User className="size-4 text-muted-foreground" />
+                                )}
+                                {broadcast.audience === 'semua'
+                                    ? 'Semua Pengguna'
+                                    : 'Karyawan'}
+                            </dd>
                         </div>
- 
-                        {/* Read rate bar */}
+                        <div>
+                            <dt className="mb-1.5 text-xs text-muted-foreground">
+                                Saluran
+                            </dt>
+                            <dd className="flex flex-wrap gap-2">
+                                {broadcast.channels.length === 0
+                                    ? '—'
+                                    : broadcast.channels.map((ch) => (
+                                          <Badge
+                                              key={ch}
+                                              variant="outline"
+                                              className="gap-1.5 py-1 font-normal"
+                                          >
+                                              {channelMap[ch]?.icon}
+                                              {channelMap[ch]?.label ?? ch}
+                                          </Badge>
+                                      ))}
+                            </dd>
+                        </div>
+                        <div>
+                            <dt className="mb-1.5 text-xs text-muted-foreground">
+                                {!broadcast.sent_at &&
+                                broadcast.send_mode === 'scheduled'
+                                    ? 'Dijadwalkan'
+                                    : 'Waktu terkirim'}
+                            </dt>
+                            <dd className="flex items-center gap-2">
+                                {!broadcast.sent_at &&
+                                broadcast.send_mode === 'scheduled' ? (
+                                    <>
+                                        <CalendarDays className="size-4 shrink-0 text-muted-foreground" />
+                                        {broadcast.scheduled_at ?? '—'}
+                                    </>
+                                ) : (
+                                    <>
+                                        <Clock className="size-4 shrink-0 text-muted-foreground" />
+                                        {broadcast.sent_at ?? '—'}
+                                    </>
+                                )}
+                            </dd>
+                        </div>
+                        {isArchived && (
+                            <div>
+                                <dt className="mb-1.5 text-xs text-muted-foreground">
+                                    Diarsipkan
+                                </dt>
+                                <dd className="flex items-center gap-2">
+                                    <Archive className="size-4 shrink-0 text-muted-foreground" />
+                                    {broadcast.archived_at}
+                                </dd>
+                            </div>
+                        )}
+                    </dl>
+                </section>
+                <Separator />
+                <section aria-labelledby="stats-heading">
+                    <h2
+                        id="stats-heading"
+                        className="mb-3 text-sm font-semibold"
+                    >
+                        Statistik pengiriman
+                    </h2>
+                    <div className="rounded-lg border p-4 sm:p-5">
+                        <dl className="grid grid-cols-2 gap-4">
+                            <div>
+                                <dt className="text-xs text-muted-foreground">
+                                    Total terkirim
+                                </dt>
+                                <dd className="mt-1 text-sm font-medium tabular-nums">
+                                    {broadcast.stats.total_sent}
+                                </dd>
+                            </div>
+                            <div>
+                                <dt className="text-xs text-muted-foreground">
+                                    Telah dibaca
+                                </dt>
+                                <dd className="mt-1 text-sm font-medium tabular-nums">
+                                    {broadcast.stats.total_read}
+                                </dd>
+                            </div>
+                        </dl>
                         {broadcast.stats.total_sent > 0 && (
-                            <div className="mt-4">
-                                <div className="flex items-center justify-between text-xs text-neutral-400 mb-1.5">
-                                    <span className="flex items-center gap-1">
-                                        <CheckCheck className="h-3 w-3" /> Rate diakses keseluruhan
+                            <div className="mt-5">
+                                <div className="mb-2 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                                    <span className="flex items-center gap-1.5">
+                                        <CheckCheck className="size-3.5 shrink-0" />
+                                        Rate diakses keseluruhan
                                     </span>
                                     <span>{broadcast.stats.read_rate}%</span>
                                 </div>
-                                <div className="h-2 w-full rounded-full bg-neutral-100 dark:bg-neutral-800 overflow-hidden">
+                                <div
+                                    role="progressbar"
+                                    aria-label="Rate diakses keseluruhan"
+                                    aria-valuenow={broadcast.stats.read_rate}
+                                    aria-valuemin={0}
+                                    aria-valuemax={100}
+                                    className="h-2 overflow-hidden rounded-full bg-muted"
+                                >
                                     <div
-                                        className="h-full rounded-full bg-green-500 transition-all duration-500"
-                                        style={{ width: `${broadcast.stats.read_rate}%` }}
+                                        className="h-full rounded-full bg-green-500"
+                                        style={{
+                                            width: `${Math.min(100, Math.max(0, broadcast.stats.read_rate))}%`,
+                                        }}
                                     />
                                 </div>
                             </div>
                         )}
                     </div>
-                </div>)}
+                </section>
+                {isArchived && (
+                    <p className="text-xs text-muted-foreground">
+                        Pulihkan mengembalikan pesan ke Semua Pesan tanpa
+                        mengirim ulang.
+                    </p>
+                )}
             </div>
         </>
-    )
+    );
 }
- 
+
 BroadcastShowPage.layout = (page: React.ReactElement) => {
-    const { broadcast } = page.props as Props
+    const { broadcast } = page.props as Props;
 
     const breadcrumbs: BreadcrumbItem[] = [
-        { title: 'Pesan',           href: '/admin/broadcasting' },
-        { title: broadcast.title,   href: '#' },
-    ]
+        { title: 'Pesan', href: '/admin/broadcasting' },
+        ...(broadcast.archived_at
+            ? [{ title: 'Arsip', href: '/admin/broadcasting/archived' }]
+            : []),
+        { title: broadcast.title, href: '#' },
+    ];
 
-    return <AppLayout breadcrumbs={breadcrumbs}>{page}</AppLayout>
-}
+    return <AppLayout breadcrumbs={breadcrumbs}>{page}</AppLayout>;
+};

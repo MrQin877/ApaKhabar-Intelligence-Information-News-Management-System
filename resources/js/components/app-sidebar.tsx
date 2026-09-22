@@ -37,7 +37,7 @@ const mainNavItems: NavItem[] = [
         icon: Radio,
         items: [
             {
-                title: 'Semua Pesan',
+                title: 'Daftar Pesan',
                 icon: Radio,
                 href: adminRoutes.broadcasting.index(),
             },

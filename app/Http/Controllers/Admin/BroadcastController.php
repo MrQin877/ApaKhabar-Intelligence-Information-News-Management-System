@@ -2,6 +2,16 @@
 
 namespace App\Http\Controllers\Admin;
 
+/**
+ * BroadcastController.php
+ *
+ * This controller manages the broadcasting of messages to users, including
+ * creating, sending, archiving, and restoring broadcasts. It also provides
+ * analytics on sent broadcasts.
+ *
+ * Used for Admin Panel endpoints.
+ */
+
 use App\Http\Controllers\Controller;
 use App\Models\Broadcast;
 use App\Models\BroadcastCategory;
@@ -37,9 +47,10 @@ class BroadcastController extends Controller
                     'terjadwal' => 'Terjadwal',
                     default     => 'Tertunda',
                 },
-                'sent_time' => $b->sent_at?->format('h:i A')
-                            ?? $b->scheduled_at?->format('h:i A')
-                            ?? $b->created_at->format('h:i A'),
+                'sent_time' => $b->sent_at?->translatedFormat('d M Y, h:i A')
+                            ?? $b->scheduled_at?->translatedFormat('d M Y, h:i A')
+                            ?? $b->created_at->translatedFormat('d M Y, h:i A'),
+                'sent_timestamp' => ($b->sent_at ?? $b->scheduled_at ?? $b->created_at)->getTimestamp(),
             ]);
 
         // ── Analytics ──────────────────────────────────────────
@@ -187,7 +198,7 @@ class BroadcastController extends Controller
                 'send_mode'    => $broadcast->send_mode,
                 'scheduled_at' => $broadcast->scheduled_at?->translatedFormat('d M Y, H:i'),
                 'sent_at'      => $broadcast->sent_at?->translatedFormat('d M Y, H:i'),
-                'archived_at'  => $broadcast->archived_at,
+                'archived_at'  => $broadcast->archived_at?->translatedFormat('d M Y, H:i'),
                 'created_at'   => $broadcast->created_at->translatedFormat('d M Y, H:i'),
                 'creator'      => $broadcast->creator
                     ? ['id' => (string) $broadcast->creator->getKey(), 'name' => $broadcast->creator->name]

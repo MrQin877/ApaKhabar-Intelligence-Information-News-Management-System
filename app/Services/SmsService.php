@@ -45,6 +45,33 @@ class SmsService
         }
     }
 
+    /** Mobile delivery reports provider rejection and has a bounded timeout. */
+    public function sendMobileOtp(string $to, string $message): bool
+    {
+        if (! config('services.bulk360.app_key') || ! config('services.bulk360.app_secret')) {
+            return false;
+        }
+
+        try {
+            // Same Bulk360 gateway/configuration as sendSms; leave the web path unchanged.
+            $response = Http::connectTimeout(5)->timeout(15)->get('https://sms.360.my/gw/bulk360/v3_0/send.php', [
+                'user' => config('services.bulk360.app_key'),
+                'pass' => config('services.bulk360.app_secret'),
+                'from' => config('services.bulk360.from'),
+                'to' => ltrim($to, '+'),
+                'text' => $message,
+            ]);
+
+            return $response->successful() && (int) $response->json('code') === 200;
+        } catch (\Throwable) {
+            // Do not log URLs/exception messages containing provider credentials or OTPs.
+            Log::warning('Mobile OTP provider request failed.');
+
+            return false;
+        }
+    }
+
+
     public function sendWhatsAppGroup(string $groupId, string $message): bool
     {
         try {

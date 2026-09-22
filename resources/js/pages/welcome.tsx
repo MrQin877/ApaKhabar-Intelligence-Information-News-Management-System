@@ -55,7 +55,7 @@ export default function Welcome({
 
                 {/* ── Darurat Broadcast Bar — shows 24 hours only ── */}
                 {breakingNews && timeRemaining > 0 && (
-                    <div className="border-b border-danger-border bg-danger-bg py-2 overflow-hidden">
+                    <div className="border-b border-danger-border/50 bg-danger-bg py-2 overflow-hidden">
                         <div
                             style={{
                                 display: 'inline-flex',
@@ -65,7 +65,7 @@ export default function Welcome({
                         >
                             <span className="inline-flex items-center gap-3 px-8">
                                 {/* Darurat badge */}
-                                <span className="inline-flex shrink-0 items-center gap-1 rounded border border-danger-border bg-danger-100 px-2 py-1 text-sm font-bold text-danger-text">
+                                <span className="inline-flex shrink-0 items-center gap-1 rounded border border-danger-border bg-danger-text/10 px-2 py-1 text-sm font-bold text-danger-text">
                                     <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-danger-500" />
                                     DARURAT
                                 </span>

@@ -1,10 +1,18 @@
-import { Link, usePage } from '@inertiajs/react'
-import { ChevronRight } from 'lucide-react'
+import { Link, usePage } from '@inertiajs/react';
+import { ChevronRight } from 'lucide-react';
 import {
     Collapsible,
     CollapsibleContent,
     CollapsibleTrigger,
-} from '@/components/ui/collapsible'
+} from '@/components/ui/collapsible';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
     SidebarGroup,
     SidebarGroupLabel,
@@ -14,31 +22,97 @@ import {
     SidebarMenuSub,
     SidebarMenuSubButton,
     SidebarMenuSubItem,
-} from '@/components/ui/sidebar'
-import { toUrl } from '@/lib/utils'
-import type { NavItem } from '@/types'
+    useSidebar,
+} from '@/components/ui/sidebar';
+import { toUrl } from '@/lib/utils';
+import type { NavItem } from '@/types';
 
 export function NavMain({ items = [] }: { items: NavItem[] }) {
-    const { url } = usePage()
+    const { url } = usePage();
+    const { state, isMobile } = useSidebar();
+    const isCollapsed = state === 'collapsed' && !isMobile;
+    const isCurrentPage = (href: NonNullable<NavItem['href']>) =>
+        url.split(/[?#]/)[0].replace(/\/$/, '') ===
+        toUrl(href).split(/[?#]/)[0].replace(/\/$/, '');
 
     return (
         <SidebarGroup className="px-2 py-0">
             <SidebarGroupLabel>Platform</SidebarGroupLabel>
             <SidebarMenu>
                 {items.map((item) =>
-                    // ── Has sub items → collapsible ──
-                    item.items && item.items.length > 0 ? (
+                    item.items && item.items.length > 0 && isCollapsed ? (
+                        <SidebarMenuItem key={item.title}>
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <SidebarMenuButton
+                                        aria-label={item.title}
+                                        isActive={item.items.some((sub) =>
+                                            url.startsWith(
+                                                toUrl(sub.href ?? '#'),
+                                            ),
+                                        )}
+                                    >
+                                        {item.icon && <item.icon />}
+                                        <span>{item.title}</span>
+                                    </SidebarMenuButton>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent
+                                    side="right"
+                                    align="start"
+                                    sideOffset={8}
+                                    className="min-w-48"
+                                >
+                                    <DropdownMenuLabel>
+                                        {item.title}
+                                    </DropdownMenuLabel>
+                                    <DropdownMenuSeparator />
+                                    {item.items.map((sub) => (
+                                        <DropdownMenuItem
+                                            key={sub.title}
+                                            asChild
+                                            className={
+                                                isCurrentPage(sub.href ?? '#')
+                                                    ? 'bg-accent text-accent-foreground'
+                                                    : undefined
+                                            }
+                                        >
+                                            <Link
+                                                href={sub.href ?? '#'}
+                                                prefetch
+                                                aria-current={
+                                                    isCurrentPage(
+                                                        sub.href ?? '#',
+                                                    )
+                                                        ? 'page'
+                                                        : undefined
+                                                }
+                                            >
+                                                {sub.icon && <sub.icon />}
+                                                <span>{sub.title}</span>
+                                            </Link>
+                                        </DropdownMenuItem>
+                                    ))}
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        </SidebarMenuItem>
+                    ) : item.items && item.items.length > 0 ? (
                         <Collapsible
                             key={item.title}
                             asChild
-                            defaultOpen={item.items.some(sub => url.startsWith(toUrl(sub.href ?? '#')))}
+                            defaultOpen={item.items.some((sub) =>
+                                url.startsWith(toUrl(sub.href ?? '#')),
+                            )}
                             className="group/collapsible"
                         >
                             <SidebarMenuItem>
                                 <CollapsibleTrigger asChild>
                                     <SidebarMenuButton
                                         tooltip={{ children: item.title }}
-                                        isActive={item.items.some(sub => url.startsWith(toUrl(sub.href ?? '#')))}
+                                        isActive={item.items.some((sub) =>
+                                            url.startsWith(
+                                                toUrl(sub.href ?? '#'),
+                                            ),
+                                        )}
                                     >
                                         {item.icon && <item.icon />}
                                         <span>{item.title}</span>
@@ -47,14 +121,21 @@ export function NavMain({ items = [] }: { items: NavItem[] }) {
                                 </CollapsibleTrigger>
                                 <CollapsibleContent>
                                     <SidebarMenuSub>
-                                        {item.items.map(sub => (
+                                        {item.items.map((sub) => (
                                             <SidebarMenuSubItem key={sub.title}>
                                                 <SidebarMenuSubButton
                                                     asChild
-                                                    isActive={url === toUrl(sub.href ?? '#') || url.startsWith(toUrl(sub.href ?? '#'))}
+                                                    isActive={isCurrentPage(
+                                                        sub.href ?? '#',
+                                                    )}
                                                 >
-                                                    <Link href={sub.href ?? '#'} prefetch>
-                                                        {sub.icon && <sub.icon />}
+                                                    <Link
+                                                        href={sub.href ?? '#'}
+                                                        prefetch
+                                                    >
+                                                        {sub.icon && (
+                                                            <sub.icon />
+                                                        )}
                                                         <span>{sub.title}</span>
                                                     </Link>
                                                 </SidebarMenuSubButton>
@@ -78,9 +159,9 @@ export function NavMain({ items = [] }: { items: NavItem[] }) {
                                 </Link>
                             </SidebarMenuButton>
                         </SidebarMenuItem>
-                    )
+                    ),
                 )}
             </SidebarMenu>
         </SidebarGroup>
-    )
+    );
 }

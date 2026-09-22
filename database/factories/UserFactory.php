@@ -30,7 +30,7 @@ class UserFactory extends Factory
             'name' => fake()->name(),
             'password' => static::$password ??= Hash::make('password'),
             'remember_token' => Str::random(10),
-            'roleID' => UserRole::where('name', 'villager')->value('roleID'),
+            'roleID' => UserRole::firstOrCreate(['name' => 'villager'])->getKey(),
         ];
     }
 
@@ -50,9 +50,11 @@ class UserFactory extends Factory
      */
     public function unverified(): static
     {
-        return $this->state(fn (array $attributes) => [
-            'email_verified_at' => null,
-        ]);
+        return $this->afterCreating(function (User $user) {
+            $user->emailRecord()->update([
+                'email_verified_at' => null,
+            ]);
+        });
     }
 
     /**

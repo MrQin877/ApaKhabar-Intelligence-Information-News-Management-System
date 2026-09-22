@@ -1,8 +1,18 @@
 <?php
 
-namespace App\Http\Controllers;
+/**
+ * NewsCreatorController.php
+ *
+ * This controller manages the creation and archiving of news documents.
+ * It provides endpoints for rendering the news creator interface and the
+ * document archive view.
+ *
+ * Used for Admin Panel endpoints.
+ */
 
-use Illuminate\Http\Request;
+namespace App\Http\Controllers\Admin;
+
+use App\Http\Controllers\Controller;
 use Inertia\Inertia;
 use Inertia\Response;
 

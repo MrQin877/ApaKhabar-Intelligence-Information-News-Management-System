@@ -215,3 +215,78 @@ Color-library follow-up
 - app.css currently references --brand-950 for dark success-bg, but no
 	--brand-950 token is defined. This should be corrected before using dark
 	success alerts in production.
+
+PHONE NUMBER / OTP UPDATE
+
+Files changed
+- resources/js/components/phone-number-input.tsx
+- resources/js/components/phone-verification.tsx
+- resources/js/components/ui/dialog.tsx
+- resources/js/pages/auth/register.tsx
+- resources/js/lib/phone-validation.ts (new)
+- app/Http/Controllers/Settings/PhoneVerificationController.php
+- app/Http/Controllers/Settings/ProfileController.php
+- app/Services/Settings/PhoneOtpRateLimiter.php (new)
+- tests/Feature/Settings/PhoneOtpRateLimitTest.php (new)
+- update.txt
+
+Changes made
+- Shared phone input on Register/Profile with non-editable country code.
+- Profile-only verification badge, right-aligned beside the instruction text.
+- Phone input and OTP button stay on one row; errors appear below.
+- Existing OTP form moved into a centered Shadcn dialog with blurred backdrop; dismissal blocked during submission.
+- Unsubmitted drafts reset on navigation; invalid saved numbers are not restored.
+
+New validation / logic
+- Library-based MY/ID validation; no hard-coded subscriber prefix or digit length.
+- Invalid OTP attempts show "Masukkan nomor telepon yang valid." only after clicking the button.
+- Ganti Nomor disabled until the saved number changes; verification requires server confirmation.
+- Shared backend limits for send/resend/replacement: 60-second countdown and 5 requests per user and phone per day, with atomic cache locks.
+- Daily limit resets at midnight Malaysia time; blocked requests show "Terlalu banyak permintaan OTP. Silakan coba lagi besok."
+- Existing OTP verification remains available after the request limit is reached.
+
+
+MOBILE PHONE OTP VERIFICATION - 2026-09-16
+
+Mobile files
+- app/verify-phone.tsx: new verification page styled like email verification; request/resend SMS OTP, six-digit input, submit, verified badge, errors, 60-second countdown and daily-limit message. Reloads server status on focus/foreground and restores cooldown after reopening or a timed-out request.
+- services/phoneVerification.ts: authenticated status/send/verify API calls with timeouts and rate-limit/error handling.
+- app/(tabs)/profile/index.tsx: verification link for a saved, unverified phone. Existing profile refresh displays the verified badge after returning.
+- hooks/useAuth.ts: successful phone registration opens Verify Phone; SMS is sent only when the user requests it.
+- .env (local only): API URL aligned with backend APP_URL, http://192.168.68.59:8000/api. Restart Expo to load this setting; the phone must reach that backend address.
+
+Laravel backend files (../ApaKhabar-Intelligence-Information-News-Management-System)
+- app/Http/Controllers/Auth/MobilePhoneVerificationController.php: new bearer-authenticated JSON status/send/verify handlers. Uses the saved phone, existing PhoneOtpRateLimiter, OtpNotification message and phones record. Random six-digit OTP expires after 10 minutes; success clears the OTP and sets phone_verified_at without changing email verification.
+- routes/api.php: GET /api/phone/verification-status, POST /api/phone/verification-notification, POST /api/phone/verify. Verify accepts { phone, otp }; send uses the authenticated user's saved number.
+- app/Services/SmsService.php: mobile-only sendMobileOtp method uses existing Bulk360 credentials/gateway, a 5-second connection and 15-second total timeout, and checks provider code 200. Existing sendSms and website controller/routes are unchanged.
+- tests/Feature/Auth/MobilePhoneVerificationTest.php: request limits, registration, verification, provider rejection, expired/incorrect/replaced codes and account isolation.
+- update.txt: this summary appended to the existing backend notes.
+
+Limits and behavior
+- Shared server-enforced 60-second cooldown and five requests per user/phone per calendar day, resetting at backend-local midnight. Failed delivery attempts count, matching the existing limiter. HTTP 429 returns retry information; the app asks users to try again tomorrow after the daily limit.
+- A valid pending OTP can still be verified after all five requests are used. Mobile wrong-code attempts are limited to five for ten minutes; a successful new OTP request resets this attempt counter. An additional route throttle limits verification traffic.
+- Server status restores cooldown/daily-limit state across app reloads. No database migration or provider credential change is required. Existing website phone verification code remains unchanged.
+- Bulk360 acceptance is checked against https://sms.360.my/developers/v3.0; acceptance does not guarantee handset delivery.
+
+Validation
+- 40 targeted backend tests passed (283 assertions): mobile OTP, existing web OTP limits, mobile email verification and password-reset verification.
+- ESLint passed for the changed mobile OTP files and entry points.
+- Full TypeScript checking remains blocked by errors in the nested starter app and unrelated existing components. No errors were reported in the OTP files.
+- Broader legacy RegistrationTest run has six failures using the obsolete users.email schema; those tests were not modified.
+- Provider requests were mocked. Real SMS delivery and an on-device walkthrough still need testing with the configured Bulk360 account.
+
+- Change New Number: removed the password field and renamed the action to Verifikasi Nomor Telepon; submitting sends OTP and opens verification.
+- Pending phone changes: retain the current verified number until the new number passes OTP verification; leaving, expiry, incorrect codes or failed delivery never replace it.
+- Automatic OTP: registration and other saved-number verification entry flows send the first OTP automatically, while reusing an existing valid code and respecting cooldowns.
+- OTP entry: six digit boxes with next-box focus, previous-box backspace, numeric filtering and full-code paste/autofill support.
+- OTP limits: pending-number sends/resends share the existing 60-second cooldown and five-requests-per-day allowance; verification attempts remain limited.
+- Profile refresh: successful verification applies the new number atomically and refreshes the account status.
+
+- OTP page: removed Ganti Nomor Baru; Kembali is the only page navigation action. Verification failures remain on the page for retry/resend.
+- Phone ownership: phone changes treat only successfully verified numbers as used. OTP requests do not claim a number; an unverified record is reassigned only after successful OTP confirmation.
+- Number replacement: verification rechecks ownership under a database lock and replaces the old number atomically; failed or abandoned verification leaves it unchanged.
+- OTP retry: retain the pending change session for seven days so expired ten-minute codes can be resent without leaving the page; existing cooldown and daily limits remain unchanged.
+
+- Phone password reset: web and mobile share verified-number recovery, Bulk360 delivery, OTP validation, resend cooldown and daily limits. A valid OTP grants a short-lived single-use reset token; password changes preserve email/phone verification. Web reuses its country selector, OTP boxes and reset-password fields; email reset remains unchanged.
+
+- Web phone-reset OTP: send the Sanctum CSRF token with session cookies; initialize missing tokens and refresh/retry once on an expired-session response. OTP validation and limits remain unchanged.

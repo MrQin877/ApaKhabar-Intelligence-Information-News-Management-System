@@ -71,9 +71,27 @@
     --color-brand-800: var(--brand-800);
     --color-brand-900: var(--brand-900);
     --color-info-500: var(--info-500);
+    --color-info-600: var(--info-600);
+    --color-info-700: var(--info-700);
+    --color-info-800: var(--info-800);
+    --color-info-900: var(--info-900);
     --color-warning-500: var(--warning-500);
+    --color-warning-600: var(--warning-600);
+    --color-warning-700: var(--warning-700);
+    --color-warning-800: var(--warning-800);
+    --color-warning-900: var(--warning-900);
     --color-danger-500: var(--danger-500);
-    --color-danger-100: var(--danger-100);
+    --color-danger-600: var(--danger-600);
+    --color-danger-700: var(--danger-700);
+    --color-danger-800: var(--danger-800);
+    --color-danger-900: var(--danger-900);
+    --color-success-500: var(--brand-500);
+    --color-success-600: var(--brand-600);
+    --color-success-700: var(--brand-700);
+    --color-success-800: var(--brand-800);
+    --color-success-900: var(--brand-900);
+
+
     --color-success-bg: var(--success-bg);
     --color-success-border: var(--success-border);
     --color-success-text: var(--success-text);
@@ -154,7 +172,7 @@
         --greyscale-700: #515651;
         --greyscale-800: #3B3F3B;
         --greyscale-900: #242424;
-        --greyscale-925: #0F0F0F;
+        --greyscale-925: #121212;
         --greyscale-950: #0D0D0D;
         --info-50: #E8F1FD;
         --info-100: #BDD7F9;
@@ -243,7 +261,7 @@
 
         /* ── Dark Theme ────────────────────────── */
         
-        --background: var(--greyscale-925);
+        --background: var(--greyscale-950);
         --foreground: var(--greyscale-50);
         --card: var(--greyscale-925);
         --card-foreground: var(--greyscale-50);
@@ -279,9 +297,9 @@
         --danger-bg: var(--danger-950);
         --danger-border: var(--danger-800);
         --danger-text: var(--danger-200);
-        --sidebar: var(--greyscale-950);
+        --sidebar: var(--greyscale-925);
         --sidebar-foreground: var(--greyscale-200);
-        --sidebar-primary: var(--greyscale-75);
+        --sidebar-primary: var(--greyscale-925);
         --sidebar-primary-foreground: #121312;
         --sidebar-accent: var(--greyscale-900);
         --sidebar-accent-foreground: var(--greyscale-50);
