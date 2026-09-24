@@ -10,6 +10,7 @@ use App\Http\Controllers\News\CommentController;
 use App\Http\Controllers\News\NewsController;
 use App\Http\Controllers\News\PostLikeController;
 use App\Http\Controllers\Village\NotificationController;
+use App\Http\Controllers\WebsiteTranslationController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -31,7 +32,7 @@ Route::get('/mobile/reset-password', function (Request $request) {
         ->header('Cache-Control', 'no-store');
 })->name('mobile.password.reset');
 
-Route::post('/website/translate', \App\Http\Controllers\WebsiteTranslationController::class)
+Route::post('/website/translate', WebsiteTranslationController::class)
     ->middleware('throttle:60,1')->name('website.translate');
 
 // Public routes — no auth required
@@ -96,6 +97,7 @@ Route::prefix('admin')
         // Independent document and extracted-information library.
         Route::get('/documents', [NewsCreatorController::class, 'documents'])->name('documents.index');
         Route::post('/documents', [NewsCreatorController::class, 'storeDocument'])->name('documents.store');
+        Route::get('/documents/{document}/preview', [NewsCreatorController::class, 'previewDocument'])->name('documents.preview');
         Route::post('/documents/{document}/retry', [NewsCreatorController::class, 'retryDocument'])->name('documents.retry');
         Route::post('/information/{information}/review', [NewsCreatorController::class, 'reviewInformation'])->name('information.review');
 

@@ -55,6 +55,15 @@ class NewsWorkspaceController extends Controller
         $sessions = IntelligentNewsSession::query()
             ->where('created_by', $userId)
             ->whereNull('draft_id')
+            ->where(function ($query) {
+                $query->where('current_intent', 'generate_news')
+                    ->orWhere(function ($legacy) {
+                        $legacy->whereNull('current_intent')
+                            ->whereHas('messages', fn ($messages) => $messages
+                                ->where('role', 'user')
+                                ->whereIn('intent', ['generate_news', 'revise_news']));
+                    });
+            })
             ->latest('updated_at')
             ->get()
             ->map(fn (IntelligentNewsSession $session) => [

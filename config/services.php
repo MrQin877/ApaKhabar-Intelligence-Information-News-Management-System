@@ -2,7 +2,10 @@
 
 return [
     'apakhabar_ai' => [
-        'url' => env('APAKHABAR_AI_URL', 'http://127.0.0.1:8001'),
+        'url' => rtrim(env('APAKHABAR_AI_URL', 'http://127.0.0.1:8001'), '/')
+            .'/'.trim(env('APAKHABAR_AI_API_PREFIX', ''), '/'),
+        'token' => env('APAKHABAR_AI_SERVICE_TOKEN'),
+        'provider' => env('APAKHABAR_AI_PROVIDER', 'AI lokal'),
         'timeout' => (int) env('APAKHABAR_AI_TIMEOUT', 180),
         'connect_timeout' => (int) env('APAKHABAR_AI_CONNECT_TIMEOUT', 5),
     ],

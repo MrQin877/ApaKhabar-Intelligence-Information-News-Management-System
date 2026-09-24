@@ -6,6 +6,7 @@ use App\Models\IntelligenceDocument;
 use App\Models\IntelligenceInformation;
 use App\Models\IntelligenceExtractionRequest;
 use App\Models\IntelligentNewsSession;
+use App\Models\IntelligentNewsMessage;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -156,13 +157,37 @@ class ProcessIntelligenceDocument implements ShouldBeUnique, ShouldQueue
                 'completed_at' => now(),
             ]);
         }
+        $document = IntelligenceDocument::find($this->documentId);
+        IntelligentNewsSession::where('status', 'processing_files')
+            ->get()
+            ->filter(fn (IntelligentNewsSession $session) => in_array(
+                $this->documentId,
+                array_map('intval', $session->selected_document_ids ?? []),
+                true,
+            ))
+            ->each(function (IntelligentNewsSession $session) use ($document): void {
+                $session->update(['status' => 'collecting_sources', 'last_message_at' => now()]);
+                IntelligentNewsMessage::create([
+                    'session_id' => $session->id,
+                    'role' => 'assistant',
+                    'intent' => 'document_processing_failed',
+                    'content' => 'Saya tidak dapat memproses '.($document?->original_name ?? 'dokumen tersebut').'. Periksa format file atau coba proses ulang dari pustaka dokumen.',
+                    'payload' => ['status' => 'failed', 'document_id' => $this->documentId],
+                ]);
+            });
     }
 
     private function client(): PendingRequest
     {
-        return Http::acceptJson()
+        $client = Http::acceptJson()
             ->connectTimeout(max(1, (int) config('services.apakhabar_ai.connect_timeout', 5)))
             ->timeout(max(1, (int) config('services.apakhabar_ai.timeout', 180)));
+
+        if ($token = config('services.apakhabar_ai.token')) {
+            $client->withHeaders(['X-ApaKhabar-Service-Token' => $token]);
+        }
+
+        return $client;
     }
 
     /**
@@ -208,7 +233,26 @@ class ProcessIntelligenceDocument implements ShouldBeUnique, ShouldQueue
                     ->pluck('status');
 
                 if ($statuses->isNotEmpty() && $statuses->every(fn (string $status) => $status === 'ready')) {
-                    $session->update(['status' => 'ready_to_generate']);
+                    $informationCount = IntelligenceInformation::whereIn(
+                        'document_id',
+                        $session->selected_document_ids ?? [],
+                    )->count();
+                    $isGeneration = $session->current_intent === 'generate_news';
+                    $session->update([
+                        'status' => $isGeneration ? 'ready_to_generate' : 'collecting_sources',
+                        'last_message_at' => now(),
+                    ]);
+                    IntelligentNewsMessage::create([
+                        'session_id' => $session->id,
+                        'role' => 'assistant',
+                        'intent' => 'document_processed',
+                        'content' => "Pemrosesan dokumen selesai. Saya menemukan {$informationCount} informasi dengan bukti sumber. Tinjau dan setujui informasi yang sesuai sebelum digunakan untuk membuat berita.",
+                        'payload' => [
+                            'status' => 'ready',
+                            'information_count' => $informationCount,
+                            'document_ids' => $session->selected_document_ids ?? [],
+                        ],
+                    ]);
                 }
             });
     }

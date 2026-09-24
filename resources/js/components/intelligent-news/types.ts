@@ -49,6 +49,28 @@ export interface SessionMessage {
     created_at: string;
 }
 
+export interface AgentRunEvent {
+    id: number;
+    event_type: string;
+    tool_name: string | null;
+    label: string;
+    content: string;
+}
+
+export interface AgentRun {
+    id: number;
+    status:
+        | 'queued'
+        | 'running'
+        | 'awaiting_approval'
+        | 'completed'
+        | 'failed'
+        | 'cancelled';
+    started_at: string | null;
+    completed_at: string | null;
+    events: AgentRunEvent[];
+}
+
 export interface NewsSession {
     id: number;
     status:
@@ -64,6 +86,7 @@ export interface NewsSession {
     user_facts: UserFact[];
     conflicts: string[];
     messages?: SessionMessage[];
+    runs?: AgentRun[];
 }
 
 export interface Evidence {
