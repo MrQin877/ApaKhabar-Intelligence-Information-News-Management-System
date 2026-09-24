@@ -4,30 +4,50 @@ import {
     AlignLeft,
     AlignRight,
     Archive,
-    ArrowLeft,
+    ArrowUp,
     Bold,
-    Bot,
     ChevronDown,
     ChevronRight,
     Clock3,
     Edit3,
     FileText,
     FolderSearch,
+    History,
     ImagePlus,
     Italic,
     List,
     ListOrdered,
     LoaderCircle,
+    Maximize2,
+    Minimize2,
     Paperclip,
+    PanelRightClose,
+    PanelRightOpen,
+    Plus,
     Redo2,
     Save,
-    Send,
     Sparkles,
     Underline,
     Undo2,
     X,
 } from 'lucide-react';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+} from 'react';
+import { PreviewFrame } from '@/components/intelligent-news/preview-frame';
+import {
+    QualityScoreBadge,
+    QualityScoreBreakdown,
+} from '@/components/intelligent-news/quality-score';
+import type {
+    Article,
+    AssistantPageProps,
+    Recommendation,
+} from '@/components/intelligent-news/types';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -54,8 +74,13 @@ import {
     DialogDescription,
     DialogHeader,
     DialogTitle,
-    DialogTrigger,
 } from '@/components/ui/dialog';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import {
     MessageScroller,
@@ -69,119 +94,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import AppLayout from '@/layouts/app-layout';
 import type { BreadcrumbItem } from '@/types';
-
-interface InformationItem {
-    id: number;
-    document_id: number;
-    title: string;
-    summary: string;
-    labels: string[];
-    document: { id: number; original_name: string };
-}
-interface DocumentItem {
-    id: number;
-    original_name: string;
-    status: string;
-}
-interface MissingQuestion {
-    field: string;
-    importance: 'required' | 'recommended';
-    kind?:
-        | 'unverified_subject'
-        | 'possible_typo'
-        | 'format_choice'
-        | 'missing_fact'
-        | 'conflict';
-    question: string;
-    reason?: string | null;
-    options?: string[];
-    selection_type?: 'single' | 'multi' | 'ranked' | 'text';
-    sources?: Array<{
-        title: string;
-        url: string;
-        snippet: string;
-        published_at?: string | null;
-        source?: string;
-    }>;
-}
-interface UserFact {
-    field: string;
-    value: string;
-}
-interface SessionMessage {
-    id: number;
-    role: 'user' | 'assistant' | 'tool' | 'system';
-    intent: string | null;
-    content: string | null;
-    payload: Record<string, unknown> | null;
-    created_at: string;
-}
-interface NewsSession {
-    id: number;
-    status:
-        | 'collecting_sources'
-        | 'processing_files'
-        | 'awaiting_answers'
-        | 'ready_to_generate'
-        | 'draft_generated';
-    prompt: string | null;
-    selected_document_ids: number[];
-    selected_information_ids: number[];
-    pending_questions: MissingQuestion[];
-    user_facts: UserFact[];
-    conflicts: string[];
-    messages?: SessionMessage[];
-}
-interface Evidence {
-    source: string;
-    quote: string;
-}
-interface Article {
-    draft_id: number;
-    headline: string;
-    subheadline: string | null;
-    lead: string;
-    body: string[];
-    labels: string[];
-    category: string | null;
-    warnings: string[];
-    image: string | null;
-    version: number;
-    reviewed_at: string | null;
-    updated_at: string | null;
-    quality?: {
-        overall_score: number;
-        quality_label: string;
-        publish_blocked: boolean;
-        dimensions: Record<string, number>;
-        warnings: string[];
-    } | null;
-    selected_sources: Array<{
-        id: number;
-        title: string;
-        document: string;
-        evidence: Evidence[];
-    }>;
-}
-interface Recommendation {
-    information_id: number;
-    document_id: number;
-    name: string;
-    source: string;
-    excerpt: string;
-    distance: number | null;
-}
-interface Props {
-    informationItems: InformationItem[];
-    documents: DocumentItem[];
-    generatedArticle?: Article | null;
-    newsSession?: NewsSession | null;
-    preselectedInformationIds?: number[];
-    initialDocumentIds?: number[];
-    initialPrompt?: string | null;
-    initialManualFact?: string | null;
-    autoGenerate?: boolean;
-}
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Asisten AI', href: '/admin/ai-assistant' },
@@ -197,16 +109,21 @@ export default function NewsCreatorAgent({
     initialPrompt = '',
     initialManualFact = '',
     autoGenerate = false,
-}: Props) {
+}: AssistantPageProps) {
     const errors = (usePage().props.errors ?? {}) as Record<string, string>;
     const fileInput = useRef<HTMLInputElement>(null);
+    const composerInput = useRef<HTMLTextAreaElement>(null);
     const newsImageInput = useRef<HTMLInputElement>(null);
     const autoGenerated = useRef(false);
+    const workspace = useRef<HTMLDivElement>(null);
     const [prompt, setPrompt] = useState(
         initialPrompt ?? newsSession?.prompt ?? '',
     );
     const [files, setFiles] = useState<File[]>([]);
     const [manualFact, setManualFact] = useState(initialManualFact ?? '');
+    const [workflowMode, setWorkflowMode] = useState<
+        'news' | 'extract' | 'search' | null
+    >(null);
     const [informationIds, setInformationIds] = useState(
         newsSession?.selected_information_ids ??
             generatedArticle?.selected_sources.map((source) => source.id) ??
@@ -218,6 +135,9 @@ export default function NewsCreatorAgent({
     const [answers, setAnswers] = useState<Record<string, string>>({});
     const [busy, setBusy] = useState(false);
     const [picker, setPicker] = useState(false);
+    const [pickerTab, setPickerTab] = useState<
+        'information' | 'documents' | 'manual'
+    >('information');
     const [query, setQuery] = useState('');
     const [recommendations, setRecommendations] = useState<Recommendation[]>(
         [],
@@ -229,6 +149,12 @@ export default function NewsCreatorAgent({
     const [editedArticle, setEditedArticle] = useState<Article | null>(
         generatedArticle ?? null,
     );
+    const [previewOpen, setPreviewOpen] = useState(Boolean(generatedArticle));
+    const [previewWidth, setPreviewWidth] = useState(720);
+    const [resizingPreview, setResizingPreview] = useState(false);
+    const [composerExpanded, setComposerExpanded] = useState(false);
+    const [composerOverflowing, setComposerOverflowing] = useState(false);
+    const [composerMultiline, setComposerMultiline] = useState(false);
     const [sourcesOpen, setSourcesOpen] = useState(false);
     const questions = newsSession?.pending_questions ?? [];
     const displayedUserFacts = (newsSession?.user_facts ?? []).filter(
@@ -242,6 +168,15 @@ export default function NewsCreatorAgent({
         questions.every((question) => Boolean(answers[question.field]?.trim()));
     const processingFiles = newsSession?.status === 'processing_files';
     const hasSources = informationIds.length > 0 || documentIds.length > 0;
+    const conversationStarted = Boolean(
+        newsSession ||
+        generatedArticle ||
+        busy ||
+        processingFiles ||
+        hasSources ||
+        files.length ||
+        errors.guidance,
+    );
     const shownInformation = useMemo(() => {
         const needle = query.trim().toLocaleLowerCase('id');
 
@@ -287,6 +222,20 @@ export default function NewsCreatorAgent({
                 ];
 
     function handleQuickAction(action: string) {
+        if (action.toLocaleLowerCase('id').includes('berita')) {
+            setWorkflowMode('news');
+        } else if (
+            action.toLocaleLowerCase('id').includes('ekstrak') ||
+            action === 'Unggah dokumen'
+        ) {
+            setWorkflowMode('extract');
+        } else if (
+            action.toLocaleLowerCase('id').includes('informasi') ||
+            action.toLocaleLowerCase('id').includes('sumber')
+        ) {
+            setWorkflowMode('search');
+        }
+
         if (
             action === 'Pilih informasi tersimpan' ||
             action === 'Pilih sumber informasi'
@@ -296,10 +245,7 @@ export default function NewsCreatorAgent({
             return;
         }
 
-        if (
-            action === 'Unggah dokumen' ||
-            action.includes('dari file')
-        ) {
+        if (action === 'Unggah dokumen' || action.includes('dari file')) {
             setPrompt(action);
             fileInput.current?.click();
 
@@ -316,12 +262,32 @@ export default function NewsCreatorAgent({
 
         setPrompt(action);
     }
+
+    const resizeComposer = useCallback(
+        (element: HTMLTextAreaElement) => {
+            element.style.height = 'auto';
+            const collapsedLimit = 160;
+            const heightLimit = composerExpanded
+                ? Math.round(window.innerHeight * 0.45)
+                : collapsedLimit;
+            const contentHeight = element.scrollHeight;
+            const nextHeight = Math.min(
+                Math.max(contentHeight, 36),
+                heightLimit,
+            );
+
+            element.style.height = `${nextHeight}px`;
+            element.style.overflowY =
+                contentHeight > heightLimit ? 'auto' : 'hidden';
+            setComposerOverflowing(contentHeight > collapsedLimit);
+            setComposerMultiline(contentHeight > 44);
+        },
+        [composerExpanded],
+    );
     const generationStages = [
-        'Mencari sumber relevan…',
-        'Mengambil informasi…',
-        'Menganalisis gaya penulisan…',
-        'Menyusun artikel…',
-        'Menyelesaikan draf…',
+        'Membaca dokumen dan sumber',
+        'Menyusun draf berita',
+        'Menyiapkan pratinjau',
     ];
     const activeStage = Math.min(
         Math.floor(elapsedSeconds / 4),
@@ -361,9 +327,11 @@ export default function NewsCreatorAgent({
             if (prompt.trim()) {
                 data.append('prompt', prompt.trim());
             }
-            const generationIntent = /\b(generate|create|write|buat|bikin|tulis)\b.{0,30}\b(news|article|berita|artikel|laporan)\b/i.test(
-                prompt,
-            );
+
+            const generationIntent =
+                /\b(generate|create|write|buat|bikin|tulis)\b.{0,30}\b(news|article|berita|artikel|laporan)\b/i.test(
+                    prompt,
+                );
             const generalExtraction =
                 !prompt.trim() ||
                 /\b(all|everything|semua|seluruh|tidak tahu|don't know)\b/i.test(
@@ -377,6 +345,7 @@ export default function NewsCreatorAgent({
                 'extraction_mode',
                 generalExtraction ? 'general' : 'targeted',
             );
+
             if (!generalExtraction && prompt.trim()) {
                 data.append('extraction_query', prompt.trim());
             }
@@ -461,9 +430,7 @@ export default function NewsCreatorAgent({
             return;
         }
 
-        router.post(
-            `/admin/news/drafts/${editedArticle.draft_id}/publish`,
-        );
+        router.post(`/admin/news/drafts/${editedArticle.draft_id}/publish`);
     }
 
     function uploadNewsImage(file: File | undefined) {
@@ -561,7 +528,48 @@ export default function NewsCreatorAgent({
 
     useEffect(() => {
         setEditedArticle(generatedArticle ?? null);
+
+        if (generatedArticle) {
+            setPreviewOpen(true);
+        }
     }, [generatedArticle]);
+
+    useEffect(() => {
+        if (!resizingPreview) {
+            return;
+        }
+
+        const resize = (event: MouseEvent) => {
+            const minimumChatWidth = 420;
+            const minimumPreviewWidth = 380;
+            const workspaceBounds = workspace.current?.getBoundingClientRect();
+            const availableWidth = workspaceBounds?.width ?? window.innerWidth;
+            const rightEdge = workspaceBounds?.right ?? window.innerWidth;
+            const maximumPreviewWidth = Math.min(
+                960,
+                availableWidth - minimumChatWidth,
+            );
+            setPreviewWidth(
+                Math.max(
+                    minimumPreviewWidth,
+                    Math.min(maximumPreviewWidth, rightEdge - event.clientX),
+                ),
+            );
+        };
+        const stop = () => setResizingPreview(false);
+
+        window.addEventListener('mousemove', resize);
+        window.addEventListener('mouseup', stop);
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+
+        return () => {
+            window.removeEventListener('mousemove', resize);
+            window.removeEventListener('mouseup', stop);
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        };
+    }, [resizingPreview]);
 
     useEffect(() => {
         if (!busy) {
@@ -576,59 +584,83 @@ export default function NewsCreatorAgent({
         return () => window.clearInterval(timer);
     }, [busy]);
 
+    useEffect(() => {
+        if (composerInput.current) {
+            resizeComposer(composerInput.current);
+        }
+    }, [prompt, resizeComposer]);
+
     return (
         <>
             <Head title="Asisten AI" />
-            <div className="dark flex h-[calc(100vh-4rem)] min-h-[640px] flex-col overflow-hidden bg-background text-foreground lg:flex-row">
-                <section className="flex min-h-0 flex-1 flex-col border-b bg-background lg:w-[42%] lg:max-w-[620px] lg:border-r lg:border-b-0">
-                    <header className="flex shrink-0 items-center justify-between border-b px-5 py-4">
-                        <div className="flex items-center gap-3">
-                            <div className="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                                <Bot className="size-5" />
-                            </div>
-                            <div>
-                                <h1 className="font-semibold">Asisten AI</h1>
-                                <p className="text-xs text-muted-foreground">
-                                    Ekstraksi dokumen dan pembuatan berita
-                                </p>
-                            </div>
-                        </div>
-                        <div className="flex gap-2">
+            <div
+                ref={workspace}
+                className="-mt-16 flex h-screen min-h-[640px] flex-col overflow-hidden bg-background text-foreground lg:flex-row"
+            >
+                <section
+                    className={`relative flex min-h-0 min-w-0 flex-1 flex-col bg-background ${previewOpen && editedArticle ? 'border-b lg:border-b-0' : 'w-full'}`}
+                >
+                    <div className="absolute top-[4.75rem] right-4 z-30 flex items-center gap-1 rounded-xl bg-background/55 p-1 shadow-sm backdrop-blur-xl">
+                        {editedArticle && !previewOpen && (
                             <Button
                                 variant="ghost"
-                                size="icon-sm"
-                                onClick={() =>
-                                    router.visit('/admin/news')
-                                }
-                                title="Kembali ke daftar berita"
-                            >
-                                <ArrowLeft />
-                            </Button>
-                            <Button
-                                variant="outline"
                                 size="sm"
-                                onClick={() =>
-                                    router.visit('/admin/documents')
-                                }
+                                onClick={() => setPreviewOpen(true)}
                             >
-                                <Archive /> Dokumen
+                                <PanelRightOpen /> Pratinjau
                             </Button>
-                        </div>
-                    </header>
+                        )}
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => router.visit('/admin/news')}
+                            title="Riwayat percakapan dan draf"
+                        >
+                            <History /> Riwayat
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => router.visit('/admin/documents')}
+                        >
+                            <Archive /> Dokumen
+                        </Button>
+                    </div>
                     <MessageScrollerProvider
                         autoScroll
                         defaultScrollPosition="end"
                     >
                         <MessageScroller className="min-h-0 flex-1">
-                            <MessageScrollerViewport className="px-5 py-5">
-                                <MessageScrollerContent className="gap-4">
+                            <MessageScrollerViewport
+                                className={`px-5 pt-32 pb-56 ${previewOpen && editedArticle ? '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden' : ''}`}
+                            >
+                                <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-4">
                                     <MessageScrollerItem messageId="welcome">
-                                        <div className="max-w-[88%] rounded-xl border bg-muted/50 p-4 text-sm leading-6">
-                                            Pilih informasi atau dokumen
-                                            tersimpan, atau lampirkan hingga
-                                            lima file baru. Saya akan memeriksa
-                                            kelengkapan sebelum membuat draf.
-                                        </div>
+                                        {!conversationStarted ? (
+                                            <div className="mx-auto flex max-w-2xl flex-col items-center py-14 text-center md:py-20">
+                                                <div className="mb-5 flex size-14 items-center justify-center rounded-2xl border bg-card text-primary shadow-sm">
+                                                    <Sparkles className="size-6" />
+                                                </div>
+                                                <h2 className="text-3xl font-bold tracking-tight">
+                                                    Apa yang ingin Anda
+                                                    kerjakan?
+                                                </h2>
+                                                <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
+                                                    Ekstrak informasi dari
+                                                    dokumen, cari sumber yang
+                                                    sudah disetujui, atau susun
+                                                    berita bersama Asisten AI.
+                                                </p>
+                                            </div>
+                                        ) : (
+                                            <div className="max-w-[88%] rounded-xl border bg-muted/50 p-4 text-sm leading-6">
+                                                Pilih informasi atau dokumen
+                                                tersimpan, atau lampirkan hingga
+                                                lima file baru. Saya akan
+                                                memeriksa kelengkapan sebelum
+                                                melanjutkan.
+                                            </div>
+                                        )}
                                     </MessageScrollerItem>
                                     {(newsSession?.messages ?? []).map(
                                         (message) => (
@@ -721,14 +753,6 @@ export default function NewsCreatorAgent({
                                                             Lihat langkah
                                                         </Button>
                                                     </CollapsibleTrigger>
-                                                </div>
-                                                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted">
-                                                    <div
-                                                        className="h-full rounded-full bg-primary transition-all duration-500"
-                                                        style={{
-                                                            width: `${((activeStage + 1) / generationStages.length) * 100}%`,
-                                                        }}
-                                                    />
                                                 </div>
                                                 <CollapsibleContent className="mt-3 space-y-2 border-t pt-3">
                                                     {generationStages.map(
@@ -1016,7 +1040,7 @@ export default function NewsCreatorAgent({
                                                             {busy ? (
                                                                 <LoaderCircle className="animate-spin" />
                                                             ) : (
-                                                                <Send />
+                                                                <ArrowUp />
                                                             )}
                                                             Gunakan jawaban dan
                                                             buat draf
@@ -1093,11 +1117,128 @@ export default function NewsCreatorAgent({
                                             messageId="done"
                                             scrollAnchor
                                         >
-                                            <div className="max-w-[88%] rounded-xl border border-success-border bg-success-bg p-4 text-sm text-success-text">
-                                                Draf telah dibuat. Tinjau
-                                                artikel dan bukti sebelum
-                                                publikasi.
-                                            </div>
+                                            <Card className="max-w-[94%] gap-3 border-success-border bg-success-bg py-4 shadow-sm">
+                                                <CardHeader className="gap-2 px-4">
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        <Badge>Draf AI</Badge>
+                                                        <QualityScoreBadge
+                                                            quality={
+                                                                generatedArticle.quality
+                                                            }
+                                                        />
+                                                        {generatedArticle.category && (
+                                                            <Badge variant="outline">
+                                                                {
+                                                                    generatedArticle.category
+                                                                }
+                                                            </Badge>
+                                                        )}
+                                                    </div>
+                                                    <CardTitle className="text-base leading-6 text-foreground">
+                                                        {
+                                                            generatedArticle.headline
+                                                        }
+                                                    </CardTitle>
+                                                    <p className="line-clamp-3 text-sm leading-6 text-muted-foreground">
+                                                        {generatedArticle.lead}
+                                                    </p>
+                                                </CardHeader>
+                                                <CardContent className="space-y-3 px-4">
+                                                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                                                        <span>
+                                                            ±
+                                                            {Math.max(
+                                                                1,
+                                                                Math.ceil(
+                                                                    (generatedArticle.body
+                                                                        .join(
+                                                                            ' ',
+                                                                        )
+                                                                        .split(
+                                                                            /\s+/,
+                                                                        )
+                                                                        .length +
+                                                                        generatedArticle.lead.split(
+                                                                            /\s+/,
+                                                                        )
+                                                                            .length) /
+                                                                        200,
+                                                                ),
+                                                            )}{' '}
+                                                            menit baca
+                                                        </span>
+                                                        <span>
+                                                            {
+                                                                generatedArticle
+                                                                    .selected_sources
+                                                                    .length
+                                                            }{' '}
+                                                            sumber
+                                                        </span>
+                                                        <span>
+                                                            Versi{' '}
+                                                            {generatedArticle.version ??
+                                                                1}
+                                                        </span>
+                                                    </div>
+                                                    {generatedArticle.warnings
+                                                        .length > 0 && (
+                                                        <div className="rounded-lg border border-warning-border bg-warning-bg p-3 text-xs leading-5 text-warning-text">
+                                                            {
+                                                                generatedArticle
+                                                                    .warnings[0]
+                                                            }
+                                                        </div>
+                                                    )}
+                                                    {generatedArticle.quality && (
+                                                        <QualityScoreBreakdown
+                                                            quality={
+                                                                generatedArticle.quality
+                                                            }
+                                                        />
+                                                    )}
+                                                    <div className="flex flex-wrap gap-2">
+                                                        <Button
+                                                            size="sm"
+                                                            variant="outline"
+                                                            onClick={() =>
+                                                                setEditMode(
+                                                                    false,
+                                                                )
+                                                            }
+                                                        >
+                                                            Pratinjau
+                                                        </Button>
+                                                        <Button
+                                                            size="sm"
+                                                            variant="outline"
+                                                            onClick={() =>
+                                                                setEditMode(
+                                                                    true,
+                                                                )
+                                                            }
+                                                        >
+                                                            <Edit3 /> Edit
+                                                        </Button>
+                                                        <Button
+                                                            size="sm"
+                                                            disabled={
+                                                                !generatedArticle.reviewed_at ||
+                                                                Boolean(
+                                                                    generatedArticle
+                                                                        .quality
+                                                                        ?.publish_blocked,
+                                                                )
+                                                            }
+                                                            onClick={
+                                                                publishDraft
+                                                            }
+                                                        >
+                                                            Publikasikan
+                                                        </Button>
+                                                    </div>
+                                                </CardContent>
+                                            </Card>
                                         </MessageScrollerItem>
                                     )}
                                     {errors.guidance && (
@@ -1130,728 +1271,811 @@ export default function NewsCreatorAgent({
                             <MessageScrollerButton />
                         </MessageScroller>
                     </MessageScrollerProvider>
-                    <div className="shrink-0 space-y-3 border-t bg-background p-4">
-                        <div className="flex gap-2 overflow-x-auto pb-1">
-                            {actions.map((action) => (
-                                <Button
-                                    key={action}
-                                    variant="outline"
-                                    size="sm"
-                                    className="rounded-full"
-                                    onClick={() => handleQuickAction(action)}
-                                >
-                                    {action}
-                                </Button>
-                            ))}
-                            {prompt.trim() && (
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="rounded-full"
-                                    disabled={findingRelated}
-                                    onClick={findRelated}
-                                >
-                                    {findingRelated ? (
-                                        <LoaderCircle className="animate-spin" />
-                                    ) : (
-                                        <Sparkles />
-                                    )}
-                                    Cari informasi terkait
-                                </Button>
-                            )}
-                        </div>
-                        {(files.length > 0 || hasSources) && (
-                            <div className="flex flex-wrap gap-2">
-                                {files.map((file, index) => (
-                                    <Badge
-                                        key={`${file.name}-${index}`}
-                                        variant="secondary"
-                                        className="gap-1 py-1.5"
-                                    >
-                                        <Paperclip className="size-3" />
-                                        {file.name}
-                                        <button
-                                            type="button"
-                                            onClick={() =>
-                                                setFiles((current) =>
-                                                    current.filter(
-                                                        (_, position) =>
-                                                            position !== index,
-                                                    ),
-                                                )
-                                            }
-                                        >
-                                            <X className="size-3" />
-                                        </button>
-                                    </Badge>
-                                ))}
-                                {informationIds.length > 0 && (
-                                    <Badge variant="secondary">
-                                        {informationIds.length} informasi
-                                    </Badge>
-                                )}
-                                {documentIds.length > 0 && (
-                                    <Badge variant="secondary">
-                                        {documentIds.length} dokumen
-                                    </Badge>
-                                )}
-                            </div>
-                        )}
-                        <div className="rounded-xl border bg-background p-2 shadow-sm focus-within:ring-2 focus-within:ring-ring/30">
-                            <Textarea
-                                value={prompt}
-                                onChange={(event) =>
-                                    setPrompt(event.target.value)
-                                }
-                                placeholder="Jelaskan berita yang ingin dibuat atau tambahkan arahan editorial…"
-                                className="min-h-20 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0"
-                            />
-                            <div className="flex items-center justify-between border-t pt-2">
-                                <div className="flex gap-1">
-                                    <input
-                                        ref={fileInput}
-                                        type="file"
-                                        multiple
-                                        className="hidden"
-                                        accept=".pdf,.docx,.xlsx,.xlsm,.csv,.txt,.jpg,.jpeg,.png"
-                                        onChange={(event) => {
-                                            addFiles(event.target.files);
-                                            event.target.value = '';
-                                        }}
-                                    />
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-background via-background/95 to-transparent px-4 pt-12 pb-3">
+                        <div className="pointer-events-auto mx-auto w-full max-w-4xl space-y-2">
+                            <div className="flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                                {actions.map((action) => (
                                     <Button
-                                        variant="ghost"
-                                        size="icon-sm"
-                                        onClick={() =>
-                                            fileInput.current?.click()
-                                        }
-                                        title="Unggah file"
-                                    >
-                                        <Paperclip />
-                                    </Button>
-                                    <Dialog
-                                        open={picker}
-                                        onOpenChange={setPicker}
-                                    >
-                                        <DialogTrigger asChild>
-                                            <Button
-                                                variant="ghost"
-                                                size="icon-sm"
-                                                title="Pilih sumber"
-                                            >
-                                                <FolderSearch />
-                                            </Button>
-                                        </DialogTrigger>
-                                        <DialogContent className="max-h-[80vh] sm:max-w-2xl">
-                                            <DialogHeader>
-                                                <DialogTitle>
-                                                    Pilih sumber yang disetujui
-                                                </DialogTitle>
-                                                <DialogDescription>
-                                                    Hanya sumber terpilih yang
-                                                    dipakai untuk membuat
-                                                    berita.
-                                                </DialogDescription>
-                                            </DialogHeader>
-                                            <Input
-                                                value={query}
-                                                onChange={(event) =>
-                                                    setQuery(event.target.value)
-                                                }
-                                                placeholder="Cari sumber…"
-                                            />
-                                            <Tabs defaultValue="information">
-                                                <TabsList>
-                                                    <TabsTrigger value="information">
-                                                        Informasi
-                                                    </TabsTrigger>
-                                                    <TabsTrigger value="documents">
-                                                        Dokumen
-                                                    </TabsTrigger>
-                                                    <TabsTrigger value="manual">
-                                                        Fakta manual
-                                                    </TabsTrigger>
-                                                </TabsList>
-                                                <TabsContent
-                                                    value="information"
-                                                    className="max-h-[48vh] space-y-2 overflow-y-auto"
-                                                >
-                                                    {shownInformation.map(
-                                                        (item) => (
-                                                            <label
-                                                                key={item.id}
-                                                                className="flex cursor-pointer gap-3 rounded-lg border p-3 hover:bg-muted/50"
-                                                            >
-                                                                <Checkbox
-                                                                    checked={informationIds.includes(
-                                                                        item.id,
-                                                                    )}
-                                                                    onCheckedChange={() =>
-                                                                        toggle(
-                                                                            informationIds,
-                                                                            item.id,
-                                                                            setInformationIds,
-                                                                        )
-                                                                    }
-                                                                />
-                                                                <span>
-                                                                    <span className="block text-sm font-medium">
-                                                                        {
-                                                                            item.title
-                                                                        }
-                                                                    </span>
-                                                                    <span className="line-clamp-2 text-xs text-muted-foreground">
-                                                                        {
-                                                                            item.summary
-                                                                        }
-                                                                    </span>
-                                                                    <span className="text-xs text-primary">
-                                                                        {
-                                                                            item
-                                                                                .document
-                                                                                .original_name
-                                                                        }
-                                                                    </span>
-                                                                </span>
-                                                            </label>
-                                                        ),
-                                                    )}
-                                                </TabsContent>
-                                                <TabsContent
-                                                    value="documents"
-                                                    className="max-h-[48vh] space-y-2 overflow-y-auto"
-                                                >
-                                                    {documents.map(
-                                                        (document) => (
-                                                            <label
-                                                                key={
-                                                                    document.id
-                                                                }
-                                                                className="flex cursor-pointer items-center gap-3 rounded-lg border p-3 hover:bg-muted/50"
-                                                            >
-                                                                <Checkbox
-                                                                    checked={documentIds.includes(
-                                                                        document.id,
-                                                                    )}
-                                                                    onCheckedChange={() =>
-                                                                        toggle(
-                                                                            documentIds,
-                                                                            document.id,
-                                                                            setDocumentIds,
-                                                                        )
-                                                                    }
-                                                                />
-                                                                <FileText className="size-4" />
-                                                                <span className="text-sm font-medium">
-                                                                    {
-                                                                        document.original_name
-                                                                    }
-                                                                </span>
-                                                            </label>
-                                                        ),
-                                                    )}
-                                                </TabsContent>
-                                                <TabsContent value="manual">
-                                                    <div className="space-y-2 rounded-lg border p-3">
-                                                        <p className="text-sm font-medium">
-                                                            Fakta yang diberikan
-                                                            moderator
-                                                        </p>
-                                                        <p className="text-xs text-muted-foreground">
-                                                            Fakta ini akan
-                                                            ditandai sebagai
-                                                            user-provided dan
-                                                            tidak dianggap
-                                                            berasal dari
-                                                            dokumen.
-                                                        </p>
-                                                        <Textarea
-                                                            value={manualFact}
-                                                            onChange={(event) =>
-                                                                setManualFact(
-                                                                    event.target
-                                                                        .value,
-                                                                )
-                                                            }
-                                                            placeholder="Contoh: Kegiatan akan berlangsung pada 20 September 2026."
-                                                        />
-                                                    </div>
-                                                </TabsContent>
-                                            </Tabs>
-                                            <Button
-                                                onClick={() => setPicker(false)}
-                                            >
-                                                Gunakan sumber terpilih
-                                            </Button>
-                                        </DialogContent>
-                                    </Dialog>
-                                </div>
-                                <Button
-                                    size="icon"
-                                    disabled={
-                                        busy ||
-                                        processingFiles ||
-                                        (!files.length &&
-                                            !hasSources &&
-                                            !newsSession &&
-                                            !prompt.trim() &&
-                                            !manualFact.trim())
-                                    }
-                                    onClick={() => submit()}
-                                >
-                                    {busy ? (
-                                        <LoaderCircle className="animate-spin" />
-                                    ) : (
-                                        <Send />
-                                    )}
-                                </Button>
-                            </div>
-                        </div>
-                        {(errors.document ||
-                            errors.documents ||
-                            errors.generation) && (
-                            <p className="text-sm text-danger-text">
-                                {errors.document ||
-                                    errors.documents ||
-                                    errors.generation}
-                            </p>
-                        )}
-                        <p className="text-xs text-muted-foreground">
-                            Maksimum 5 file baru · dokumen, spreadsheet, teks,
-                            dan gambar OCR
-                        </p>
-                    </div>
-                </section>
-                <section className="flex min-h-0 flex-1 flex-col bg-background">
-                    {editedArticle ? (
-                        <>
-                            <header className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4">
-                                <div>
-                                    <div className="flex items-center gap-2">
-                                        <h2 className="font-semibold">
-                                            Pratinjau berita
-                                        </h2>
-                                        <Badge variant="secondary">
-                                            DRAF AI
-                                        </Badge>
-                                        {editedArticle.quality && (
-                                            <Badge
-                                                variant={
-                                                    editedArticle.quality
-                                                        .publish_blocked
-                                                        ? 'destructive'
-                                                        : 'outline'
-                                                }
-                                            >
-                                                Kualitas{' '}
-                                                {editedArticle.quality.overall_score.toFixed(
-                                                    1,
-                                                )}
-                                                %
-                                            </Badge>
-                                        )}
-                                    </div>
-                                    <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
-                                        <span className="flex items-center gap-1">
-                                            <Clock3 className="size-3" />
-                                            Terakhir dibuat{' '}
-                                            {editedArticle.updated_at
-                                                ? new Date(
-                                                      editedArticle.updated_at,
-                                                  ).toLocaleString('id-ID')
-                                                : 'baru saja'}
-                                        </span>
-                                        <span>
-                                            Versi {editedArticle.version ?? 1}
-                                        </span>
-                                    </div>
-                                </div>
-                                <div className="flex gap-2">
-                                    {editMode ? (
-                                        <>
-                                            <Button
-                                                variant="outline"
-                                                onClick={() => {
-                                                    setEditedArticle(
-                                                        generatedArticle ??
-                                                            null,
-                                                    );
-                                                    setEditMode(false);
-                                                }}
-                                            >
-                                                Batal
-                                            </Button>
-                                            <Button onClick={saveDraft}>
-                                                <Save /> Simpan perubahan
-                                            </Button>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Button
-                                                variant="outline"
-                                                onClick={() =>
-                                                    setEditMode(true)
-                                                }
-                                            >
-                                                <Edit3 /> Edit
-                                            </Button>
-                                            {!editedArticle.reviewed_at && (
-                                                <Button
-                                                    variant="secondary"
-                                                    onClick={markReviewed}
-                                                >
-                                                    Tandai sudah ditinjau
-                                                </Button>
-                                            )}
-                                            <AlertDialog>
-                                                <AlertDialogTrigger asChild>
-                                                    <Button
-                                                        disabled={
-                                                            !editedArticle.reviewed_at ||
-                                                            Boolean(
-                                                                editedArticle
-                                                                    .quality
-                                                                    ?.publish_blocked,
-                                                            )
-                                                        }
-                                                    >
-                                                        Publikasikan
-                                                    </Button>
-                                                </AlertDialogTrigger>
-                                                <AlertDialogContent>
-                                                    <AlertDialogHeader>
-                                                        <AlertDialogTitle>
-                                                            Publikasikan berita
-                                                            ini?
-                                                        </AlertDialogTitle>
-                                                        <AlertDialogDescription>
-                                                            Anda mengonfirmasi
-                                                            bahwa fakta, sumber,
-                                                            dan versi artikel
-                                                            ini telah ditinjau.
-                                                            Tindakan ini tidak
-                                                            dilakukan otomatis
-                                                            oleh AI.
-                                                        </AlertDialogDescription>
-                                                    </AlertDialogHeader>
-                                                    <AlertDialogFooter>
-                                                        <AlertDialogCancel>
-                                                            Kembali meninjau
-                                                        </AlertDialogCancel>
-                                                        <AlertDialogAction
-                                                            onClick={
-                                                                publishDraft
-                                                            }
-                                                        >
-                                                            Ya, publikasikan
-                                                        </AlertDialogAction>
-                                                    </AlertDialogFooter>
-                                                </AlertDialogContent>
-                                            </AlertDialog>
-                                        </>
-                                    )}
-                                </div>
-                            </header>
-                            {editMode && (
-                                <div className="flex flex-wrap items-center gap-1 border-b bg-card px-5 py-2">
-                                    {[
-                                        ['bold', Bold],
-                                        ['italic', Italic],
-                                        ['underline', Underline],
-                                        ['justifyLeft', AlignLeft],
-                                        ['justifyCenter', AlignCenter],
-                                        ['justifyRight', AlignRight],
-                                        ['insertUnorderedList', List],
-                                        ['insertOrderedList', ListOrdered],
-                                        ['undo', Undo2],
-                                        ['redo', Redo2],
-                                    ].map(([command, Icon]) => (
-                                        <Button
-                                            key={command as string}
-                                            type="button"
-                                            variant="ghost"
-                                            size="icon-sm"
-                                            onMouseDown={(event) =>
-                                                event.preventDefault()
-                                            }
-                                            onClick={() =>
-                                                editorCommand(command as string)
-                                            }
-                                        >
-                                            <Icon className="size-4" />
-                                        </Button>
-                                    ))}
-                                    <Button
-                                        type="button"
-                                        variant="ghost"
+                                        key={action}
+                                        variant="outline"
                                         size="sm"
-                                        disabled
-                                        title="Penyisipan gambar akan menggunakan pustaka media"
-                                    >
-                                        <ImagePlus /> Gambar
-                                    </Button>
-                                </div>
-                            )}
-                            <div className="min-h-0 flex-1 overflow-y-auto p-5 lg:p-8">
-                                <article className="mx-auto max-w-3xl rounded-xl border bg-card p-6 shadow-sm md:p-10">
-                                    <input
-                                        ref={newsImageInput}
-                                        type="file"
-                                        accept="image/jpeg,image/png,image/webp"
-                                        className="hidden"
-                                        onChange={(event) => {
-                                            uploadNewsImage(
-                                                event.target.files?.[0],
-                                            );
-                                            event.target.value = '';
-                                        }}
-                                    />
-                                    <button
-                                        type="button"
-                                        className="relative mb-6 flex aspect-[16/7] w-full items-center justify-center overflow-hidden rounded-xl border border-dashed bg-muted/30 text-sm text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
-                                        disabled={!editMode}
+                                        className="rounded-full"
                                         onClick={() =>
-                                            newsImageInput.current?.click()
+                                            handleQuickAction(action)
                                         }
                                     >
-                                        {editedArticle.image ? (
-                                            <>
-                                                <img
-                                                    src={editedArticle.image}
-                                                    alt="Gambar berita"
-                                                    className="absolute inset-0 size-full object-cover"
-                                                />
-                                                {editMode && (
-                                                    <span className="absolute inset-0 flex items-center justify-center bg-background/70 opacity-0 transition-opacity hover:opacity-100">
-                                                        <ImagePlus className="mr-2 size-5" />
-                                                        Ganti gambar
-                                                    </span>
-                                                )}
-                                            </>
+                                        {action}
+                                    </Button>
+                                ))}
+                                {prompt.trim() && (
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="rounded-full"
+                                        disabled={findingRelated}
+                                        onClick={findRelated}
+                                    >
+                                        {findingRelated ? (
+                                            <LoaderCircle className="animate-spin" />
                                         ) : (
-                                            <>
-                                                <ImagePlus className="mr-2 size-5" />
-                                                Unggah gambar berita
-                                            </>
+                                            <Sparkles />
                                         )}
-                                    </button>
-                                    <div className="mb-5 flex flex-wrap gap-2">
-                                        {editedArticle.category && (
-                                            <Badge>
-                                                {editedArticle.category}
-                                            </Badge>
-                                        )}
-                                        {editedArticle.labels.map((label) => (
-                                            <Badge
-                                                key={label}
-                                                variant="secondary"
+                                        Cari informasi terkait
+                                    </Button>
+                                )}
+                            </div>
+                            {(workflowMode ||
+                                files.length > 0 ||
+                                hasSources) && (
+                                <div className="flex flex-wrap gap-2">
+                                    {workflowMode && (
+                                        <Badge
+                                            variant="outline"
+                                            className="gap-1.5 border-primary/30 bg-primary/5 py-1.5 text-primary"
+                                        >
+                                            {workflowMode === 'news'
+                                                ? 'Buat berita'
+                                                : workflowMode === 'extract'
+                                                  ? 'Ekstrak informasi'
+                                                  : 'Cari sumber'}
+                                            <button
+                                                type="button"
+                                                aria-label="Hapus mode"
+                                                onClick={() =>
+                                                    setWorkflowMode(null)
+                                                }
                                             >
-                                                {label}
-                                            </Badge>
-                                        ))}
-                                    </div>
-                                    {editMode ? (
-                                        <Input
-                                            value={editedArticle.headline}
-                                            onChange={(event) =>
-                                                setEditedArticle({
-                                                    ...editedArticle,
-                                                    headline:
-                                                        event.target.value,
-                                                })
-                                            }
-                                            className="h-auto border-0 px-0 text-3xl leading-tight font-semibold shadow-none focus-visible:ring-0"
-                                        />
-                                    ) : (
-                                        <h1 className="text-3xl leading-tight font-semibold">
-                                            {editedArticle.headline}
-                                        </h1>
+                                                <X className="size-3" />
+                                            </button>
+                                        </Badge>
                                     )}
-                                    <p className="mt-3 text-xs text-muted-foreground">
-                                        Oleh Moderator ApaKhabar · Versi{' '}
-                                        {editedArticle.version ?? 1}
-                                    </p>
-                                    <div className="my-6 h-px bg-border" />
-                                    <div className="space-y-5 leading-8">
-                                        {[
-                                            editedArticle.lead,
-                                            ...editedArticle.body,
-                                        ].map((paragraph, index) =>
-                                            editMode ? (
-                                                <div
-                                                    key={index}
-                                                    contentEditable
-                                                    suppressContentEditableWarning
-                                                    className={`${index === 0 ? 'text-lg font-medium' : ''} rounded-md outline-none focus:ring-2 focus:ring-ring/30`}
-                                                    onBlur={(event) => {
-                                                        const value =
-                                                            event.currentTarget
-                                                                .textContent ??
-                                                            '';
-
-                                                        if (index === 0) {
-                                                            setEditedArticle({
-                                                                ...editedArticle,
-                                                                lead: value,
-                                                            });
-                                                        } else {
-                                                            const body = [
-                                                                ...editedArticle.body,
-                                                            ];
-                                                            body[index - 1] =
-                                                                value;
-                                                            setEditedArticle({
-                                                                ...editedArticle,
-                                                                body,
-                                                            });
-                                                        }
+                                    {files.map((file, index) => (
+                                        <Badge
+                                            key={`${file.name}-${index}`}
+                                            variant="secondary"
+                                            className="gap-1 py-1.5"
+                                        >
+                                            <Paperclip className="size-3" />
+                                            {file.name}
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    setFiles((current) =>
+                                                        current.filter(
+                                                            (_, position) =>
+                                                                position !==
+                                                                index,
+                                                        ),
+                                                    )
+                                                }
+                                            >
+                                                <X className="size-3" />
+                                            </button>
+                                        </Badge>
+                                    ))}
+                                    {informationIds.length > 0 && (
+                                        <Badge variant="secondary">
+                                            {informationIds.length} informasi
+                                        </Badge>
+                                    )}
+                                    {documentIds.length > 0 && (
+                                        <Badge variant="secondary">
+                                            {documentIds.length} dokumen
+                                        </Badge>
+                                    )}
+                                </div>
+                            )}
+                            <div
+                                className={`grid items-center gap-1 rounded-2xl border bg-card p-1.5 shadow-lg focus-within:ring-2 focus-within:ring-ring/30 ${composerMultiline ? 'grid-cols-[1fr_auto]' : 'grid-cols-[auto_1fr_auto]'}`}
+                            >
+                                <Textarea
+                                    ref={composerInput}
+                                    value={prompt}
+                                    rows={1}
+                                    onChange={(event) => {
+                                        setPrompt(event.target.value);
+                                        resizeComposer(event.currentTarget);
+                                    }}
+                                    placeholder="Jelaskan berita yang ingin dibuat atau tambahkan arahan editorial…"
+                                    className={`min-h-9 resize-none rounded-none border-0 bg-transparent px-3 py-1.5 leading-6 shadow-none focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent ${composerMultiline ? 'col-span-2 col-start-1 row-start-1' : 'col-start-2 row-start-1'}`}
+                                />
+                                <div className="contents">
+                                    <div
+                                        className={`flex items-center gap-1 ${composerMultiline ? 'col-start-1 row-start-2' : 'col-start-1 row-start-1'}`}
+                                    >
+                                        <input
+                                            ref={fileInput}
+                                            type="file"
+                                            multiple
+                                            className="hidden"
+                                            accept=".pdf,.docx,.xlsx,.xlsm,.csv,.txt,.jpg,.jpeg,.png"
+                                            onChange={(event) => {
+                                                addFiles(event.target.files);
+                                                event.target.value = '';
+                                            }}
+                                        />
+                                        <DropdownMenu>
+                                            <DropdownMenuTrigger asChild>
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="rounded-full"
+                                                    title="Tambahkan sumber"
+                                                    aria-label="Tambahkan sumber"
+                                                >
+                                                    <Plus />
+                                                </Button>
+                                            </DropdownMenuTrigger>
+                                            <DropdownMenuContent
+                                                side="top"
+                                                align="start"
+                                                className="w-56"
+                                            >
+                                                <DropdownMenuItem
+                                                    onSelect={() => {
+                                                        setWorkflowMode(
+                                                            'extract',
+                                                        );
+                                                        fileInput.current?.click();
                                                     }}
                                                 >
-                                                    {paragraph}
-                                                </div>
-                                            ) : (
-                                                <p
-                                                    key={index}
-                                                    className={
-                                                        index === 0
-                                                            ? 'text-lg font-medium'
-                                                            : ''
+                                                    <Paperclip /> Unggah file
+                                                </DropdownMenuItem>
+                                                <DropdownMenuItem
+                                                    onSelect={() => {
+                                                        setPickerTab(
+                                                            'information',
+                                                        );
+                                                        setPicker(true);
+                                                    }}
+                                                >
+                                                    <FolderSearch /> Pilih
+                                                    informasi
+                                                </DropdownMenuItem>
+                                                <DropdownMenuItem
+                                                    onSelect={() => {
+                                                        setPickerTab(
+                                                            'documents',
+                                                        );
+                                                        setPicker(true);
+                                                    }}
+                                                >
+                                                    <FileText /> Pilih dokumen
+                                                </DropdownMenuItem>
+                                                <DropdownMenuItem
+                                                    onSelect={() => {
+                                                        setPickerTab('manual');
+                                                        setPicker(true);
+                                                    }}
+                                                >
+                                                    <Edit3 /> Tambahkan fakta
+                                                    manual
+                                                </DropdownMenuItem>
+                                            </DropdownMenuContent>
+                                        </DropdownMenu>
+                                        <Dialog
+                                            open={picker}
+                                            onOpenChange={setPicker}
+                                        >
+                                            <DialogContent className="max-h-[80vh] sm:max-w-2xl">
+                                                <DialogHeader>
+                                                    <DialogTitle>
+                                                        Pilih sumber yang
+                                                        disetujui
+                                                    </DialogTitle>
+                                                    <DialogDescription>
+                                                        Hanya sumber terpilih
+                                                        yang dipakai untuk
+                                                        membuat berita.
+                                                    </DialogDescription>
+                                                </DialogHeader>
+                                                <Input
+                                                    value={query}
+                                                    onChange={(event) =>
+                                                        setQuery(
+                                                            event.target.value,
+                                                        )
+                                                    }
+                                                    placeholder="Cari sumber…"
+                                                />
+                                                <Tabs
+                                                    value={pickerTab}
+                                                    onValueChange={(value) =>
+                                                        setPickerTab(
+                                                            value as typeof pickerTab,
+                                                        )
                                                     }
                                                 >
-                                                    {paragraph}
-                                                    {editedArticle
-                                                        .selected_sources
-                                                        .length > 0 && (
-                                                        <sup className="ml-1 text-primary">
-                                                            [
-                                                            {(index %
-                                                                editedArticle
-                                                                    .selected_sources
-                                                                    .length) +
-                                                                1}
-                                                            ]
-                                                        </sup>
-                                                    )}
-                                                </p>
-                                            ),
-                                        )}
-                                    </div>
-                                    <Collapsible
-                                        open={sourcesOpen}
-                                        onOpenChange={setSourcesOpen}
-                                        className="mt-8 border-t pt-6"
-                                    >
-                                        <CollapsibleTrigger asChild>
+                                                    <TabsList>
+                                                        <TabsTrigger value="information">
+                                                            Informasi
+                                                        </TabsTrigger>
+                                                        <TabsTrigger value="documents">
+                                                            Dokumen
+                                                        </TabsTrigger>
+                                                        <TabsTrigger value="manual">
+                                                            Fakta manual
+                                                        </TabsTrigger>
+                                                    </TabsList>
+                                                    <TabsContent
+                                                        value="information"
+                                                        className="max-h-[48vh] space-y-2 overflow-y-auto"
+                                                    >
+                                                        {shownInformation.map(
+                                                            (item) => (
+                                                                <label
+                                                                    key={
+                                                                        item.id
+                                                                    }
+                                                                    className="flex cursor-pointer gap-3 rounded-lg border p-3 hover:bg-muted/50"
+                                                                >
+                                                                    <Checkbox
+                                                                        checked={informationIds.includes(
+                                                                            item.id,
+                                                                        )}
+                                                                        onCheckedChange={() =>
+                                                                            toggle(
+                                                                                informationIds,
+                                                                                item.id,
+                                                                                setInformationIds,
+                                                                            )
+                                                                        }
+                                                                    />
+                                                                    <span>
+                                                                        <span className="block text-sm font-medium">
+                                                                            {
+                                                                                item.title
+                                                                            }
+                                                                        </span>
+                                                                        <span className="line-clamp-2 text-xs text-muted-foreground">
+                                                                            {
+                                                                                item.summary
+                                                                            }
+                                                                        </span>
+                                                                        <span className="text-xs text-primary">
+                                                                            {
+                                                                                item
+                                                                                    .document
+                                                                                    .original_name
+                                                                            }
+                                                                        </span>
+                                                                    </span>
+                                                                </label>
+                                                            ),
+                                                        )}
+                                                    </TabsContent>
+                                                    <TabsContent
+                                                        value="documents"
+                                                        className="max-h-[48vh] space-y-2 overflow-y-auto"
+                                                    >
+                                                        {documents.map(
+                                                            (document) => (
+                                                                <label
+                                                                    key={
+                                                                        document.id
+                                                                    }
+                                                                    className="flex cursor-pointer items-center gap-3 rounded-lg border p-3 hover:bg-muted/50"
+                                                                >
+                                                                    <Checkbox
+                                                                        checked={documentIds.includes(
+                                                                            document.id,
+                                                                        )}
+                                                                        onCheckedChange={() =>
+                                                                            toggle(
+                                                                                documentIds,
+                                                                                document.id,
+                                                                                setDocumentIds,
+                                                                            )
+                                                                        }
+                                                                    />
+                                                                    <FileText className="size-4" />
+                                                                    <span className="text-sm font-medium">
+                                                                        {
+                                                                            document.original_name
+                                                                        }
+                                                                    </span>
+                                                                </label>
+                                                            ),
+                                                        )}
+                                                    </TabsContent>
+                                                    <TabsContent value="manual">
+                                                        <div className="space-y-2 rounded-lg border p-3">
+                                                            <p className="text-sm font-medium">
+                                                                Fakta yang
+                                                                diberikan
+                                                                moderator
+                                                            </p>
+                                                            <p className="text-xs text-muted-foreground">
+                                                                Fakta ini akan
+                                                                ditandai sebagai
+                                                                user-provided
+                                                                dan tidak
+                                                                dianggap berasal
+                                                                dari dokumen.
+                                                            </p>
+                                                            <Textarea
+                                                                value={
+                                                                    manualFact
+                                                                }
+                                                                onChange={(
+                                                                    event,
+                                                                ) =>
+                                                                    setManualFact(
+                                                                        event
+                                                                            .target
+                                                                            .value,
+                                                                    )
+                                                                }
+                                                                placeholder="Contoh: Kegiatan akan berlangsung pada 20 September 2026."
+                                                            />
+                                                        </div>
+                                                    </TabsContent>
+                                                </Tabs>
+                                                <Button
+                                                    onClick={() =>
+                                                        setPicker(false)
+                                                    }
+                                                >
+                                                    Gunakan sumber terpilih
+                                                </Button>
+                                            </DialogContent>
+                                        </Dialog>
+                                        {(composerOverflowing ||
+                                            composerExpanded) && (
                                             <Button
+                                                type="button"
                                                 variant="ghost"
-                                                className="w-full justify-between"
-                                            >
-                                                Sumber digunakan (
-                                                {
-                                                    editedArticle
-                                                        .selected_sources.length
+                                                size="icon-sm"
+                                                title={
+                                                    composerExpanded
+                                                        ? 'Ciutkan kotak pesan'
+                                                        : 'Perbesar kotak pesan'
                                                 }
-                                                )
-                                                {sourcesOpen ? (
-                                                    <ChevronDown />
+                                                aria-label={
+                                                    composerExpanded
+                                                        ? 'Ciutkan kotak pesan'
+                                                        : 'Perbesar kotak pesan'
+                                                }
+                                                onClick={() =>
+                                                    setComposerExpanded(
+                                                        (current) => !current,
+                                                    )
+                                                }
+                                            >
+                                                {composerExpanded ? (
+                                                    <Minimize2 />
                                                 ) : (
-                                                    <ChevronRight />
+                                                    <Maximize2 />
                                                 )}
                                             </Button>
-                                        </CollapsibleTrigger>
-                                        <CollapsibleContent className="mt-3 space-y-2">
-                                            {editedArticle.selected_sources.map(
-                                                (source, sourceIndex) => (
-                                                    <Collapsible
-                                                        key={source.id}
-                                                        className="rounded-lg border bg-muted/20 p-3"
-                                                    >
-                                                        <CollapsibleTrigger className="flex w-full items-center gap-3 text-left">
-                                                            <FileText className="size-4 text-primary" />
-                                                            <span className="min-w-0 flex-1">
-                                                                <span className="block truncate text-sm font-medium">
-                                                                    {sourceIndex +
-                                                                        1}
-                                                                    .{' '}
-                                                                    {
-                                                                        source.document
-                                                                    }
-                                                                </span>
-                                                                <span className="text-xs text-muted-foreground">
-                                                                    {source.evidence
-                                                                        .map(
-                                                                            (
-                                                                                item,
-                                                                            ) =>
-                                                                                item.source,
-                                                                        )
-                                                                        .join(
-                                                                            ', ',
-                                                                        ) ||
-                                                                        source.title}
-                                                                </span>
-                                                            </span>
-                                                            <ChevronDown className="size-4" />
-                                                        </CollapsibleTrigger>
-                                                        <CollapsibleContent className="mt-3 space-y-2 border-t pt-3">
-                                                            {source.evidence.map(
-                                                                (
-                                                                    evidence,
-                                                                    index,
-                                                                ) => (
-                                                                    <p
-                                                                        key={
-                                                                            index
-                                                                        }
-                                                                        className="text-xs leading-5 text-muted-foreground"
-                                                                    >
-                                                                        <strong>
-                                                                            {
-                                                                                evidence.source
-                                                                            }
-                                                                        </strong>
-                                                                        : “
-                                                                        {
-                                                                            evidence.quote
-                                                                        }
-                                                                        ”
-                                                                    </p>
-                                                                ),
-                                                            )}
-                                                        </CollapsibleContent>
-                                                    </Collapsible>
-                                                ),
-                                            )}
-                                        </CollapsibleContent>
-                                    </Collapsible>
-                                </article>
-                            </div>
-                        </>
-                    ) : (
-                        <div className="flex min-h-full flex-1 items-center justify-center p-5">
-                            <div className="max-w-md text-center">
-                                <div className="mx-auto mb-5 flex size-16 items-center justify-center rounded-2xl border bg-card text-primary shadow-sm">
-                                    <Sparkles className="size-7" />
+                                        )}
+                                    </div>
+                                    <Button
+                                        size="icon"
+                                        className={`rounded-full ${composerMultiline ? 'col-start-2 row-start-2' : 'col-start-3 row-start-1'}`}
+                                        disabled={
+                                            busy ||
+                                            processingFiles ||
+                                            (!files.length &&
+                                                !hasSources &&
+                                                !newsSession &&
+                                                !prompt.trim() &&
+                                                !manualFact.trim())
+                                        }
+                                        onClick={() => submit()}
+                                    >
+                                        {busy ? (
+                                            <LoaderCircle className="animate-spin" />
+                                        ) : (
+                                            <ArrowUp />
+                                        )}
+                                    </Button>
                                 </div>
-                                <h2 className="text-xl font-semibold">
-                                    Draf berita akan muncul di sini
-                                </h2>
-                                <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                                    Tambahkan arahan, unggah hingga lima file,
-                                    atau pilih informasi dan dokumen tersimpan.
+                            </div>
+                            {(errors.document ||
+                                errors.documents ||
+                                errors.generation) && (
+                                <p className="text-sm text-danger-text">
+                                    {errors.document ||
+                                        errors.documents ||
+                                        errors.generation}
                                 </p>
+                            )}
+                            <p className="text-xs text-muted-foreground">
+                                Maksimum 5 file baru · dokumen, spreadsheet,
+                                teks, dan gambar OCR
+                            </p>
+                        </div>
+                    </div>
+                </section>
+                {editedArticle && previewOpen && (
+                    <PreviewFrame
+                        width={previewWidth}
+                        onResizeStart={(event) => {
+                            event.preventDefault();
+                            setResizingPreview(true);
+                        }}
+                    >
+                        <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border/50 bg-card/80 px-5 py-4 backdrop-blur-xl">
+                            <div>
+                                <div className="flex items-center gap-2">
+                                    <h2 className="font-semibold">
+                                        Pratinjau berita
+                                    </h2>
+                                    <Badge variant="secondary">DRAF AI</Badge>
+                                    <QualityScoreBadge
+                                        quality={editedArticle.quality}
+                                    />
+                                </div>
+                                <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
+                                    <span className="flex items-center gap-1">
+                                        <Clock3 className="size-3" />
+                                        Terakhir dibuat{' '}
+                                        {editedArticle.updated_at
+                                            ? new Date(
+                                                  editedArticle.updated_at,
+                                              ).toLocaleString('id-ID')
+                                            : 'baru saja'}
+                                    </span>
+                                    <span>
+                                        Versi {editedArticle.version ?? 1}
+                                    </span>
+                                </div>
+                            </div>
+                            <div className="flex gap-2">
+                                {editMode ? (
+                                    <>
+                                        <Button
+                                            variant="outline"
+                                            onClick={() => {
+                                                setEditedArticle(
+                                                    generatedArticle ?? null,
+                                                );
+                                                setEditMode(false);
+                                            }}
+                                        >
+                                            Batal
+                                        </Button>
+                                        <Button onClick={saveDraft}>
+                                            <Save /> Simpan perubahan
+                                        </Button>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Button
+                                            variant="outline"
+                                            onClick={() => setEditMode(true)}
+                                        >
+                                            <Edit3 /> Edit
+                                        </Button>
+                                        {!editedArticle.reviewed_at && (
+                                            <Button
+                                                variant="secondary"
+                                                onClick={markReviewed}
+                                            >
+                                                Tandai sudah ditinjau
+                                            </Button>
+                                        )}
+                                        <AlertDialog>
+                                            <AlertDialogTrigger asChild>
+                                                <Button
+                                                    disabled={
+                                                        !editedArticle.reviewed_at ||
+                                                        Boolean(
+                                                            editedArticle
+                                                                .quality
+                                                                ?.publish_blocked,
+                                                        )
+                                                    }
+                                                >
+                                                    Publikasikan
+                                                </Button>
+                                            </AlertDialogTrigger>
+                                            <AlertDialogContent>
+                                                <AlertDialogHeader>
+                                                    <AlertDialogTitle>
+                                                        Publikasikan berita ini?
+                                                    </AlertDialogTitle>
+                                                    <AlertDialogDescription>
+                                                        Anda mengonfirmasi bahwa
+                                                        fakta, sumber, dan versi
+                                                        artikel ini telah
+                                                        ditinjau. Tindakan ini
+                                                        tidak dilakukan otomatis
+                                                        oleh AI.
+                                                    </AlertDialogDescription>
+                                                </AlertDialogHeader>
+                                                <AlertDialogFooter>
+                                                    <AlertDialogCancel>
+                                                        Kembali meninjau
+                                                    </AlertDialogCancel>
+                                                    <AlertDialogAction
+                                                        onClick={publishDraft}
+                                                    >
+                                                        Ya, publikasikan
+                                                    </AlertDialogAction>
+                                                </AlertDialogFooter>
+                                            </AlertDialogContent>
+                                        </AlertDialog>
+                                    </>
+                                )}
                                 <Button
-                                    variant="outline"
-                                    className="mt-5"
-                                    onClick={() => setPicker(true)}
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => setPreviewOpen(false)}
+                                    title="Tutup pratinjau"
+                                    aria-label="Tutup pratinjau"
                                 >
-                                    <FolderSearch />
-                                    Pilih sumber
+                                    <PanelRightClose />
                                 </Button>
                             </div>
+                        </header>
+                        {editMode && (
+                            <div className="flex flex-wrap items-center gap-1 border-b bg-card px-5 py-2">
+                                {[
+                                    ['bold', Bold],
+                                    ['italic', Italic],
+                                    ['underline', Underline],
+                                    ['justifyLeft', AlignLeft],
+                                    ['justifyCenter', AlignCenter],
+                                    ['justifyRight', AlignRight],
+                                    ['insertUnorderedList', List],
+                                    ['insertOrderedList', ListOrdered],
+                                    ['undo', Undo2],
+                                    ['redo', Redo2],
+                                ].map(([command, Icon]) => (
+                                    <Button
+                                        key={command as string}
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon-sm"
+                                        onMouseDown={(event) =>
+                                            event.preventDefault()
+                                        }
+                                        onClick={() =>
+                                            editorCommand(command as string)
+                                        }
+                                    >
+                                        <Icon className="size-4" />
+                                    </Button>
+                                ))}
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    disabled
+                                    title="Penyisipan gambar akan menggunakan pustaka media"
+                                >
+                                    <ImagePlus /> Gambar
+                                </Button>
+                            </div>
+                        )}
+                        <div className="min-h-0 flex-1 overflow-y-auto bg-muted/25 p-5 lg:p-8">
+                            <article className="mx-auto max-w-3xl rounded-2xl bg-background p-6 shadow-lg ring-1 ring-border/50 md:p-10">
+                                <input
+                                    ref={newsImageInput}
+                                    type="file"
+                                    accept="image/jpeg,image/png,image/webp"
+                                    className="hidden"
+                                    onChange={(event) => {
+                                        uploadNewsImage(
+                                            event.target.files?.[0],
+                                        );
+                                        event.target.value = '';
+                                    }}
+                                />
+                                <button
+                                    type="button"
+                                    className="relative mb-6 flex aspect-[16/7] w-full items-center justify-center overflow-hidden rounded-xl border border-dashed bg-muted/30 text-sm text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
+                                    disabled={!editMode}
+                                    onClick={() =>
+                                        newsImageInput.current?.click()
+                                    }
+                                >
+                                    {editedArticle.image ? (
+                                        <>
+                                            <img
+                                                src={editedArticle.image}
+                                                alt="Gambar berita"
+                                                className="absolute inset-0 size-full object-cover"
+                                            />
+                                            {editMode && (
+                                                <span className="absolute inset-0 flex items-center justify-center bg-background/70 opacity-0 transition-opacity hover:opacity-100">
+                                                    <ImagePlus className="mr-2 size-5" />
+                                                    Ganti gambar
+                                                </span>
+                                            )}
+                                        </>
+                                    ) : (
+                                        <>
+                                            <ImagePlus className="mr-2 size-5" />
+                                            Unggah gambar berita
+                                        </>
+                                    )}
+                                </button>
+                                <div className="mb-5 flex flex-wrap gap-2">
+                                    {editedArticle.category && (
+                                        <Badge>{editedArticle.category}</Badge>
+                                    )}
+                                    {editedArticle.labels.map((label) => (
+                                        <Badge key={label} variant="secondary">
+                                            {label}
+                                        </Badge>
+                                    ))}
+                                </div>
+                                {editMode ? (
+                                    <Input
+                                        value={editedArticle.headline}
+                                        onChange={(event) =>
+                                            setEditedArticle({
+                                                ...editedArticle,
+                                                headline: event.target.value,
+                                            })
+                                        }
+                                        className="h-auto border-0 px-0 text-3xl leading-tight font-semibold shadow-none focus-visible:ring-0"
+                                    />
+                                ) : (
+                                    <h1 className="text-3xl leading-tight font-semibold">
+                                        {editedArticle.headline}
+                                    </h1>
+                                )}
+                                <p className="mt-3 text-xs text-muted-foreground">
+                                    Oleh Moderator ApaKhabar · Versi{' '}
+                                    {editedArticle.version ?? 1}
+                                </p>
+                                <div className="my-6 h-px bg-border" />
+                                <div className="space-y-5 leading-8">
+                                    {[
+                                        editedArticle.lead,
+                                        ...editedArticle.body,
+                                    ].map((paragraph, index) =>
+                                        editMode ? (
+                                            <div
+                                                key={index}
+                                                contentEditable
+                                                suppressContentEditableWarning
+                                                className={`${index === 0 ? 'text-lg font-medium' : ''} rounded-md outline-none focus:ring-2 focus:ring-ring/30`}
+                                                onBlur={(event) => {
+                                                    const value =
+                                                        event.currentTarget
+                                                            .textContent ?? '';
+
+                                                    if (index === 0) {
+                                                        setEditedArticle({
+                                                            ...editedArticle,
+                                                            lead: value,
+                                                        });
+                                                    } else {
+                                                        const body = [
+                                                            ...editedArticle.body,
+                                                        ];
+                                                        body[index - 1] = value;
+                                                        setEditedArticle({
+                                                            ...editedArticle,
+                                                            body,
+                                                        });
+                                                    }
+                                                }}
+                                            >
+                                                {paragraph}
+                                            </div>
+                                        ) : (
+                                            <p
+                                                key={index}
+                                                className={
+                                                    index === 0
+                                                        ? 'text-lg font-medium'
+                                                        : ''
+                                                }
+                                            >
+                                                {paragraph}
+                                                {editedArticle.selected_sources
+                                                    .length > 0 && (
+                                                    <sup className="ml-1 text-primary">
+                                                        [
+                                                        {(index %
+                                                            editedArticle
+                                                                .selected_sources
+                                                                .length) +
+                                                            1}
+                                                        ]
+                                                    </sup>
+                                                )}
+                                            </p>
+                                        ),
+                                    )}
+                                </div>
+                                <Collapsible
+                                    open={sourcesOpen}
+                                    onOpenChange={setSourcesOpen}
+                                    className="mt-8 border-t pt-6"
+                                >
+                                    <CollapsibleTrigger asChild>
+                                        <Button
+                                            variant="ghost"
+                                            className="w-full justify-between"
+                                        >
+                                            Sumber digunakan (
+                                            {
+                                                editedArticle.selected_sources
+                                                    .length
+                                            }
+                                            )
+                                            {sourcesOpen ? (
+                                                <ChevronDown />
+                                            ) : (
+                                                <ChevronRight />
+                                            )}
+                                        </Button>
+                                    </CollapsibleTrigger>
+                                    <CollapsibleContent className="mt-3 space-y-2">
+                                        {editedArticle.selected_sources.map(
+                                            (source, sourceIndex) => (
+                                                <Collapsible
+                                                    key={source.id}
+                                                    className="rounded-lg border bg-muted/20 p-3"
+                                                >
+                                                    <CollapsibleTrigger className="flex w-full items-center gap-3 text-left">
+                                                        <FileText className="size-4 text-primary" />
+                                                        <span className="min-w-0 flex-1">
+                                                            <span className="block truncate text-sm font-medium">
+                                                                {sourceIndex +
+                                                                    1}
+                                                                .{' '}
+                                                                {
+                                                                    source.document
+                                                                }
+                                                            </span>
+                                                            <span className="text-xs text-muted-foreground">
+                                                                {source.evidence
+                                                                    .map(
+                                                                        (
+                                                                            item,
+                                                                        ) =>
+                                                                            item.source,
+                                                                    )
+                                                                    .join(
+                                                                        ', ',
+                                                                    ) ||
+                                                                    source.title}
+                                                            </span>
+                                                        </span>
+                                                        <ChevronDown className="size-4" />
+                                                    </CollapsibleTrigger>
+                                                    <CollapsibleContent className="mt-3 space-y-2 border-t pt-3">
+                                                        {source.evidence.map(
+                                                            (
+                                                                evidence,
+                                                                index,
+                                                            ) => (
+                                                                <p
+                                                                    key={index}
+                                                                    className="text-xs leading-5 text-muted-foreground"
+                                                                >
+                                                                    <strong>
+                                                                        {
+                                                                            evidence.source
+                                                                        }
+                                                                    </strong>
+                                                                    : “
+                                                                    {
+                                                                        evidence.quote
+                                                                    }
+                                                                    ”
+                                                                </p>
+                                                            ),
+                                                        )}
+                                                    </CollapsibleContent>
+                                                </Collapsible>
+                                            ),
+                                        )}
+                                    </CollapsibleContent>
+                                </Collapsible>
+                            </article>
                         </div>
-                    )}
-                </section>
+                    </PreviewFrame>
+                )}
             </div>
         </>
     );
