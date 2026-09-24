@@ -71,6 +71,11 @@ Route::prefix('admin')
     ->name('admin.')
     ->middleware(['auth', 'verified', 'role:admin,moderator'])
     ->group(function () {
+        Route::get('/social/connections', [\App\Http\Controllers\Admin\MetaConnectionController::class, 'status'])->middleware('throttle:30,1')->name('social.status');
+        Route::post('/social/facebook/authorize', [\App\Http\Controllers\Admin\MetaConnectionController::class, 'facebookAuthorize'])->middleware('throttle:10,1')->name('social.facebook.authorize');
+        Route::post('/social/facebook/page', [\App\Http\Controllers\Admin\MetaConnectionController::class, 'facebookChoose'])->middleware('throttle:10,1')->name('social.facebook.page');
+        Route::get('/social/instagram/connect', [\App\Http\Controllers\Admin\MetaConnectionController::class, 'instagramStart'])->middleware('throttle:10,1')->name('social.instagram.start');
+        Route::get('/social/instagram/callback', [\App\Http\Controllers\Admin\MetaConnectionController::class, 'instagramCallback'])->name('social.instagram.callback');
         Route::inertia('/dashboard', 'admin/dashboard')->name('dashboard');
 
         // Broadcasting — full CRUD + archive/restore

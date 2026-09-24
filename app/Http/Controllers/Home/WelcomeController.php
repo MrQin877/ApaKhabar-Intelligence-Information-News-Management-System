@@ -12,19 +12,19 @@ class WelcomeController extends Controller
 {
     public function index()
     {
-        $news = News::latest()->get()->map(function ($item) {
+        $news = News::where('show_on_homepage', true)->latest()->get()->map(function ($item) {
             return [
-                'id'       => (string) $item->getKey(),
-                'title'    => $item->title,
-                'excerpt'  => $item->excerpt ?? '',
-                'image'    => $item->image ?? 'https://placehold.co/600x400',
-                'date'     => optional($item->created_at)->format('d F Y') ?? '-',
+                'id' => (string) $item->getKey(),
+                'title' => $item->title,
+                'excerpt' => $item->excerpt ?? '',
+                'image' => $item->image ?? 'https://placehold.co/600x400',
+                'date' => optional($item->created_at)->format('d F Y') ?? '-',
                 'category' => $item->category ?? 'Umum',
             ];
         });
 
         $featuredNews = $news->first();
-        $newsList     = $news->skip(1)->values();
+        $newsList = $news->skip(1)->values();
 
         // ── Darurat broadcast — only show if sent within last 24 hours ──
         $daruratBroadcast = Broadcast::category('darurat')
@@ -35,12 +35,12 @@ class WelcomeController extends Controller
             ->first();
 
         return Inertia::render('welcome', [
-            'featuredNews'     => $featuredNews,
-            'newsList'         => $newsList,
-            'breakingNews'     => $daruratBroadcast?->title,
-            'breakingMessage'  => $daruratBroadcast?->message,
-            'breakingSentAt'   => $daruratBroadcast?->sent_at?->toISOString(),
-            'canRegister'      => Features::enabled(Features::registration()),
+            'featuredNews' => $featuredNews,
+            'newsList' => $newsList,
+            'breakingNews' => $daruratBroadcast?->title,
+            'breakingMessage' => $daruratBroadcast?->message,
+            'breakingSentAt' => $daruratBroadcast?->sent_at?->toISOString(),
+            'canRegister' => Features::enabled(Features::registration()),
         ]);
     }
 }

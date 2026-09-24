@@ -332,7 +332,7 @@ return;
 
                     {/* Article body */}
                     <div
-                        className="animate-fade-slide-up prose prose-sm dark:prose-invert mb-8 max-w-none leading-relaxed text-foreground"
+                        className="article-content animate-fade-slide-up prose prose-sm dark:prose-invert mb-8 max-w-none leading-relaxed text-foreground"
                         style={{ animationDelay: '200ms' }}
                         dangerouslySetInnerHTML={{ __html: news.content || `<p>${news.excerpt}</p>` }}
                     />

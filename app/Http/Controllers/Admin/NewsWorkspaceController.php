@@ -7,10 +7,14 @@ use App\Models\IntelligentNewsDraft;
 use App\Models\IntelligentNewsSession;
 use App\Models\News;
 use App\Models\NewsCategory;
+use App\Services\News\ArticleHtml;
+use App\Services\News\MetaConnections;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -30,21 +34,21 @@ class NewsWorkspaceController extends Controller
                 $quality = $draft->qualityEvaluations->first();
 
                 return [
-                'key' => "draft-{$draft->id}",
-                'id' => $draft->id,
-                'record_type' => 'draft',
-                'title' => $draft->headline,
-                'summary' => $draft->summary,
-                'status' => $draft->status,
-                'creation_method' => $draft->creation_method,
-                'category' => $draft->category?->name,
-                'updated_at' => $draft->updated_at?->toISOString(),
-                'resume_url' => $draft->creation_method === 'ai'
-                    ? route('admin.assistant.index', array_filter([
-                        'session' => $draft->session?->id,
-                        'draft' => $draft->id,
-                    ]))
-                    : route('admin.news-workspace.manual.edit', $draft),
+                    'key' => "draft-{$draft->id}",
+                    'id' => $draft->id,
+                    'record_type' => 'draft',
+                    'title' => $draft->headline,
+                    'summary' => $draft->summary,
+                    'status' => $draft->status,
+                    'creation_method' => $draft->creation_method,
+                    'category' => $draft->category?->name,
+                    'updated_at' => $draft->updated_at?->toISOString(),
+                    'resume_url' => $draft->creation_method === 'ai'
+                        ? route('admin.assistant.index', array_filter([
+                            'session' => $draft->session?->id,
+                            'draft' => $draft->id,
+                        ]))
+                        : route('admin.news-workspace.manual.edit', $draft),
                     'can_publish' => $draft->status === 'draft' && ! $quality?->publish_blocked,
                     'quality_score' => $quality?->overall_score,
                     'quality_label' => $quality?->quality_label,
@@ -111,6 +115,8 @@ class NewsWorkspaceController extends Controller
         return Inertia::render('admin/intelligentnewscreator/editor', [
             'draft' => null,
             'categories' => $this->categories(),
+            'publishPlatforms' => $this->publishPlatforms(),
+            'metaAuth' => app(MetaConnections::class)->publicConfig(),
         ]);
     }
 
@@ -118,6 +124,12 @@ class NewsWorkspaceController extends Controller
     {
         $data = $this->validateDraft($request);
         $draft = IntelligentNewsDraft::create($this->draftAttributes($data, $request->user()->getKey()));
+
+        if (($data['intent'] ?? 'draft') === 'publish') {
+            $draft->update(['reviewed_at' => now()]);
+
+            return $this->publish($request, $draft);
+        }
 
         return redirect()->route('admin.news-workspace.manual.edit', $draft)
             ->with('success', 'Draf manual berhasil disimpan.');
@@ -133,12 +145,20 @@ class NewsWorkspaceController extends Controller
                 'headline' => $draft->headline,
                 'subheadline' => $draft->subheadline,
                 'content' => collect($draft->body)->join("\n\n"),
+                'content_html' => app(ArticleHtml::class)->sanitize(
+                    preg_match('/<(p|div|br|strong|b|em|i|u|ul|ol|li|blockquote)\b/i', collect($draft->body)->join("\n\n"))
+                        ? collect($draft->body)->join("\n\n")
+                        : nl2br(e(collect($draft->body)->join("\n\n")))
+                ),
                 'summary' => $draft->summary,
                 'category_id' => $draft->category_id,
                 'image' => $draft->image,
                 'status' => $draft->status,
+                'show_on_homepage' => $draft->show_on_homepage,
             ],
             'categories' => $this->categories(),
+            'publishPlatforms' => $this->publishPlatforms(),
+            'metaAuth' => app(MetaConnections::class)->publicConfig(),
         ]);
     }
 
@@ -149,6 +169,12 @@ class NewsWorkspaceController extends Controller
         abort_unless($draft->status === 'draft', 422, 'Only active drafts can be edited.');
         $data = $this->validateDraft($request);
         $draft->update($this->draftAttributes($data, $request->user()->getKey()));
+
+        if (($data['intent'] ?? 'draft') === 'publish') {
+            $draft->update(['reviewed_at' => now()]);
+
+            return $this->publish($request, $draft);
+        }
 
         return back()->with('success', 'Draf berhasil diperbarui.');
     }
@@ -175,6 +201,7 @@ class NewsWorkspaceController extends Controller
                 'status' => 'active',
                 'creation_method' => $draft->creation_method,
                 'created_by' => $request->user()->getKey(),
+                'show_on_homepage' => $draft->show_on_homepage,
             ]);
             $draft->update(['status' => 'published', 'published_news_id' => $news->getKey()]);
         });
@@ -214,14 +241,46 @@ class NewsWorkspaceController extends Controller
 
     private function validateDraft(Request $request): array
     {
-        return $request->validate([
+        $data = $request->validate([
             'headline' => ['required', 'string', 'max:255'],
             'subheadline' => ['nullable', 'string', 'max:255'],
             'content' => ['required', 'string', 'min:20', 'max:100000'],
             'summary' => ['required', 'string', 'max:1000'],
             'category_id' => ['nullable', 'integer', Rule::exists('news_categories', 'categoryID')],
             'image' => ['nullable', 'url', 'max:2048'],
+            'cover_photo' => ['nullable', 'image', 'mimes:jpg,jpeg,png', 'max:5120'],
+            'show_on_homepage' => ['sometimes', 'boolean'],
+            'content_format' => ['sometimes', Rule::in(['html', 'text'])],
+            'intent' => ['sometimes', Rule::in(['draft', 'publish'])],
+            'platforms' => ['exclude_unless:intent,publish', 'required', 'array', 'min:1', 'max:3'],
+            'platforms.*' => ['string', 'distinct', Rule::in(['website', 'facebook', 'instagram'])],
         ]);
+
+        if (($data['intent'] ?? 'draft') === 'publish' && array_diff($data['platforms'], ['website'])) {
+            $available = collect($this->publishPlatforms())->where('status', 'connected')->pluck('id')->all();
+            $message = array_diff($data['platforms'], $available)
+                ? 'Platform yang dipilih belum terhubung. Hubungkan akun terlebih dahulu.'
+                : 'Koneksi akun tersimpan, tetapi penerbitan ke media sosial belum diaktifkan. Pilih Website untuk menerbitkan saat ini.';
+            throw ValidationException::withMessages(['platforms' => $message]);
+        }
+
+        if (($data['content_format'] ?? 'text') === 'html') {
+            $data['content'] = app(ArticleHtml::class)->sanitize($data['content']);
+            if (mb_strlen(trim(html_entity_decode(strip_tags($data['content'])))) < 20) {
+                throw ValidationException::withMessages(['content' => 'Isi berita harus berisi setidaknya 20 karakter teks.']);
+            }
+        }
+
+        if ($request->hasFile('cover_photo')) {
+            $disk = config('filesystems.news_media_disk', 'public');
+            $path = $request->file('cover_photo')->storePublicly('news-images', $disk);
+            if (! $path) {
+                throw ValidationException::withMessages(['cover_photo' => 'Gambar gagal disimpan. Silakan coba lagi.']);
+            }
+            $data['image'] = url(Storage::disk($disk)->url($path));
+        }
+
+        return $data;
     }
 
     private function draftAttributes(array $data, int $userId): array
@@ -243,12 +302,19 @@ class NewsWorkspaceController extends Controller
             'sources_used' => [],
             'warnings' => [],
             'status' => 'draft',
+            'show_on_homepage' => $data['show_on_homepage'] ?? true,
+            'reviewed_at' => null,
         ];
     }
 
     private function authorizeDraft(Request $request, IntelligentNewsDraft $draft): void
     {
         abort_unless((int) $draft->created_by === (int) $request->user()->getKey(), 403);
+    }
+
+    private function publishPlatforms(): array
+    {
+        return app(MetaConnections::class)->platforms(auth()->id());
     }
 
     private function categories(): array
