@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { apiFetch } from '@/lib/api';
 import { qrCode, recoveryCodes, secretKey } from '@/routes/two-factor';
 import type { TwoFactorSecretKey, TwoFactorSetupData } from '@/types';
 
@@ -19,7 +20,7 @@ export type UseTwoFactorAuthReturn = {
 export const OTP_MAX_LENGTH = 6;
 
 const fetchJson = async <T>(url: string): Promise<T> => {
-    const response = await fetch(url, {
+    const response = await apiFetch(url, {
         headers: { Accept: 'application/json' },
     });
 
