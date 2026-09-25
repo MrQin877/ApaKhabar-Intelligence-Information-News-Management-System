@@ -10,6 +10,7 @@ use App\Support\PublishLog;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 beforeEach(function () {
@@ -70,6 +71,50 @@ test('Instagram converts local image origins and preserves the path', function (
     Http::assertSent(fn ($r) => str_ends_with($r->url(), '/media')
         && $r['image_url'] === 'https://public.example.com/storage/news-images/cover.jpg?v=1');
 })->with(['http://192.168.68.59:8000', 'http://localhost:8000', 'http://127.0.0.1:8000', 'http://10.0.0.2', 'http://[::1]:8000']);
+
+test('Instagram converts PNG uploads to a separate public JPEG and preserves the original', function () {
+    Storage::fake('public');
+    $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=');
+    Storage::disk('public')->put('news-images/original.png', $png);
+    Http::fakeSequence()->push(['id' => '111'])->push(['id' => '222']);
+
+    $id = app(InstagramService::class)->publish(
+        'https://app.example.com/storage/news-images/original.png', 'News caption',
+    );
+
+    expect($id)->toBe('222');
+    expect(Storage::disk('public')->get('news-images/original.png'))->toBe($png);
+    $jpegPaths = collect(Storage::disk('public')->allFiles('news-images/instagram'));
+    expect($jpegPaths)->toHaveCount(1);
+    expect($jpegPaths->first())->toEndWith('.jpg');
+    expect(getimagesizefromstring(Storage::disk('public')->get($jpegPaths->first()))['mime'])->toBe('image/jpeg');
+    Http::assertSent(fn ($request) => str_ends_with($request->url(), '/media')
+        && $request['image_url'] === 'https://public.example.com/storage/'.$jpegPaths->first());
+});
+
+test('Instagram passes JPEG images through without creating a copy', function () {
+    Storage::fake('public');
+    Http::fakeSequence()->push(['id' => '111'])->push(['id' => '222']);
+
+    app(InstagramService::class)->publish('https://images.example.com/news.jpeg', 'News caption');
+
+    expect(Storage::disk('public')->allFiles('news-images'))->toBe([]);
+    Http::assertSent(fn ($request) => str_ends_with($request->url(), '/media')
+        && $request['image_url'] === 'https://images.example.com/news.jpeg');
+});
+
+test('Instagram reports failed PNG conversion without contacting Meta', function () {
+    Storage::fake('public');
+    Storage::disk('public')->put('news-images/broken.png', 'not a valid PNG');
+    Http::fake();
+
+    expect(fn () => app(InstagramService::class)->publish(
+        'https://app.example.com/storage/news-images/broken.png', 'News caption',
+    ))->toThrow(ValidationException::class);
+
+    Http::assertNothingSent();
+    Storage::disk('public')->assertMissing('news-images/instagram');
+});
 
 test('missing or private public base prevents readiness and publishing', function (?string $base) {
     config(['services.instagram.public_base_url' => $base]);

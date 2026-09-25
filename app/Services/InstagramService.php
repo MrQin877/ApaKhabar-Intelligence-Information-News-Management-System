@@ -29,15 +29,22 @@ class InstagramService
     public function publicImageUrl(string $imageUrl): string
     {
         $parts = parse_url($imageUrl);
+        $path = $parts['path'] ?? '';
         $host = strtolower(trim($parts['host'] ?? '', '[]'));
         $local = $host === 'localhost' || str_ends_with($host, '.localhost')
             || (filter_var($host, FILTER_VALIDATE_IP)
                 && ! filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE));
 
-        if ($local && in_array($parts['scheme'] ?? '', ['http', 'https'], true)
+        // Storage-backed image paths must use the dedicated public origin configured for Meta,
+        // even when APP_URL itself is publicly reachable.
+        if (str_starts_with($path, '/storage/')) {
+            $imageUrl = rtrim((string) config('services.instagram.public_base_url'), '/')
+                .$path
+                .(isset($parts['query']) ? '?'.$parts['query'] : '');
+        } elseif ($local && in_array($parts['scheme'] ?? '', ['http', 'https'], true)
             && ! isset($parts['user']) && ! isset($parts['pass'])) {
             $imageUrl = rtrim((string) config('services.instagram.public_base_url'), '/')
-                .($parts['path'] ?? '/')
+                .$path
                 .(isset($parts['query']) ? '?'.$parts['query'] : '')
                 .(isset($parts['fragment']) ? '#'.$parts['fragment'] : '');
         }
@@ -70,6 +77,13 @@ class InstagramService
             throw ValidationException::withMessages(['platforms' => 'Akun Instagram belum dikonfigurasi. Hubungi administrator.']);
         }
         $imageUrl = $this->publicImageUrl($imageUrl);
+        $extension = strtolower(pathinfo(parse_url($imageUrl, PHP_URL_PATH) ?: '', PATHINFO_EXTENSION));
+        if ($extension === 'png') {
+            $imageUrl = app(InstagramImageService::class)->convertPngToPublicJpeg($imageUrl);
+            $imageUrl = $this->publicImageUrl($imageUrl);
+        } elseif (! in_array($extension, ['jpg', 'jpeg'], true)) {
+            throw ValidationException::withMessages(['platforms' => 'Instagram memerlukan gambar JPG atau PNG.']);
+        }
         PublishLog::write('instagram.image_url', [...$context, 'image_url' => $imageUrl]);
         if (! trim($caption) || mb_strlen($caption) > 2200) {
             throw ValidationException::withMessages(['platforms' => 'Caption Instagram harus berisi 1–2200 karakter.']);
