@@ -7,12 +7,17 @@ use App\Models\IntelligentNewsDraft;
 use App\Models\IntelligentNewsSession;
 use App\Models\News;
 use App\Models\NewsCategory;
+use App\Services\InstagramService;
 use App\Services\News\ArticleHtml;
 use App\Services\News\MetaConnections;
+use App\Support\NewsImageUrl;
+use App\Support\PublishLog;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -120,7 +125,7 @@ class NewsWorkspaceController extends Controller
         ]);
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request): RedirectResponse|JsonResponse
     {
         $data = $this->validateDraft($request);
         $draft = IntelligentNewsDraft::create($this->draftAttributes($data, $request->user()->getKey()));
@@ -162,7 +167,7 @@ class NewsWorkspaceController extends Controller
         ]);
     }
 
-    public function update(Request $request, IntelligentNewsDraft $draft): RedirectResponse
+    public function update(Request $request, IntelligentNewsDraft $draft): RedirectResponse|JsonResponse
     {
         $this->authorizeDraft($request, $draft);
         abort_unless($draft->creation_method === 'manual', 422, 'Only manual drafts can use the manual editor.');
@@ -179,7 +184,7 @@ class NewsWorkspaceController extends Controller
         return back()->with('success', 'Draf berhasil diperbarui.');
     }
 
-    public function publish(Request $request, IntelligentNewsDraft $draft): RedirectResponse
+    public function publish(Request $request, IntelligentNewsDraft $draft): RedirectResponse|JsonResponse
     {
         $this->authorizeDraft($request, $draft);
         abort_unless($draft->status === 'draft', 422, 'Only draft content can be published.');
@@ -191,22 +196,88 @@ class NewsWorkspaceController extends Controller
             'Resolve unsupported, contradicted, or unsafe content before publishing.',
         );
 
-        DB::transaction(function () use ($request, $draft) {
-            $news = News::create([
-                'title' => $draft->headline,
-                'content' => collect($draft->body)->join("\n\n"),
-                'excerpt' => $draft->summary,
-                'image' => $draft->image,
-                'category_id' => $draft->category_id,
-                'status' => 'active',
-                'creation_method' => $draft->creation_method,
-                'created_by' => $request->user()->getKey(),
-                'show_on_homepage' => $draft->show_on_homepage,
-            ]);
-            $draft->update(['status' => 'published', 'published_news_id' => $news->getKey()]);
-        });
+        $platforms = $request->input('platforms', ['website']);
+        $request->merge(['platforms' => $platforms]);
+        $this->validatePlatforms($request);
+        if (in_array('instagram', $platforms, true) && $draft->creation_method !== 'manual') {
+            throw ValidationException::withMessages(['platforms' => 'Penerbitan Instagram hanya tersedia untuk berita manual.']);
+        }
 
-        return redirect()->route('admin.news-workspace.index')->with('success', 'Berita berhasil dipublikasikan.');
+        $context = $this->publishContext($request, $draft->id);
+        PublishLog::write('request_received', $context);
+        PublishLog::write('selected_platforms', $context);
+        PublishLog::write('validation_passed', $context);
+        $results = [];
+        foreach ($platforms as $platform) {
+            $key = $platform === 'website' ? 'application' : $platform;
+            PublishLog::write($key.'.started', $context);
+            try {
+                $id = DB::transaction(function () use ($request, $draft, $platform, $context) {
+                    $draft = IntelligentNewsDraft::whereKey($draft->id)->lockForUpdate()->firstOrFail();
+                    if ($platform === 'website') {
+                        if ($draft->published_news_id) {
+                            return $draft->published_news_id;
+                        }
+                        $news = News::create([
+                            'title' => $draft->headline,
+                            'content' => collect($draft->body)->join("\n\n"),
+                            'excerpt' => $draft->summary,
+                            'image' => $draft->image,
+                            'category_id' => $draft->category_id,
+                            'status' => 'active',
+                            'creation_method' => $draft->creation_method,
+                            'created_by' => $request->user()->getKey(),
+                            'show_on_homepage' => $draft->show_on_homepage,
+                        ]);
+                        $draft->update(['published_news_id' => $news->getKey()]);
+
+                        return $news->getKey();
+                    }
+                    if ($draft->instagram_media_id) {
+                        return $draft->instagram_media_id;
+                    }
+                    $caption = trim(html_entity_decode(strip_tags($draft->headline."\n\n".$draft->summary), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+                    $id = app(InstagramService::class)->publish(
+                        NewsImageUrl::resolve($draft->image) ?? '', $caption, $context,
+                    );
+                    $draft->update(['instagram_media_id' => $id]);
+
+                    return $id;
+                });
+                $results[$key] = ['success' => true, 'message' => $platform === 'website' ? 'Berhasil diterbitkan ke Aplikasi' : 'Berhasil diterbitkan ke Instagram'];
+                PublishLog::write($key.'.success', [...$context, 'news_id' => $platform === 'website' ? $id : null, 'media_id' => $platform === 'instagram' ? $id : null]);
+            } catch (\Throwable $exception) {
+                $message = $exception instanceof ValidationException
+                    ? (collect($exception->errors())->flatten()->first() ?? 'Penerbitan gagal. Silakan coba lagi.')
+                    : 'Penerbitan gagal. Silakan coba lagi atau hubungi administrator.';
+                $results[$key] = ['success' => false, 'message' => $message];
+                PublishLog::write($key.'.failure', [...$context, 'exception' => $exception::class, 'exception_message' => $exception->getMessage()], 'error');
+            }
+        }
+        $success = collect($results)->every(fn ($result) => $result['success']);
+        $draft->refresh();
+        if ($success) {
+            $draft->update(['status' => 'published']);
+        }
+        $result = ['success' => $success, 'results' => $results, 'draft_id' => $draft->id,
+            'attempt_id' => $context['attempt_id'], 'retry_url' => route('admin.news-workspace.manual.edit', $draft)];
+        PublishLog::write('final_result', [...$context, 'news_id' => $draft->published_news_id, ...$result]);
+        if ($request->expectsJson() && ! $request->header('X-Inertia')) {
+            return response()->json($result);
+        }
+
+        return redirect()->route($success ? 'admin.news-workspace.index' : 'admin.news-workspace.manual.edit', $success ? [] : ['draft' => $draft])
+            ->with('publishResult', $result);
+    }
+
+    private function publishContext(Request $request, ?int $draftId = null): array
+    {
+        if (! $request->attributes->has('publish_attempt')) {
+            $request->attributes->set('publish_attempt', (string) Str::uuid());
+        }
+
+        return ['attempt_id' => $request->attributes->get('publish_attempt'), 'draft_id' => $draftId,
+            'selected_platforms' => $request->input('platforms', ['website'])];
     }
 
     public function archive(Request $request, string $type, int $id): RedirectResponse
@@ -241,6 +312,34 @@ class NewsWorkspaceController extends Controller
 
     private function validateDraft(Request $request): array
     {
+        if ($request->input('intent') !== 'publish') {
+            return $this->validateDraftData($request);
+        }
+        $context = $this->publishContext($request, $request->route('draft')?->id);
+        PublishLog::write('request_received', $context);
+        PublishLog::write('selected_platforms', $context);
+        try {
+            $data = $this->validateDraftData($request);
+            PublishLog::write('validation_passed', $context);
+
+            return $data;
+        } catch (ValidationException $exception) {
+            PublishLog::write('validation_failed', [...$context, 'fields' => array_keys($exception->errors()), 'exception_message' => $exception->getMessage()], 'warning');
+            $results = [];
+            foreach ((array) $request->input('platforms', []) as $platform) {
+                if (in_array($platform, ['website', 'instagram', 'facebook'], true)) {
+                    $results[$platform === 'website' ? 'application' : $platform] = ['success' => false, 'message' => 'Konten atau pilihan platform belum valid. Periksa isian berita.'];
+                }
+            }
+            $result = ['success' => false, 'results' => $results, 'attempt_id' => $context['attempt_id']];
+            $request->session()->flash('publishResult', $result);
+            PublishLog::write('final_result', [...$context, ...$result]);
+            throw $exception;
+        }
+    }
+
+    private function validateDraftData(Request $request): array
+    {
         $data = $request->validate([
             'headline' => ['required', 'string', 'max:255'],
             'subheadline' => ['nullable', 'string', 'max:255'],
@@ -256,12 +355,8 @@ class NewsWorkspaceController extends Controller
             'platforms.*' => ['string', 'distinct', Rule::in(['website', 'facebook', 'instagram'])],
         ]);
 
-        if (($data['intent'] ?? 'draft') === 'publish' && array_diff($data['platforms'], ['website'])) {
-            $available = collect($this->publishPlatforms())->where('status', 'connected')->pluck('id')->all();
-            $message = array_diff($data['platforms'], $available)
-                ? 'Platform yang dipilih belum terhubung. Hubungkan akun terlebih dahulu.'
-                : 'Koneksi akun tersimpan, tetapi penerbitan ke media sosial belum diaktifkan. Pilih Website untuk menerbitkan saat ini.';
-            throw ValidationException::withMessages(['platforms' => $message]);
+        if (($data['intent'] ?? 'draft') === 'publish') {
+            $this->validatePlatforms($request);
         }
 
         if (($data['content_format'] ?? 'text') === 'html') {
@@ -282,9 +377,21 @@ class NewsWorkspaceController extends Controller
                 : Storage::disk($disk)->url($path);
         }
 
-        $data['image'] = \App\Support\NewsImageUrl::resolve($data['image'] ?? null);
+        $data['image'] = NewsImageUrl::resolve($data['image'] ?? null);
 
         return $data;
+    }
+
+    private function validatePlatforms(Request $request): void
+    {
+        $data = $request->validate([
+            'platforms' => ['required', 'array', 'min:1', 'max:3'],
+            'platforms.*' => ['required', 'string', 'distinct', Rule::in(['website', 'facebook', 'instagram'])],
+        ]);
+        if (in_array('facebook', $data['platforms'], true)) {
+            throw ValidationException::withMessages(['platforms' => 'Penerbitan Facebook belum tersedia.']);
+        }
+
     }
 
     private function draftAttributes(array $data, int $userId): array

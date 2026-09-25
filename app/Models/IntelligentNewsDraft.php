@@ -10,7 +10,7 @@ class IntelligentNewsDraft extends Model
         'created_by', 'creation_method', 'category_id', 'image',
         'headline', 'subheadline', 'lead', 'body', 'summary',
         'labels', 'sources_used', 'warnings', 'user_prompt', 'status',
-        'published_news_id', 'version', 'reviewed_at',
+        'published_news_id', 'instagram_media_id', 'version', 'reviewed_at',
         'show_on_homepage',
     ];
 

@@ -172,7 +172,9 @@ export default function ManualEditor({
             {
                 preserveScroll: true,
                 forceFormData: true,
+                onFinish: () => setConfirmPublish(false),
                 onError: (errors) => {
+                    setConfirmPublish(false);
                     const platformError = Object.entries(errors).find(([key]) =>
                         key.startsWith('platforms'),
                     );

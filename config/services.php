@@ -1,6 +1,12 @@
 <?php
 
 return [
+    'instagram' => [
+        'user_id' => env('INSTAGRAM_USER_ID'),
+        'access_token' => env('INSTAGRAM_ACCESS_TOKEN'),
+        'public_base_url' => env('INSTAGRAM_PUBLIC_BASE_URL'),
+        'graph_version' => env('META_GRAPH_VERSION', 'v25.0'),
+    ],
     'apakhabar_ai' => [
         'url' => env('APAKHABAR_AI_URL', 'http://127.0.0.1:8001'),
         'timeout' => (int) env('APAKHABAR_AI_TIMEOUT', 180),

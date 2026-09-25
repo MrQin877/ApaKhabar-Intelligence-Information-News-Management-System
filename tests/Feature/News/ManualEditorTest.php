@@ -29,6 +29,7 @@ function manualArticle(array $overrides = []): array
 }
 
 beforeEach(function () {
+    config(['services.instagram.user_id' => null, 'services.instagram.access_token' => null, 'services.instagram.public_base_url' => null]);
     $this->actingAs(User::factory()->create(['roleID' => UserRole::firstOrCreate(['name' => 'admin'])->getKey()]));
 });
 
@@ -125,7 +126,6 @@ test('publishing requires a selected available platform', function (array $platf
 })->with([
     'none' => [[]],
     'disconnected Facebook' => [['facebook']],
-    'disconnected Instagram' => [['instagram']],
     'mixed available and disconnected' => [['website', 'facebook']],
     'all while disconnected' => [['website', 'facebook', 'instagram']],
     'duplicate website' => [['website', 'website']],

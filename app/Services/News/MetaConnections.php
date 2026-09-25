@@ -19,6 +19,11 @@ class MetaConnections
         $connections = SocialConnection::where('user_id', $userId)->get()->keyBy('platform');
         $platforms = [['id' => 'website', 'name' => 'Website ApaKhabar', 'account' => parse_url(config('app.url'), PHP_URL_HOST), 'status' => 'connected', 'connect_url' => null]];
         foreach (['facebook' => 'Facebook', 'instagram' => 'Instagram'] as $id => $name) {
+            if ($id === 'instagram') {
+                $ready = app(\App\Services\InstagramService::class)->configured();
+                $platforms[] = ['id' => $id, 'name' => $name, 'account' => $ready ? 'ApaKhabar' : null, 'status' => $ready ? 'connected' : 'disconnected', 'connect_url' => $this->configured($id) ? route('admin.social.instagram.start') : null];
+                continue;
+            }
             $connection = $connections->get($id);
             $platforms[] = [
                 'id' => $id, 'name' => $name, 'account' => $connection?->account_name,
