@@ -3,7 +3,6 @@ import {
     AlignCenter,
     AlignLeft,
     AlignRight,
-    Archive,
     ArrowUp,
     Bold,
     ChevronDown,
@@ -12,7 +11,6 @@ import {
     Edit3,
     FileText,
     FolderSearch,
-    History,
     ImagePlus,
     Italic,
     List,
@@ -22,7 +20,6 @@ import {
     Minimize2,
     Paperclip,
     PanelRightClose,
-    PanelRightOpen,
     Plus,
     Redo2,
     Save,
@@ -38,11 +35,21 @@ import React, {
     useRef,
     useState,
 } from 'react';
-import { PreviewFrame } from '@/components/intelligent-news/preview-frame';
 import {
     AgentWorkTrace,
     SavedAgentWorkTrace,
 } from '@/components/intelligent-news/agent-work-trace';
+import {
+    AssistantConversationIntro,
+    AssistantEmptyState,
+} from '@/components/intelligent-news/assistant-empty-state';
+import {
+    ChatMessage,
+    PendingUserMessage,
+} from '@/components/intelligent-news/chat-message';
+import { DocumentProcessingStatus } from '@/components/intelligent-news/document-processing-status';
+import { ExtractedInformationReview } from '@/components/intelligent-news/extracted-information-review';
+import { PreviewFrame } from '@/components/intelligent-news/preview-frame';
 import {
     QualityScoreBadge,
     QualityScoreBreakdown,
@@ -52,6 +59,7 @@ import type {
     AssistantPageProps,
     Recommendation,
 } from '@/components/intelligent-news/types';
+import { WorkspaceActions } from '@/components/intelligent-news/workspace-actions';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -105,6 +113,7 @@ const breadcrumbs: BreadcrumbItem[] = [
 
 export default function NewsCreatorAgent({
     informationItems,
+    pendingInformation = [],
     documents,
     generatedArticle,
     newsSession,
@@ -165,6 +174,7 @@ export default function NewsCreatorAgent({
         questions.length > 0 &&
         questions.every((question) => Boolean(answers[question.field]?.trim()));
     const processingFiles = newsSession?.status === 'processing_files';
+    const reviewingExtraction = pendingInformation.length > 0;
     const hasSources = informationIds.length > 0 || documentIds.length > 0;
     const conversationStarted = Boolean(
         newsSession ||
@@ -319,7 +329,7 @@ export default function NewsCreatorAgent({
             }
 
             const generationIntent =
-                /\b(generate|create|write|buat|bikin|tulis)\b.{0,30}\b(news|article|berita|artikel|laporan)\b/i.test(
+                /\b(generate|create|write|make|buat|bikin|tulis|susun|hasilkan)\b.{0,40}\b(news|article|berita|artikel|laporan)\b/i.test(
                     submittedPrompt,
                 );
             const generalExtraction =
@@ -408,6 +418,31 @@ export default function NewsCreatorAgent({
                     setPendingUserMessage(null);
                 },
             },
+        );
+    }
+
+    function continueAfterInformationReview(newlyApprovedIds: number[]) {
+        if (!newsSession?.id) {
+            return;
+        }
+
+        const approvedIds = Array.from(
+            new Set([...informationIds, ...newlyApprovedIds]),
+        );
+        setInformationIds(approvedIds);
+        setBusy(true);
+        setElapsedSeconds(0);
+        router.post(
+            '/admin/ai-assistant/generate',
+            {
+                session_id: newsSession.id,
+                information_ids: approvedIds,
+                document_ids: documentIds,
+                prompt: null,
+                answers: {},
+                tone: 'formal',
+            },
+            { onFinish: () => setBusy(false) },
         );
     }
 
@@ -535,7 +570,12 @@ export default function NewsCreatorAgent({
         const timer = window.setInterval(
             () =>
                 router.reload({
-                    only: ['newsSession', 'documents', 'informationItems'],
+                    only: [
+                        'newsSession',
+                        'documents',
+                        'informationItems',
+                        'pendingInformation',
+                    ],
                 }),
             5000,
         );
@@ -617,32 +657,12 @@ export default function NewsCreatorAgent({
                 <section
                     className={`relative flex min-h-0 min-w-0 flex-1 flex-col bg-background ${previewOpen && editedArticle ? 'border-b lg:border-b-0' : 'w-full'}`}
                 >
-                    <div className="absolute top-[4.75rem] right-4 z-30 flex items-center gap-1 rounded-xl bg-background/55 p-1 shadow-sm backdrop-blur-xl">
-                        {editedArticle && !previewOpen && (
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setPreviewOpen(true)}
-                            >
-                                <PanelRightOpen /> Pratinjau
-                            </Button>
-                        )}
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => router.visit('/admin/news')}
-                            title="Riwayat percakapan dan draf"
-                        >
-                            <History /> Riwayat
-                        </Button>
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => router.visit('/admin/documents')}
-                        >
-                            <Archive /> Dokumen
-                        </Button>
-                    </div>
+                    <WorkspaceActions
+                        canOpenPreview={Boolean(editedArticle && !previewOpen)}
+                        onOpenPreview={() => setPreviewOpen(true)}
+                        onOpenHistory={() => router.visit('/admin/news')}
+                        onOpenDocuments={() => router.visit('/admin/documents')}
+                    />
                     <MessageScrollerProvider
                         autoScroll
                         defaultScrollPosition="end"
@@ -654,29 +674,9 @@ export default function NewsCreatorAgent({
                                 <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-4">
                                     <MessageScrollerItem messageId="welcome">
                                         {!conversationStarted ? (
-                                            <div className="mx-auto flex max-w-2xl flex-col items-center py-14 text-center md:py-20">
-                                                <div className="mb-5 flex size-14 items-center justify-center rounded-2xl border bg-card text-primary shadow-sm">
-                                                    <Sparkles className="size-6" />
-                                                </div>
-                                                <h2 className="text-3xl font-bold tracking-tight">
-                                                    Apa yang ingin Anda
-                                                    kerjakan?
-                                                </h2>
-                                                <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
-                                                    Ekstrak informasi dari
-                                                    dokumen, cari sumber yang
-                                                    sudah disetujui, atau susun
-                                                    berita bersama Asisten AI.
-                                                </p>
-                                            </div>
+                                            <AssistantEmptyState />
                                         ) : (
-                                            <div className="max-w-2xl text-sm leading-7 text-foreground">
-                                                Pilih informasi atau dokumen
-                                                tersimpan, atau lampirkan hingga
-                                                lima file baru. Saya akan
-                                                memeriksa kelengkapan sebelum
-                                                melanjutkan.
-                                            </div>
+                                            <AssistantConversationIntro />
                                         )}
                                     </MessageScrollerItem>
                                     {(newsSession?.messages ?? []).map(
@@ -685,15 +685,9 @@ export default function NewsCreatorAgent({
                                                 key={message.id}
                                                 messageId={`history-${message.id}`}
                                             >
-                                                <div
-                                                    className={
-                                                        message.role === 'user'
-                                                            ? 'ml-auto max-w-[78%] rounded-3xl bg-muted px-4 py-3 text-sm leading-6 text-foreground'
-                                                            : 'max-w-2xl text-sm leading-7 whitespace-pre-wrap text-foreground'
-                                                    }
-                                                >
-                                                    {message.content}
-                                                </div>
+                                                <ChatMessage
+                                                    message={message}
+                                                />
                                             </MessageScrollerItem>
                                         ),
                                     )}
@@ -712,9 +706,9 @@ export default function NewsCreatorAgent({
                                             ))}
                                     {pendingUserMessage && (
                                         <MessageScrollerItem messageId="pending-user-message">
-                                            <div className="ml-auto max-w-[78%] rounded-3xl bg-muted px-4 py-3 text-sm leading-6 text-foreground">
+                                            <PendingUserMessage>
                                                 {pendingUserMessage}
-                                            </div>
+                                            </PendingUserMessage>
                                         </MessageScrollerItem>
                                     )}
                                     {processingFiles && (
@@ -722,21 +716,23 @@ export default function NewsCreatorAgent({
                                             messageId="processing-files"
                                             scrollAnchor
                                         >
-                                            <div className="max-w-2xl text-sm leading-7 text-foreground">
-                                                <div className="flex items-center gap-2 font-medium">
-                                                    <LoaderCircle className="size-4 animate-spin text-primary" />
-                                                    Dokumen sedang diproses
-                                                </div>
-                                                <p className="mt-1 text-muted-foreground">
-                                                    Anda boleh meninggalkan
-                                                    halaman ini. Pemrosesan akan
-                                                    dilanjutkan oleh antrean dan
-                                                    percakapan dapat dibuka
-                                                    kembali dari daftar draf.
-                                                </p>
-                                            </div>
+                                            <DocumentProcessingStatus />
                                         </MessageScrollerItem>
                                     )}
+                                    {reviewingExtraction &&
+                                        !processingFiles && (
+                                            <MessageScrollerItem
+                                                messageId="extracted-information-review"
+                                                scrollAnchor
+                                            >
+                                                <ExtractedInformationReview
+                                                    items={pendingInformation}
+                                                    onFinished={
+                                                        continueAfterInformationReview
+                                                    }
+                                                />
+                                            </MessageScrollerItem>
+                                        )}
                                     {busy && !processingFiles && (
                                         <MessageScrollerItem
                                             messageId="generation-progress"

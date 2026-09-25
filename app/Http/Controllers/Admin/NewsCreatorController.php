@@ -42,7 +42,12 @@ class NewsCreatorController extends Controller
 {
     public function documents(): Response
     {
-        return $this->renderArchive();
+        return $this->renderArchive(false);
+    }
+
+    public function archivedDocuments(): Response
+    {
+        return $this->renderArchive(true);
     }
 
     public function create(Request $request): Response
@@ -51,7 +56,9 @@ class NewsCreatorController extends Controller
             ->with('document:id,original_name,status')
             ->where('is_active', true)
             ->where('review_status', 'approved')
-            ->whereHas('document', fn ($query) => $query->where('uploaded_by', $request->user()->getKey()))
+            ->whereHas('document', fn ($query) => $query
+                ->where('uploaded_by', $request->user()->getKey())
+                ->whereNull('archived_at'))
             ->latest()
             ->limit(200)
             ->get();
@@ -121,16 +128,44 @@ class NewsCreatorController extends Controller
         $documents = IntelligenceDocument::query()
             ->where('uploaded_by', $request->user()->getKey())
             ->where('status', 'ready')
+            ->whereNull('archived_at')
             ->latest()
             ->limit(200)
             ->get(['id', 'original_name', 'status', 'created_at']);
 
         $newsSession = null;
+        $pendingInformation = collect();
         if ($sessionId = $request->integer('session')) {
             $newsSession = IntelligentNewsSession::query()
                 ->with(['messages', 'runs.events'])
                 ->where('created_by', $request->user()->getKey())
                 ->find($sessionId);
+
+            if ($newsSession) {
+                $pendingInformation = IntelligenceInformation::query()
+                    ->with('document:id,original_name')
+                    ->whereIn('document_id', $newsSession->selected_document_ids ?? [])
+                    ->where('review_status', 'pending')
+                    ->whereHas('document', fn ($query) => $query
+                        ->where('uploaded_by', $request->user()->getKey())
+                        ->whereNull('archived_at'))
+                    ->orderBy('document_id')
+                    ->orderBy('item_index')
+                    ->get()
+                    ->map(fn (IntelligenceInformation $item) => [
+                        'id' => $item->id,
+                        'document_id' => $item->document_id,
+                        'title' => $item->title,
+                        'summary' => $item->summary,
+                        'evidence' => $item->evidence ?? [],
+                        'confidence' => $item->confidence,
+                        'quality_score' => $item->quality_score,
+                        'document' => [
+                            'id' => $item->document->id,
+                            'original_name' => $item->document->original_name,
+                        ],
+                    ]);
+            }
         }
 
         return inertia('admin/intelligentnewscreator/chat', [
@@ -143,6 +178,7 @@ class NewsCreatorController extends Controller
             'initialManualFact' => $request->query('fact'),
             'autoGenerate' => $request->boolean('generate'),
             'newsSession' => $newsSession,
+            'pendingInformation' => $pendingInformation,
         ]);
     }
 
@@ -183,6 +219,7 @@ class NewsCreatorController extends Controller
                 'sha256' => hash_file('sha256', $file->getRealPath()),
                 'status' => 'processing',
                 'embedding_status' => 'pending',
+                'archive_after' => now()->addYears(3),
             ]);
             $mode = $validated['extraction_mode'] ?? 'general';
             $query = trim((string) ($validated['extraction_query'] ?? '')) ?: null;
@@ -331,6 +368,7 @@ class NewsCreatorController extends Controller
             ->map(fn ($id) => (int) $id);
         $documentIds = IntelligenceDocument::query()
             ->where('uploaded_by', $request->user()->getKey())
+            ->whereNull('archived_at')
             ->whereIn('id', $documentIds)
             ->pluck('id');
         $informationIds = collect($validated['information_ids'] ?? $session?->selected_information_ids ?? [])
@@ -346,7 +384,9 @@ class NewsCreatorController extends Controller
         $informationIds = $informationIds->unique()->values();
         $informationIds = IntelligenceInformation::query()
             ->whereIn('id', $informationIds)
-            ->whereHas('document', fn ($query) => $query->where('uploaded_by', $request->user()->getKey()))
+            ->whereHas('document', fn ($query) => $query
+                ->where('uploaded_by', $request->user()->getKey())
+                ->whereNull('archived_at'))
             ->pluck('id');
 
         $userFacts = collect($session?->user_facts ?? []);
@@ -692,7 +732,9 @@ class NewsCreatorController extends Controller
             ->with('document:id,original_name')
             ->whereIn('id', collect($response)->pluck('information_id')->map(fn ($id) => (int) $id))
             ->where('review_status', 'approved')
-            ->whereHas('document', fn ($query) => $query->where('uploaded_by', $request->user()->getKey()))
+            ->whereHas('document', fn ($query) => $query
+                ->where('uploaded_by', $request->user()->getKey())
+                ->whereNull('archived_at'))
             ->get()->keyBy('id');
 
         $recommendations = collect($response)->map(function ($result) use ($information) {
@@ -777,7 +819,7 @@ class NewsCreatorController extends Controller
 
     public function archive(): Response
     {
-        return $this->renderArchive();
+        return $this->renderArchive(false);
     }
 
     private function aiClient(): PendingRequest
@@ -871,19 +913,7 @@ class NewsCreatorController extends Controller
 
         if ($approved) {
             try {
-                $this->aiClient()->post(
-                    rtrim(config('services.apakhabar_ai.url'), '/').'/rag/information/index',
-                    ['items' => [[
-                        'information_id' => (string) $information->id,
-                        'document_id' => (string) $information->document_id,
-                        'title' => $information->title,
-                        'summary' => $information->summary,
-                        'labels' => $information->labels ?? [],
-                        'fields' => $information->fields ?? [],
-                        'source' => $information->document->original_name,
-                        'owner_id' => (string) $request->user()->getKey(),
-                    ]],
-                    ])->throw();
+                $this->indexInformation(collect([$information]), $request->user()->getKey());
                 $information->update(['information_embedding_status' => 'ready']);
             } catch (\Throwable $exception) {
                 report($exception);
@@ -893,18 +923,199 @@ class NewsCreatorController extends Controller
                     'information' => 'Informasi disetujui, tetapi indeks pencarian belum berhasil dibuat.',
                 ]);
             }
+            $this->attachApprovedInformationToWaitingSessions(
+                collect([$information->id]),
+                $information->document_id,
+                $request->user()->getKey(),
+            );
+        } else {
+            $this->removeInformationVector($information->id);
+            $information->delete();
         }
 
         return back()->with('success', $approved
             ? 'Informasi disetujui dan ditambahkan ke pustaka pencarian.'
-            : 'Informasi ditolak.');
+            : 'Informasi ditolak dan dipindahkan dari pustaka aktif.');
     }
 
-    private function renderArchive(): Response
+    public function bulkReviewInformation(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'information_ids' => ['required', 'array', 'min:1', 'max:100'],
+            'information_ids.*' => ['required', 'integer', 'distinct'],
+            'decision' => ['required', 'in:approved,rejected'],
+        ]);
+        $information = IntelligenceInformation::query()
+            ->with('document')
+            ->whereIn('id', $validated['information_ids'])
+            ->where('review_status', 'pending')
+            ->whereHas('document', fn ($query) => $query
+                ->where('uploaded_by', $request->user()->getKey())
+                ->whereNull('archived_at'))
+            ->get();
+
+        if ($information->count() !== count($validated['information_ids'])) {
+            return back()->withErrors([
+                'information' => 'Sebagian informasi tidak ditemukan, bukan milik Anda, atau sudah ditinjau.',
+            ]);
+        }
+
+        $approved = $validated['decision'] === 'approved';
+        IntelligenceInformation::query()
+            ->whereIn('id', $information->pluck('id'))
+            ->update([
+                'review_status' => $validated['decision'],
+                'is_active' => $approved,
+                'reviewed_by' => $request->user()->getKey(),
+                'reviewed_at' => now(),
+                'information_embedding_status' => $approved ? 'pending' : 'failed',
+            ]);
+
+        if ($approved) {
+            try {
+                $this->indexInformation($information, $request->user()->getKey());
+                IntelligenceInformation::query()->whereIn('id', $information->pluck('id'))
+                    ->update(['information_embedding_status' => 'ready']);
+            } catch (\Throwable $exception) {
+                report($exception);
+                IntelligenceInformation::query()->whereIn('id', $information->pluck('id'))
+                    ->update(['information_embedding_status' => 'failed']);
+
+                return back()->withErrors([
+                    'information' => "{$information->count()} informasi disetujui, tetapi indeks pencarian belum berhasil dibuat.",
+                ]);
+            }
+            $information->groupBy('document_id')->each(
+                fn ($items, $documentId) => $this->attachApprovedInformationToWaitingSessions(
+                    $items->pluck('id'),
+                    (int) $documentId,
+                    $request->user()->getKey(),
+                ),
+            );
+        } else {
+            $information->each(function (IntelligenceInformation $item): void {
+                $this->removeInformationVector($item->id);
+                $item->delete();
+            });
+        }
+
+        return back()->with('success', $approved
+            ? "{$information->count()} informasi disetujui dan ditambahkan ke pustaka pencarian."
+            : "{$information->count()} informasi ditolak dan dipindahkan dari pustaka aktif.");
+    }
+
+    public function archiveDocument(Request $request, IntelligenceDocument $document): RedirectResponse
+    {
+        abort_unless($document->uploaded_by === $request->user()->getKey(), 403);
+        if ($document->archived_at) {
+            return back()->withErrors(['document' => 'Dokumen ini sudah berada di arsip.']);
+        }
+
+        $document->update(['archived_at' => now()]);
+        $document->information()->update(['is_active' => false]);
+        $document->information()->where('review_status', 'approved')->get()
+            ->each(fn (IntelligenceInformation $item) => $this->removeInformationVector($item->id));
+
+        return redirect()->route('admin.documents.index')
+            ->with('success', 'Dokumen dipindahkan ke arsip dan tidak lagi tersedia untuk AI.');
+    }
+
+    public function restoreDocument(Request $request, IntelligenceDocument $document): RedirectResponse
+    {
+        abort_unless($document->uploaded_by === $request->user()->getKey(), 403);
+        if (! $document->archived_at) {
+            return back()->withErrors(['document' => 'Dokumen ini tidak berada di arsip.']);
+        }
+
+        $document->update([
+            'archived_at' => null,
+            'archive_after' => now()->addYears(3),
+        ]);
+        $approved = $document->information()->where('review_status', 'approved')->get();
+        $document->information()->where('review_status', 'approved')->update(['is_active' => true]);
+
+        if ($approved->isNotEmpty()) {
+            try {
+                $this->indexInformation($approved, $request->user()->getKey());
+                IntelligenceInformation::query()->whereIn('id', $approved->pluck('id'))
+                    ->update(['information_embedding_status' => 'ready']);
+            } catch (\Throwable $exception) {
+                report($exception);
+                IntelligenceInformation::query()->whereIn('id', $approved->pluck('id'))
+                    ->update(['information_embedding_status' => 'failed']);
+
+                return redirect()->route('admin.documents.index')->withErrors([
+                    'information' => 'Dokumen dipulihkan, tetapi indeks pencarian perlu dibuat ulang.',
+                ]);
+            }
+        }
+
+        return redirect()->route('admin.documents.index')
+            ->with('success', 'Dokumen dipulihkan ke pustaka aktif.');
+    }
+
+    private function indexInformation($information, int $ownerId): void
+    {
+        $this->aiClient()->post(
+            rtrim(config('services.apakhabar_ai.url'), '/').'/rag/information/index',
+            ['items' => $information->map(fn (IntelligenceInformation $item) => [
+                'information_id' => (string) $item->id,
+                'document_id' => (string) $item->document_id,
+                'title' => $item->title,
+                'summary' => $item->summary,
+                'labels' => $item->labels ?? [],
+                'fields' => $item->fields ?? [],
+                'source' => $item->document->original_name,
+                'owner_id' => (string) $ownerId,
+            ])->values()->all()],
+        )->throw();
+    }
+
+    private function removeInformationVector(int $informationId): void
+    {
+        try {
+            $this->aiClient()->delete(
+                rtrim(config('services.apakhabar_ai.url'), '/')."/rag/information/{$informationId}",
+            )->throw();
+        } catch (\Throwable $exception) {
+            report($exception);
+        }
+    }
+
+    private function attachApprovedInformationToWaitingSessions($informationIds, int $documentId, int $userId): void
+    {
+        IntelligentNewsSession::query()
+            ->where('created_by', $userId)
+            ->whereIn('status', ['ready_to_generate', 'collecting_sources'])
+            ->get()
+            ->filter(fn (IntelligentNewsSession $session) => in_array(
+                $documentId,
+                array_map('intval', $session->selected_document_ids ?? []),
+                true,
+            ))
+            ->each(function (IntelligentNewsSession $session) use ($informationIds): void {
+                $session->update([
+                    'selected_information_ids' => collect($session->selected_information_ids ?? [])
+                        ->merge($informationIds)
+                        ->map(fn ($id) => (int) $id)
+                        ->unique()
+                        ->values()
+                        ->all(),
+                    'last_message_at' => now(),
+                ]);
+            });
+    }
+
+    private function renderArchive(bool $archived = false): Response
     {
         $documents = IntelligenceDocument::query()
             ->with('information:id,document_id,title,summary,fields,confidence,review_status,quality_score,information_embedding_status')
             ->where('uploaded_by', request()->user()->getKey())
+            ->when(
+                $archived,
+                fn ($query) => $query->whereNotNull('archived_at'),
+                fn ($query) => $query->whereNull('archived_at'),
+            )
             ->latest()
             ->get()
             ->map(fn ($document) => [
@@ -917,6 +1128,8 @@ class NewsCreatorController extends Controller
                 },
                 'size' => number_format($document->file_size / 1024 / 1024, 2).' MB',
                 'date' => $document->created_at->diffForHumans(),
+                'archive_after' => $document->archive_after?->toIso8601String(),
+                'archived_at' => $document->archived_at?->toIso8601String(),
                 'status' => $document->status,
                 'error' => $document->error_message,
                 'attempts' => $document->processing_attempts,
@@ -939,6 +1152,7 @@ class NewsCreatorController extends Controller
 
         return Inertia::render('admin/intelligentnewscreator/documents', [
             'documents' => $documents,
+            'archived' => $archived,
         ]);
     }
 }

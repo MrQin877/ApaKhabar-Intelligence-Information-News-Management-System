@@ -8,13 +8,13 @@ import {
     Sparkles,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import type { AgentRun } from '@/components/intelligent-news/types';
+import { Button } from '@/components/ui/button';
 import {
     Collapsible,
     CollapsibleContent,
     CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import { Button } from '@/components/ui/button';
-import type { AgentRun } from '@/components/intelligent-news/types';
 
 type AgentWorkTraceProps = {
     elapsedSeconds: number;
@@ -113,9 +113,9 @@ export function AgentWorkTrace({
 export function SavedAgentWorkTrace({ run }: { run: AgentRun }) {
     const [open, setOpen] = useState(false);
     const started = run.started_at ? new Date(run.started_at).getTime() : 0;
-    const completed = run.completed_at
-        ? new Date(run.completed_at).getTime()
-        : Date.now();
+    const completed = new Date(
+        run.completed_at ?? run.started_at ?? 0,
+    ).getTime();
     const seconds = started
         ? Math.max(0, Math.round((completed - started) / 1000))
         : 0;

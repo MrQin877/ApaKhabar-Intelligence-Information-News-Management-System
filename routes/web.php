@@ -96,10 +96,14 @@ Route::prefix('admin')
 
         // Independent document and extracted-information library.
         Route::get('/documents', [NewsCreatorController::class, 'documents'])->name('documents.index');
+        Route::get('/documents/archived', [NewsCreatorController::class, 'archivedDocuments'])->name('documents.archived');
         Route::post('/documents', [NewsCreatorController::class, 'storeDocument'])->name('documents.store');
         Route::get('/documents/{document}/preview', [NewsCreatorController::class, 'previewDocument'])->name('documents.preview');
         Route::post('/documents/{document}/retry', [NewsCreatorController::class, 'retryDocument'])->name('documents.retry');
+        Route::post('/documents/{document}/archive', [NewsCreatorController::class, 'archiveDocument'])->name('documents.archive');
+        Route::post('/documents/{document}/restore', [NewsCreatorController::class, 'restoreDocument'])->name('documents.restore');
         Route::post('/information/{information}/review', [NewsCreatorController::class, 'reviewInformation'])->name('information.review');
+        Route::post('/information/review/bulk', [NewsCreatorController::class, 'bulkReviewInformation'])->name('information.review.bulk');
 
         // News management, including manual drafts and AI-produced drafts.
         Route::get('/news', [NewsWorkspaceController::class, 'index'])->name('news-workspace.index');

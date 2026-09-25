@@ -1,6 +1,8 @@
 import { Head, router, usePage } from '@inertiajs/react';
 import {
     AlertCircle,
+    Archive,
+    ArchiveRestore,
     Bot,
     CheckCircle2,
     Clock3,
@@ -19,9 +21,20 @@ import {
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, DragEvent } from 'react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -82,6 +95,8 @@ interface DocumentItem {
     error?: string | null;
     attempts?: number;
     previewable: boolean;
+    archive_after?: string | null;
+    archived_at?: string | null;
 }
 
 const filters: Array<{ value: LibraryFilter; label: string }> = [
@@ -176,8 +191,10 @@ function informationDescription(item: ExtractedInformation) {
 
 export default function DocumentLibrary({
     documents = [],
+    archived = false,
 }: {
     documents?: DocumentItem[];
+    archived?: boolean;
 }) {
     const errors = (usePage().props.errors ?? {}) as Record<string, string>;
     const [filter, setFilter] = useState<LibraryFilter>('all');
@@ -185,6 +202,17 @@ export default function DocumentLibrary({
     const [selectedId, setSelectedId] = useState<number | null>(null);
     const [reviewPage, setReviewPage] = useState(1);
     const [dragging, setDragging] = useState(false);
+    const [selectedInformationIds, setSelectedInformationIds] = useState<
+        number[]
+    >([]);
+    const [reviewTarget, setReviewTarget] = useState<{
+        items: ExtractedInformation[];
+        decision: 'approved' | 'rejected';
+    } | null>(null);
+    const [archiveTarget, setArchiveTarget] = useState<{
+        document: DocumentItem;
+        action: 'archive' | 'restore';
+    } | null>(null);
     const [uploading, setUploading] = useState<{
         label: string;
         progress: number;
@@ -206,6 +234,12 @@ export default function DocumentLibrary({
 
         return selected?.extract.slice(start, start + REVIEW_PAGE_SIZE) ?? [];
     }, [currentReviewPage, selected]);
+    const pendingOnPage = paginatedInformation.filter(
+        (item) => item.review_status === 'pending',
+    );
+    const allPendingOnPageSelected =
+        pendingOnPage.length > 0 &&
+        pendingOnPage.every((item) => selectedInformationIds.includes(item.id));
 
     const counts = useMemo(() => {
         const count = (state: LibraryFilter) =>
@@ -253,6 +287,7 @@ export default function DocumentLibrary({
     function openReview(document: DocumentItem) {
         setSelectedId(document.id);
         setReviewPage(1);
+        setSelectedInformationIds([]);
     }
 
     function previewDocument(document: DocumentItem) {
@@ -326,38 +361,83 @@ export default function DocumentLibrary({
         upload(Array.from(event.dataTransfer.files));
     }
 
-    function review(
-        item: ExtractedInformation,
-        decision: 'approved' | 'rejected',
-    ) {
+    function confirmReview() {
+        if (!reviewTarget) return;
+
+        const ids = reviewTarget.items.map((item) => item.id);
+        const url =
+            ids.length === 1
+                ? `/admin/information/${ids[0]}/review`
+                : '/admin/information/review/bulk';
+        const payload =
+            ids.length === 1
+                ? { decision: reviewTarget.decision }
+                : {
+                      decision: reviewTarget.decision,
+                      information_ids: ids,
+                  };
+
+        router.post(url, payload, {
+            preserveScroll: true,
+            onSuccess: () => {
+                setSelectedInformationIds([]);
+                setReviewTarget(null);
+                router.reload({ only: ['documents'] });
+            },
+        });
+    }
+
+    function confirmArchiveAction() {
+        if (!archiveTarget) return;
+
         router.post(
-            `/admin/information/${item.id}/review`,
-            { decision },
+            `/admin/documents/${archiveTarget.document.id}/${archiveTarget.action}`,
+            {},
             {
                 preserveScroll: true,
-                onSuccess: () => router.reload({ only: ['documents'] }),
+                onSuccess: () => setArchiveTarget(null),
             },
         );
     }
 
     return (
         <>
-            <Head title="Pustaka Dokumen" />
+            <Head title={archived ? 'Arsip Dokumen' : 'Pustaka Dokumen'} />
             <div className="min-h-full bg-background p-4 text-foreground md:p-6">
                 <div className="mx-auto flex max-w-7xl flex-col gap-6">
                     <header className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
                         <div>
                             <h1 className="text-2xl font-semibold tracking-tight">
-                                Pustaka dokumen
+                                {archived ? 'Arsip dokumen' : 'Pustaka dokumen'}
                             </h1>
                             <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
-                                Kelola dokumen sumber, tinjau hasil ekstraksi,
-                                dan setujui fakta sebelum digunakan oleh AI.
+                                {archived
+                                    ? 'Dokumen terarsip tidak ditampilkan atau digunakan oleh AI sampai dipulihkan.'
+                                    : 'Kelola dokumen sumber, tinjau hasil ekstraksi, dan setujui fakta sebelum digunakan oleh AI.'}
                             </p>
                         </div>
-                        <Button onClick={() => fileInput.current?.click()}>
-                            <Upload /> Unggah dokumen
-                        </Button>
+                        <div className="flex gap-2">
+                            <Button
+                                variant="outline"
+                                onClick={() =>
+                                    router.visit(
+                                        archived
+                                            ? '/admin/documents'
+                                            : '/admin/documents/archived',
+                                    )
+                                }
+                            >
+                                {archived ? <FileText /> : <Archive />}
+                                {archived ? 'Pustaka aktif' : 'Lihat arsip'}
+                            </Button>
+                            {!archived && (
+                                <Button
+                                    onClick={() => fileInput.current?.click()}
+                                >
+                                    <Upload /> Unggah dokumen
+                                </Button>
+                            )}
+                        </div>
                     </header>
 
                     {(errors.document ||
@@ -420,60 +500,65 @@ export default function DocumentLibrary({
                         ))}
                     </div>
 
-                    <Card
-                        className={`border-dashed py-0 shadow-none transition-colors ${dragging ? 'border-primary bg-primary/5' : ''}`}
-                        onDragEnter={(event) => {
-                            event.preventDefault();
-                            setDragging(true);
-                        }}
-                        onDragOver={(event) => {
-                            event.preventDefault();
-                            setDragging(true);
-                        }}
-                        onDragLeave={(event) => {
-                            event.preventDefault();
-                            setDragging(false);
-                        }}
-                        onDrop={dropFiles}
-                    >
-                        <CardContent className="flex flex-col items-center gap-3 px-5 py-7 text-center sm:flex-row sm:text-left">
-                            <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                                <Upload />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                                <p className="font-medium">
-                                    Letakkan hingga lima dokumen di sini
-                                </p>
-                                <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                                    PDF, Word, Excel, CSV, teks, dan gambar OCR
-                                    · maksimum 20 MB per file
-                                </p>
-                                {uploading && (
-                                    <div className="mt-3 max-w-md">
-                                        <Progress value={uploading.progress} />
-                                        <p className="mt-1 text-xs text-muted-foreground">
-                                            Mengunggah {uploading.label} ·{' '}
-                                            {Math.round(uploading.progress)}%
-                                        </p>
-                                    </div>
-                                )}
-                            </div>
-                            <Button
-                                variant="outline"
-                                onClick={() => fileInput.current?.click()}
-                            >
-                                Pilih file
-                            </Button>
-                            <input
-                                ref={fileInput}
-                                type="file"
-                                multiple
-                                className="hidden"
-                                accept=".pdf,.docx,.xlsx,.xlsm,.csv,.txt,.jpg,.jpeg,.png"
-                                onChange={changeFiles}
-                            />
-                        </CardContent>
-                    </Card>
+                    {!archived && (
+                        <Card
+                            className={`border-dashed py-0 shadow-none transition-colors ${dragging ? 'border-primary bg-primary/5' : ''}`}
+                            onDragEnter={(event) => {
+                                event.preventDefault();
+                                setDragging(true);
+                            }}
+                            onDragOver={(event) => {
+                                event.preventDefault();
+                                setDragging(true);
+                            }}
+                            onDragLeave={(event) => {
+                                event.preventDefault();
+                                setDragging(false);
+                            }}
+                            onDrop={dropFiles}
+                        >
+                            <CardContent className="flex flex-col items-center gap-3 px-5 py-7 text-center sm:flex-row sm:text-left">
+                                <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                                    <Upload />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                    <p className="font-medium">
+                                        Letakkan hingga lima dokumen di sini
+                                    </p>
+                                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                                        PDF, Word, Excel, CSV, teks, dan gambar
+                                        OCR · maksimum 20 MB per file
+                                    </p>
+                                    {uploading && (
+                                        <div className="mt-3 max-w-md">
+                                            <Progress
+                                                value={uploading.progress}
+                                            />
+                                            <p className="mt-1 text-xs text-muted-foreground">
+                                                Mengunggah {uploading.label} ·{' '}
+                                                {Math.round(uploading.progress)}
+                                                %
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+                                <Button
+                                    variant="outline"
+                                    onClick={() => fileInput.current?.click()}
+                                >
+                                    Pilih file
+                                </Button>
+                                <input
+                                    ref={fileInput}
+                                    type="file"
+                                    multiple
+                                    className="hidden"
+                                    accept=".pdf,.docx,.xlsx,.xlsm,.csv,.txt,.jpg,.jpeg,.png"
+                                    onChange={changeFiles}
+                                />
+                            </CardContent>
+                        </Card>
+                    )}
 
                     <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
                         <Tabs
@@ -520,7 +605,9 @@ export default function DocumentLibrary({
                                     Tidak ada dokumen pada tahap ini
                                 </p>
                                 <p className="mt-1 text-sm text-muted-foreground">
-                                    Ubah filter atau unggah dokumen baru.
+                                    {archived
+                                        ? 'Belum ada dokumen yang diarsipkan.'
+                                        : 'Ubah filter atau unggah dokumen baru.'}
                                 </p>
                             </CardContent>
                         </Card>
@@ -645,62 +732,66 @@ export default function DocumentLibrary({
                                                 </TableCell>
                                                 <TableCell className="pr-4 text-right">
                                                     <div className="flex items-center justify-end gap-2">
-                                                        <Button
-                                                            size="sm"
-                                                            variant={
-                                                                pending > 0
-                                                                    ? 'default'
-                                                                    : 'outline'
-                                                            }
-                                                            className={
-                                                                document.status ===
-                                                                'failed'
-                                                                    ? ' '
-                                                                    : undefined
-                                                            }
-                                                            disabled={
-                                                                document.status ===
-                                                                'processing'
-                                                            }
-                                                            onClick={() => {
-                                                                if (
+                                                        {!archived && (
+                                                            <Button
+                                                                size="sm"
+                                                                variant={
+                                                                    pending > 0
+                                                                        ? 'default'
+                                                                        : 'outline'
+                                                                }
+                                                                className={
                                                                     document.status ===
                                                                     'failed'
-                                                                ) {
-                                                                    router.post(
-                                                                        `/admin/documents/${document.id}/retry`,
-                                                                        {},
-                                                                        {
-                                                                            preserveScroll: true,
-                                                                        },
-                                                                    );
-
-                                                                    return;
+                                                                        ? ' '
+                                                                        : undefined
                                                                 }
+                                                                disabled={
+                                                                    document.status ===
+                                                                    'processing'
+                                                                }
+                                                                onClick={() => {
+                                                                    if (
+                                                                        document.status ===
+                                                                        'failed'
+                                                                    ) {
+                                                                        router.post(
+                                                                            `/admin/documents/${document.id}/retry`,
+                                                                            {},
+                                                                            {
+                                                                                preserveScroll: true,
+                                                                            },
+                                                                        );
 
-                                                                openReview(
-                                                                    document,
-                                                                );
-                                                            }}
-                                                        >
-                                                            {document.status ===
-                                                            'failed' ? (
-                                                                <>
-                                                                    <RotateCcw />
-                                                                    Coba lagi
-                                                                </>
-                                                            ) : document.status ===
-                                                              'processing' ? (
-                                                                <>
-                                                                    <LoaderCircle className="animate-spin" />
-                                                                    Diproses
-                                                                </>
-                                                            ) : pending > 0 ? (
-                                                                'Tinjau'
-                                                            ) : (
-                                                                'Lihat'
-                                                            )}
-                                                        </Button>
+                                                                        return;
+                                                                    }
+
+                                                                    openReview(
+                                                                        document,
+                                                                    );
+                                                                }}
+                                                            >
+                                                                {document.status ===
+                                                                'failed' ? (
+                                                                    <>
+                                                                        <RotateCcw />
+                                                                        Coba
+                                                                        lagi
+                                                                    </>
+                                                                ) : document.status ===
+                                                                  'processing' ? (
+                                                                    <>
+                                                                        <LoaderCircle className="animate-spin" />
+                                                                        Diproses
+                                                                    </>
+                                                                ) : pending >
+                                                                  0 ? (
+                                                                    'Tinjau'
+                                                                ) : (
+                                                                    'Lihat'
+                                                                )}
+                                                            </Button>
+                                                        )}
                                                         <DropdownMenu>
                                                             <DropdownMenuTrigger
                                                                 asChild
@@ -730,20 +821,43 @@ export default function DocumentLibrary({
                                                                         ? 'Pratinjau dokumen'
                                                                         : 'Unduh dokumen'}
                                                                 </DropdownMenuItem>
-                                                                {approved >
-                                                                    0 && (
-                                                                    <DropdownMenuItem
-                                                                        onClick={() =>
-                                                                            router.visit(
-                                                                                `/admin/ai-assistant?doc=${document.id}`,
-                                                                            )
-                                                                        }
-                                                                    >
-                                                                        <Bot />
-                                                                        Gunakan
-                                                                        di AI
-                                                                    </DropdownMenuItem>
-                                                                )}
+                                                                {!archived &&
+                                                                    approved >
+                                                                        0 && (
+                                                                        <DropdownMenuItem
+                                                                            onClick={() =>
+                                                                                router.visit(
+                                                                                    `/admin/ai-assistant?doc=${document.id}`,
+                                                                                )
+                                                                            }
+                                                                        >
+                                                                            <Bot />
+                                                                            Gunakan
+                                                                            di
+                                                                            AI
+                                                                        </DropdownMenuItem>
+                                                                    )}
+                                                                <DropdownMenuItem
+                                                                    onClick={() =>
+                                                                        setArchiveTarget(
+                                                                            {
+                                                                                document,
+                                                                                action: archived
+                                                                                    ? 'restore'
+                                                                                    : 'archive',
+                                                                            },
+                                                                        )
+                                                                    }
+                                                                >
+                                                                    {archived ? (
+                                                                        <ArchiveRestore />
+                                                                    ) : (
+                                                                        <Archive />
+                                                                    )}
+                                                                    {archived
+                                                                        ? 'Pulihkan dokumen'
+                                                                        : 'Arsipkan dokumen'}
+                                                                </DropdownMenuItem>
                                                             </DropdownMenuContent>
                                                         </DropdownMenu>
                                                     </div>
@@ -813,6 +927,53 @@ export default function DocumentLibrary({
                         )}
                     </div>
 
+                    {!archived && pendingOnPage.length > 0 && (
+                        <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/20 px-5 py-3">
+                            <label className="flex cursor-pointer items-center gap-2 text-sm">
+                                <Checkbox
+                                    checked={allPendingOnPageSelected}
+                                    onCheckedChange={(checked) => {
+                                        const pageIds = pendingOnPage.map(
+                                            (item) => item.id,
+                                        );
+                                        setSelectedInformationIds((current) =>
+                                            checked
+                                                ? Array.from(
+                                                      new Set([
+                                                          ...current,
+                                                          ...pageIds,
+                                                      ]),
+                                                  )
+                                                : current.filter(
+                                                      (id) =>
+                                                          !pageIds.includes(id),
+                                                  ),
+                                        );
+                                    }}
+                                />
+                                Pilih semua di halaman ini
+                            </label>
+                            <Button
+                                size="sm"
+                                disabled={selectedInformationIds.length === 0}
+                                onClick={() =>
+                                    setReviewTarget({
+                                        items:
+                                            selected?.extract.filter((item) =>
+                                                selectedInformationIds.includes(
+                                                    item.id,
+                                                ),
+                                            ) ?? [],
+                                        decision: 'approved',
+                                    })
+                                }
+                            >
+                                <CheckCircle2 /> Setujui terpilih (
+                                {selectedInformationIds.length})
+                            </Button>
+                        </div>
+                    )}
+
                     <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4">
                         {selected?.status === 'processing' && (
                             <Alert>
@@ -841,9 +1002,41 @@ export default function DocumentLibrary({
                             >
                                 <CardHeader className="px-4">
                                     <div className="flex items-start justify-between gap-3">
-                                        <CardTitle className="text-sm leading-6">
-                                            {informationTitle(item)}
-                                        </CardTitle>
+                                        <div className="flex min-w-0 items-start gap-3">
+                                            {!archived &&
+                                                item.review_status ===
+                                                    'pending' && (
+                                                    <Checkbox
+                                                        className="mt-1"
+                                                        checked={selectedInformationIds.includes(
+                                                            item.id,
+                                                        )}
+                                                        onCheckedChange={(
+                                                            checked,
+                                                        ) =>
+                                                            setSelectedInformationIds(
+                                                                (current) =>
+                                                                    checked
+                                                                        ? [
+                                                                              ...current,
+                                                                              item.id,
+                                                                          ]
+                                                                        : current.filter(
+                                                                              (
+                                                                                  id,
+                                                                              ) =>
+                                                                                  id !==
+                                                                                  item.id,
+                                                                          ),
+                                                            )
+                                                        }
+                                                        aria-label={`Pilih ${informationTitle(item)}`}
+                                                    />
+                                                )}
+                                            <CardTitle className="text-sm leading-6">
+                                                {informationTitle(item)}
+                                            </CardTitle>
+                                        </div>
                                         <Badge
                                             variant={
                                                 item.review_status ===
@@ -885,27 +1078,36 @@ export default function DocumentLibrary({
                                             Indeks {item.embedding_status}
                                         </Badge>
                                     </div>
-                                    {item.review_status === 'pending' && (
-                                        <div className="grid grid-cols-2 gap-2 border-t pt-3">
-                                            <Button
-                                                size="sm"
-                                                onClick={() =>
-                                                    review(item, 'approved')
-                                                }
-                                            >
-                                                <CheckCircle2 /> Setujui
-                                            </Button>
-                                            <Button
-                                                size="sm"
-                                                variant="destructive"
-                                                onClick={() =>
-                                                    review(item, 'rejected')
-                                                }
-                                            >
-                                                <XCircle /> Tolak
-                                            </Button>
-                                        </div>
-                                    )}
+                                    {!archived &&
+                                        item.review_status === 'pending' && (
+                                            <div className="grid grid-cols-2 gap-2 border-t pt-3">
+                                                <Button
+                                                    size="sm"
+                                                    onClick={() =>
+                                                        setReviewTarget({
+                                                            items: [item],
+                                                            decision:
+                                                                'approved',
+                                                        })
+                                                    }
+                                                >
+                                                    <CheckCircle2 /> Setujui
+                                                </Button>
+                                                <Button
+                                                    size="sm"
+                                                    variant="destructive"
+                                                    onClick={() =>
+                                                        setReviewTarget({
+                                                            items: [item],
+                                                            decision:
+                                                                'rejected',
+                                                        })
+                                                    }
+                                                >
+                                                    <XCircle /> Tolak
+                                                </Button>
+                                            </div>
+                                        )}
                                     {item.review_status !== 'pending' && (
                                         <p className="border-t pt-3 text-xs text-muted-foreground">
                                             Keputusan telah disimpan. Status
@@ -1012,6 +1214,69 @@ export default function DocumentLibrary({
                     )}
                 </SheetContent>
             </Sheet>
+
+            <AlertDialog
+                open={Boolean(reviewTarget)}
+                onOpenChange={(open) => !open && setReviewTarget(null)}
+            >
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>
+                            {reviewTarget?.decision === 'approved'
+                                ? 'Setujui informasi terpilih?'
+                                : 'Tolak informasi ini?'}
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                            {reviewTarget?.decision === 'approved'
+                                ? `${reviewTarget.items.length} informasi akan ditambahkan ke indeks pencarian dan dapat digunakan oleh Asisten AI.`
+                                : 'Informasi akan dihapus secara lunak dari pustaka aktif dan tidak dapat digunakan oleh Asisten AI.'}
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Batal</AlertDialogCancel>
+                        <AlertDialogAction
+                            className={
+                                reviewTarget?.decision === 'rejected'
+                                    ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
+                                    : undefined
+                            }
+                            onClick={confirmReview}
+                        >
+                            {reviewTarget?.decision === 'approved'
+                                ? 'Ya, setujui'
+                                : 'Ya, tolak'}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+
+            <AlertDialog
+                open={Boolean(archiveTarget)}
+                onOpenChange={(open) => !open && setArchiveTarget(null)}
+            >
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>
+                            {archiveTarget?.action === 'restore'
+                                ? 'Pulihkan dokumen?'
+                                : 'Arsipkan dokumen?'}
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                            {archiveTarget?.action === 'restore'
+                                ? 'Dokumen dan informasi yang pernah disetujui akan kembali tersedia untuk Asisten AI.'
+                                : 'Dokumen akan disembunyikan dari pustaka aktif dan tidak dapat digunakan oleh Asisten AI. Dokumen tetap dapat dipulihkan dari arsip.'}
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Batal</AlertDialogCancel>
+                        <AlertDialogAction onClick={confirmArchiveAction}>
+                            {archiveTarget?.action === 'restore'
+                                ? 'Pulihkan'
+                                : 'Arsipkan'}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </>
     );
 }

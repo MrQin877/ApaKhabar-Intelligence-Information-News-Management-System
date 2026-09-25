@@ -7,6 +7,12 @@ export interface InformationItem {
     document: { id: number; original_name: string };
 }
 
+export interface PendingInformationItem extends InformationItem {
+    evidence: Array<{ source: string; quote: string }>;
+    confidence: number | null;
+    quality_score: number | null;
+}
+
 export interface DocumentItem {
     id: number;
     original_name: string;
@@ -143,6 +149,7 @@ export interface Recommendation {
 
 export interface AssistantPageProps {
     informationItems: InformationItem[];
+    pendingInformation?: PendingInformationItem[];
     documents: DocumentItem[];
     generatedArticle?: Article | null;
     newsSession?: NewsSession | null;

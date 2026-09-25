@@ -20,3 +20,14 @@ Schedule::call(function (): void {
         ->pluck('id')
         ->each(fn (int $id) => ProcessIntelligenceDocument::dispatch($id)->onQueue('documents'));
 })->everyMinute()->name('resume-stalled-intelligence-documents')->withoutOverlapping();
+
+Schedule::call(function (): void {
+    IntelligenceDocument::query()
+        ->whereNull('archived_at')
+        ->whereNotNull('archive_after')
+        ->where('archive_after', '<=', now())
+        ->each(function (IntelligenceDocument $document): void {
+            $document->update(['archived_at' => now()]);
+            $document->information()->update(['is_active' => false]);
+        });
+})->daily()->name('archive-expired-intelligence-documents')->withoutOverlapping();
