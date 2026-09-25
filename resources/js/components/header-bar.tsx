@@ -2,7 +2,7 @@ import { WebsiteLanguage } from '@/components/website-language';
 import { Link, usePage } from '@inertiajs/react';
 import { Bell, LayoutDashboard, LogIn, LogOut, Menu, Palette, Shield, UserPlus, UserCircle } from 'lucide-react';
 import { useInitials } from '@/hooks/use-initials';
-import { login, register } from '@/routes';
+import { register } from '@/routes';
 import adminRoutes from '@/routes/admin';
 import { edit as editAppearance } from '@/routes/appearance';
 import { edit as editProfile } from '@/routes/profile';
@@ -137,7 +137,7 @@ export function HeaderBar() {
                         <>
                             {/* 9️⃣ Masuk — color transition */}
                             <Link
-                                href={login()}
+                                href="/login"
                                 className="text-sm font-medium text-gray-700 dark:text-gray-300
                                            hover:text-black dark:hover:text-white transition-colors duration-200"
                             >
