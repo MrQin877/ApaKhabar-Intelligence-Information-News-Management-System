@@ -135,3 +135,28 @@ test('saving a draft does not require a publication selection', function () {
     $this->post('/admin/news/manual', manualArticle(['platforms' => []]))->assertSessionHasNoErrors();
     expect(IntelligentNewsDraft::sole()->status)->toBe('draft')->and(News::count())->toBe(0);
 });
+
+test('manual covers use the configured app URL instead of the request host', function () {
+    Storage::fake('public');
+    config(['app.url' => 'http://192.168.1.10:8000', 'filesystems.news_media_disk' => 'public']);
+    $this->post('/admin/news/manual', manualArticle(['cover_photo' => manualCover()]))
+        ->assertSessionHasNoErrors();
+
+    expect(IntelligentNewsDraft::sole()->image)->toStartWith('http://192.168.1.10:8000/storage/news-images/');
+});
+
+test('legacy local news images are normalized for API and web without rewriting records', function () {
+    config(['app.url' => 'http://192.168.1.10:8000']);
+    $this->post('/admin/news/manual', manualArticle(['intent' => 'publish']))->assertSessionHasNoErrors();
+    $news = News::sole();
+    $legacy = 'http://localhost:8000/storage/news-images/cover.png';
+    $news->update(['image' => $legacy]);
+    $expected = 'http://192.168.1.10:8000/storage/news-images/cover.png';
+
+    $this->getJson('/api/news')->assertOk()->assertJsonPath('0.image', $expected);
+    $this->getJson('/api/news/'.$news->getKey())->assertOk()->assertJsonPath('data.image', $expected);
+    $this->get('/news/'.$news->getKey())->assertInertia(fn (Assert $page) => $page->where('news.image', $expected));
+    expect($news->fresh()->getRawOriginal('image'))->toBe($legacy);
+    expect(\App\Support\NewsImageUrl::resolve('https://cdn.example.com/storage/cover.png'))
+        ->toBe('https://cdn.example.com/storage/cover.png');
+});

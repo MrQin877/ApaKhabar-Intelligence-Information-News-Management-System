@@ -277,8 +277,12 @@ class NewsWorkspaceController extends Controller
             if (! $path) {
                 throw ValidationException::withMessages(['cover_photo' => 'Gambar gagal disimpan. Silakan coba lagi.']);
             }
-            $data['image'] = url(Storage::disk($disk)->url($path));
+            $data['image'] = $disk === 'public'
+                ? rtrim(config('app.url'), '/').'/storage/'.$path
+                : Storage::disk($disk)->url($path);
         }
+
+        $data['image'] = \App\Support\NewsImageUrl::resolve($data['image'] ?? null);
 
         return $data;
     }

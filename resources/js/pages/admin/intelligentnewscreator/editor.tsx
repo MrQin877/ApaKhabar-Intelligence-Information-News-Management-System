@@ -10,7 +10,7 @@ import {
     X,
     LoaderCircle,
 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { NewsRichEditor } from '@/components/news-rich-editor';
 import { PublishNewsDialog } from '@/components/publish-news-dialog';
@@ -93,6 +93,28 @@ export default function ManualEditor({
         image: draft?.image ?? '',
         platforms: [] as PublishPlatformId[],
     });
+    const contentText = useMemo(() => {
+        if (typeof DOMParser === 'undefined') {
+            return '';
+        }
+
+        const document = new DOMParser().parseFromString(
+            form.data.content,
+            'text/html',
+        );
+        document
+            .querySelectorAll('script, style')
+            .forEach((element) => element.remove());
+
+        return (document.body.textContent ?? '')
+            .replace(/[\u200B-\u200D\uFEFF]/g, '')
+            .trim();
+    }, [form.data.content]);
+    const hasRequiredContent = Boolean(
+        form.data.headline.trim() &&
+        form.data.summary.trim() &&
+        Array.from(contentText).length >= 20,
+    );
 
     useEffect(() => {
         return () => {
@@ -126,6 +148,10 @@ export default function ManualEditor({
 
     function save(intent: 'draft' | 'publish') {
         if (form.processing) {
+            return;
+        }
+
+        if (intent === 'publish' && !hasRequiredContent) {
             return;
         }
 
@@ -548,7 +574,14 @@ export default function ManualEditor({
                             </Button>
                             <Button
                                 type="button"
-                                disabled={form.processing}
+                                disabled={
+                                    form.processing || !hasRequiredContent
+                                }
+                                aria-describedby={
+                                    !hasRequiredContent
+                                        ? 'publish-content-hint'
+                                        : undefined
+                                }
                                 onClick={() => setConfirmPublish(true)}
                                 className="h-10 flex-1 rounded-lg bg-brand-600 text-white hover:bg-brand-700 sm:flex-none sm:px-5"
                                 title="Simpan dan tinjau draf sebelum menerbitkan"
@@ -560,11 +593,20 @@ export default function ManualEditor({
                                 )}{' '}
                                 Terbitkan
                             </Button>
+                            {!hasRequiredContent && (
+                                <p
+                                    id="publish-content-hint"
+                                    className="w-full text-right text-xs text-muted-foreground"
+                                >
+                                    Lengkapi konten berita sebelum menerbitkan.
+                                </p>
+                            )}
                         </div>
                     </footer>
                 </form>
             </div>
             <PublishNewsDialog
+                contentReady={hasRequiredContent}
                 open={confirmPublish}
                 onOpenChange={setConfirmPublish}
                 platforms={publishPlatforms}

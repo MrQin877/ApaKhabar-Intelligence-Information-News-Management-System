@@ -45,6 +45,11 @@ class News extends Model
         return $this->categoryRecord?->name;
     }
 
+    public function getImageAttribute(?string $value): ?string
+    {
+        return \App\Support\NewsImageUrl::resolve($value);
+    }
+
     public function scopeCategory(Builder $query, string $category): Builder
     {
         return $query->whereHas('categoryRecord', fn ($query) => $query->where('name', $category));

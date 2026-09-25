@@ -1,4 +1,4 @@
-import { CircleUserRound, Globe2, LoaderCircle, Send } from 'lucide-react';
+import { Facebook, LoaderCircle, Send } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import {
     FacebookLoginControl,
@@ -27,11 +27,6 @@ export interface PublishPlatform {
     connect_url: string | null;
 }
 
-const icons = {
-    website: Globe2,
-    facebook: CircleUserRound,
-    instagram: CircleUserRound,
-};
 const names = {
     website: 'Aplikasi',
     facebook: 'Facebook',
@@ -58,6 +53,7 @@ export function PublishNewsDialog({
     selected,
     onSelectionChange,
     processing,
+    contentReady = true,
     error,
     onPublish,
 }: {
@@ -68,6 +64,7 @@ export function PublishNewsDialog({
     selected: PublishPlatformId[];
     onSelectionChange: (selected: PublishPlatformId[]) => void;
     processing: boolean;
+    contentReady?: boolean;
     error?: string;
     onPublish: () => void;
 }) {
@@ -176,7 +173,6 @@ export function PublishNewsDialog({
                             </span>
                         </div>
                         {platforms.map((platform) => {
-                            const Icon = icons[platform.id];
                             const connected = platform.status === 'connected';
                             const expired = platform.status === 'expired';
                             const checked = selection.includes(platform.id);
@@ -196,21 +192,49 @@ export function PublishNewsDialog({
                                     className={`rounded-xl border p-4 transition-colors ${checked ? 'border-primary/50 bg-primary/5' : 'border-border bg-card'}`}
                                 >
                                     <div className="flex items-start gap-3">
-                                        <span
-                                            className={`flex size-11 shrink-0 items-center justify-center rounded-xl ${platform.id === 'website' ? 'bg-primary/10 text-primary' : platform.id === 'facebook' ? 'bg-muted text-muted-foreground' : 'bg-muted text-muted-foreground'}`}
-                                        >
-                                            {platform.id === 'instagram' ? (
-                                                <img
-                                                    src="/images/brands/instagram.png"
-                                                    alt=""
-                                                    className="size-6"
-                                                />
-                                            ) : (
-                                                <Icon className="size-5" />
-                                            )}
-                                        </span>
                                         <div className="min-w-0 flex-1">
                                             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                                                {platform.id === 'website' && (
+                                                    <>
+                                                        <img
+                                                            src="/images/brands/aplikasi-black.svg"
+                                                            alt=""
+                                                            className="size-7 shrink-0 text-black dark:hidden"
+                                                            style={{
+                                                                filter: 'drop-shadow(0.1px 0 0 currentColor) drop-shadow(-0.1px 0 0 currentColor) drop-shadow(0 0.1px 0 currentColor) drop-shadow(0 -0.1px 0 currentColor)',
+                                                            }}
+                                                        />
+                                                        <img
+                                                            src="/images/brands/aplikasi-white.svg"
+                                                            alt=""
+                                                            className="hidden size-7 shrink-0 text-white dark:block"
+                                                            style={{
+                                                                filter: 'drop-shadow(0.1px 0 0 currentColor) drop-shadow(-0.1px 0 0 currentColor) drop-shadow(0 0.1px 0 currentColor) drop-shadow(0 -0.1px 0 currentColor)',
+                                                            }}
+                                                        />
+                                                    </>
+                                                )}
+                                                {platform.id === 'facebook' && (
+                                                    <Facebook
+                                                        aria-hidden="true"
+                                                        className="size-5 shrink-0 text-black dark:text-white"
+                                                    />
+                                                )}
+                                                {platform.id ===
+                                                    'instagram' && (
+                                                    <>
+                                                        <img
+                                                            src="/images/brands/instagram-black.svg"
+                                                            alt=""
+                                                            className="size-5 shrink-0 dark:hidden"
+                                                        />
+                                                        <img
+                                                            src="/images/brands/instagram-white.svg"
+                                                            alt=""
+                                                            className="hidden size-5 shrink-0 dark:block"
+                                                        />
+                                                    </>
+                                                )}
                                                 {connected ? (
                                                     <Label
                                                         htmlFor={`publish-${platform.id}`}
@@ -320,6 +344,11 @@ export function PublishNewsDialog({
                                 berita.
                             </p>
                         )}
+                        {!contentReady && (
+                            <p className="text-xs text-muted-foreground">
+                                Lengkapi konten berita sebelum menerbitkan.
+                            </p>
+                        )}
                     </div>
                 )}
                 <DialogFooter className="border-t bg-muted/20 px-6 py-4 sm:px-7">
@@ -340,9 +369,15 @@ export function PublishNewsDialog({
                     </Button>
                     <Button
                         type="button"
-                        disabled={processing || !selection.length}
+                        disabled={
+                            processing || !contentReady || !selection.length
+                        }
                         onClick={() => {
-                            if (processing || !selection.length) {
+                            if (
+                                processing ||
+                                !contentReady ||
+                                !selection.length
+                            ) {
                                 return;
                             }
 
