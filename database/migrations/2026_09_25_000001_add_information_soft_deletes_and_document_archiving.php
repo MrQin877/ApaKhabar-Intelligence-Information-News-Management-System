@@ -1,5 +1,6 @@
 <?php
 
+use Carbon\Carbon;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -20,7 +21,13 @@ return new class extends Migration
 
         DB::table('intelligence_documents')
             ->whereNull('archive_after')
-            ->update(['archive_after' => DB::raw('DATE_ADD(created_at, INTERVAL 3 YEAR)')]);
+            ->orderBy('id')->chunkById(500, function ($documents) {
+                foreach ($documents as $document) {
+                    DB::table('intelligence_documents')->where('id', $document->id)->update([
+                        'archive_after' => Carbon::parse($document->created_at)->addYearsNoOverflow(3),
+                    ]);
+                }
+            });
     }
 
     public function down(): void

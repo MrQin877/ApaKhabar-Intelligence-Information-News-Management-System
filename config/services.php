@@ -6,7 +6,8 @@ return [
             .'/'.trim(env('APAKHABAR_AI_API_PREFIX', ''), '/'),
         'token' => env('APAKHABAR_AI_SERVICE_TOKEN'),
         'provider' => env('APAKHABAR_AI_PROVIDER', 'AI lokal'),
-        'timeout' => (int) env('APAKHABAR_AI_TIMEOUT', 180),
+        'timeout' => (int) env('APAKHABAR_AI_TIMEOUT', 1200),
+        'web_discovery' => (bool) env('APAKHABAR_AI_WEB_DISCOVERY', false),
         'connect_timeout' => (int) env('APAKHABAR_AI_CONNECT_TIMEOUT', 5),
     ],
 

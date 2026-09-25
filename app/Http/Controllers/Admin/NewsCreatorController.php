@@ -342,9 +342,30 @@ class NewsCreatorController extends Controller
         ], 'inline');
     }
 
+    public function agentProgress(Request $request, string $requestId): JsonResponse
+    {
+        $event = IntelligentNewsRunEvent::query()
+            ->where('event_type', 'agent_run')
+            ->where('payload->client_request_id', $requestId)
+            ->whereIn('run_id', IntelligentNewsRun::query()->whereIn('session_id',
+                IntelligentNewsSession::query()->where('created_by', $request->user()->getKey())->select('id')
+            )->select('id'))->latest('id')->firstOrFail();
+        try {
+            $response = $this->aiClient()->timeout(5)->get(
+                rtrim(config('services.apakhabar_ai.url'), '/').'/agent/runs/'.rawurlencode($event->payload['agent_run_id']),
+                ['owner_id' => (string) $request->user()->getKey()],
+            )->throw()->json();
+
+            return response()->json(['status' => $response['status'], 'events' => $response['events'] ?? []]);
+        } catch (\Throwable $exception) {
+            return response()->json(['status' => 'unavailable', 'events' => []], 503);
+        }
+    }
+
     public function generate(Request $request): RedirectResponse
     {
         $validated = $request->validate([
+            'request_id' => ['nullable', 'uuid'],
             'session_id' => ['nullable', 'integer', 'exists:intelligent_news_sessions,id'],
             'draft_id' => ['nullable', 'integer', 'exists:intelligent_news_drafts,id'],
             'information_ids' => ['nullable', 'array'],
@@ -389,18 +410,28 @@ class NewsCreatorController extends Controller
                 ->whereNull('archived_at'))
             ->pluck('id');
 
+        $pendingAgentRunId = $session?->status === 'awaiting_answers'
+            ? IntelligentNewsMessage::where('session_id', $session->id)
+                ->where('role', 'assistant')->latest('id')->value('payload')
+            : null;
+        $pendingAgentRunId = data_get($pendingAgentRunId, 'agent_run_id');
+        $currentDraft = isset($validated['draft_id'])
+            ? IntelligentNewsDraft::where('created_by', $request->user()->getKey())
+                ->where('status', 'draft')->findOrFail($validated['draft_id'])
+            : null;
         $userFacts = collect($session?->user_facts ?? []);
         $submittedAnswers = collect($validated['answers'] ?? [])->filter(fn ($value) => filled($value));
+        $factualAnswers = $submittedAnswers->reject(fn ($value, $field) => str_starts_with($field, 'web_source:'));
         foreach (($validated['answers'] ?? []) as $field => $value) {
-            if (filled($value)) {
+            if (filled($value) && ! str_starts_with($field, 'web_source:')) {
                 $userFacts = $userFacts->reject(fn ($fact) => ($fact['field'] ?? null) === $field);
                 $userFacts->push(['field' => $field, 'value' => $value]);
             }
         }
         $clarificationCompleted = (bool) $session && (
-            (int) $session->clarification_rounds >= 1 || $submittedAnswers->isNotEmpty()
+            (int) $session->clarification_rounds >= 1 || $factualAnswers->isNotEmpty()
         );
-        if ($session && $submittedAnswers->isNotEmpty()) {
+        if ($session && $factualAnswers->isNotEmpty()) {
             $session->update([
                 'user_facts' => $userFacts->values()->all(),
                 'clarification_rounds' => 1,
@@ -514,15 +545,25 @@ class NewsCreatorController extends Controller
         $payload = [
             'information' => [
                 'information' => $items->map(fn ($item) => [
+                    'information_id' => (string) $item->id,
                     'type' => $item->type,
                     'title' => $item->title,
                     'summary' => $item->summary,
                     'labels' => $item->labels,
-                    'fields' => $item->fields,
+                    'fields' => (object) ($item->fields ?? []),
                     'evidence' => $item->evidence,
                     'confidence' => $item->confidence ?? 0,
                 ])->values()->all(),
             ],
+            'owner_id' => (string) $request->user()->getKey(),
+            'session_id' => (string) $session->id,
+            'run_id' => $validated['request_id'] ?? 'laravel-'.$run->id,
+            'eligible_information_ids' => $items->pluck('id')->map(fn ($id) => (string) $id)->all(),
+            'allow_web' => (bool) config('services.apakhabar_ai.web_discovery', false),
+            'default_category' => NewsCategory::query()->active()->where('is_default', true)->value('name'),
+            'current_draft' => $currentDraft ? array_merge($currentDraft->only([
+                'headline', 'subheadline', 'lead', 'body', 'summary', 'labels', 'sources_used', 'warnings',
+            ]), ['language' => 'id', 'category' => $currentDraft->category?->name]) : null,
             'language' => 'id',
             'tone' => $validated['tone'] ?? 'formal',
             'instructions' => $effectivePrompt,
@@ -534,10 +575,46 @@ class NewsCreatorController extends Controller
 
         try {
             $runEvent('commentary', 'Menyusun draf', 'Mengirim fakta terverifikasi dan arahan editorial ke model AI.');
+            $endpoint = '/news/generate';
+            if ($pendingAgentRunId && $submittedAnswers->isNotEmpty()) {
+                $endpoint = '/agent/runs/'.rawurlencode($pendingAgentRunId).'/resume';
+                $payload = [
+                    'owner_id' => (string) $request->user()->getKey(),
+                    'eligible_information_ids' => $items->pluck('id')->map(fn ($id) => (string) $id)->all(),
+                    'answers' => $factualAnswers->map(fn ($value, $field) => ['field' => $field, 'value' => $value])->values()->all(),
+                    'approved_web_source_ids' => $submittedAnswers
+                        ->filter(fn ($value, $field) => str_starts_with($field, 'web_source:') && $value === 'Setujui')
+                        ->keys()->map(fn ($field) => substr($field, strlen('web_source:')))->values()->all(),
+                ];
+            }
+            IntelligentNewsRunEvent::create([
+                'run_id' => $run->id, 'sequence' => $run->events()->count() + 1,
+                'event_type' => 'agent_run', 'label' => 'Agen editorial dimulai', 'content' => 'Menjalankan alur editorial.',
+                'payload' => [
+                    'client_request_id' => $validated['request_id'] ?? 'laravel-'.$run->id,
+                    'agent_run_id' => $pendingAgentRunId && $submittedAnswers->isNotEmpty() ? $pendingAgentRunId : $payload['run_id'],
+                ],
+            ]);
             $result = $this->aiClient()
-                ->post(rtrim(config('services.apakhabar_ai.url'), '/').'/news/generate', $payload)
+                ->post(rtrim(config('services.apakhabar_ai.url'), '/').$endpoint, $payload)
                 ->throw()
                 ->json();
+            IntelligentNewsRunEvent::create([
+                'run_id' => $run->id, 'sequence' => $run->events()->count() + 1,
+                'event_type' => 'agent_context', 'label' => 'Prosedur editorial tercatat', 'content' => 'Rencana dan versi keahlian disimpan untuk peninjauan.',
+                'payload' => ['skills_used' => $result['skills_used'] ?? [], 'plan' => $result['plan'] ?? [], 'metrics' => $result['metrics'] ?? []],
+            ]);
+            foreach (($result['events'] ?? []) as $event) {
+                IntelligentNewsRunEvent::create([
+                    'run_id' => $run->id,
+                    'sequence' => $run->events()->count() + 1,
+                    'event_type' => $event['event_type'],
+                    'tool_name' => $event['tool_name'] ?? null,
+                    'label' => $event['label'],
+                    'content' => $event['content'] ?? $event['label'],
+                    'payload' => $event['payload'] ?? [],
+                ]);
+            }
         } catch (\Throwable $exception) {
             report($exception);
             $runEvent('error', 'Proses gagal', 'Penyedia AI tidak menyelesaikan permintaan.');
@@ -567,18 +644,30 @@ class NewsCreatorController extends Controller
 
         if ($guidance = ($result['guidance'] ?? null)) {
             $runEvent('commentary', 'Memerlukan informasi yang lebih berguna', $guidance);
-            $run->update(['status' => 'awaiting_approval', 'completed_at' => now()]);
+            $run->update(['status' => 'completed', 'current_stage' => 'insufficient_evidence', 'completed_at' => now()]);
+            $session->update(['status' => 'collecting_sources', 'pending_questions' => []]);
 
             return back()->withErrors(['guidance' => $guidance]);
         }
 
         if (! ($result['article'] ?? null)) {
-            if ($clarificationCompleted) {
+            if ($clarificationCompleted && ($result['status'] ?? '') !== 'awaiting_approval') {
                 return back()->withErrors([
                     'generation' => 'Klarifikasi sudah selesai, tetapi AI gagal membuat draf. Coba lagi tanpa menjawab pertanyaan tambahan.',
                 ]);
             }
             $pendingQuestions = $result['completeness']['missing'] ?? [];
+            if (($result['status'] ?? '') === 'awaiting_approval') {
+                $pendingQuestions = collect($result['web_sources'] ?? [])->map(fn ($source) => [
+                    'field' => 'web_source:'.$source['source_id'],
+                    'importance' => 'required',
+                    'kind' => 'unverified_subject',
+                    'question' => 'Gunakan sumber ini sebagai bukti: '.$source['title'].'?',
+                    'options' => ['Setujui', 'Tolak'],
+                    'selection_type' => 'single',
+                    'sources' => [$source],
+                ])->all();
+            }
             $toolCalls = $result['tool_calls'] ?? [];
             if (empty($toolCalls) && ($result['tool_call'] ?? null)) {
                 $toolCalls = [$result['tool_call']];
@@ -617,7 +706,7 @@ class NewsCreatorController extends Controller
                 'role' => 'assistant',
                 'intent' => 'clarification',
                 'content' => 'Informasi tambahan diperlukan sebelum draf dapat dibuat.',
-                'payload' => ['questions' => $pendingQuestions],
+                'payload' => ['questions' => $pendingQuestions, 'agent_run_id' => $result['run_id'] ?? null],
             ]);
 
             return redirect()->route('admin.assistant.index', ['session' => $session->id]);
@@ -716,6 +805,11 @@ class NewsCreatorController extends Controller
                     'query' => $validated['query'],
                     'owner_id' => (string) $request->user()->getKey(),
                     'top_k' => 8,
+                    'information_ids' => IntelligenceInformation::query()
+                        ->where('review_status', 'approved')->where('is_active', true)
+                        ->whereHas('document', fn ($query) => $query
+                            ->where('uploaded_by', $request->user()->getKey())->whereNull('archived_at'))
+                        ->pluck('id')->map(fn ($id) => (string) $id)->all(),
                 ])
                 ->throw()
                 ->json('results', []);
@@ -858,18 +952,9 @@ class NewsCreatorController extends Controller
             return $exact->categoryID;
         }
 
-        $text = mb_strtolower(implode(' ', [
-            $article['headline'] ?? '', $article['summary'] ?? '', ...($article['labels'] ?? []),
-        ]));
-        $preferred = str_contains($text, 'lingkungan') || str_contains($text, 'banjir') || str_contains($text, 'sampah')
-            ? 'Lingkungan'
-            : (str_contains($text, 'pendidikan') || str_contains($text, 'sekolah') || str_contains($text, 'pelatihan')
-                ? 'Pendidikan'
-                : 'Pengumuman');
-
-        return (int) $categories->firstWhere('name', $preferred)?->categoryID
-            ?: (int) ($categories->firstWhere('is_default', true)?->categoryID
-                ?? $categories->firstOrFail()->categoryID);
+        return (int) ($categories->firstWhere('is_default', true)?->categoryID
+            ?? $categories->firstWhere('name', 'Lainnya')?->categoryID
+            ?? $categories->firstOrFail()->categoryID);
     }
 
     private function storeDraftVersion(
@@ -1064,9 +1149,13 @@ class NewsCreatorController extends Controller
                 'title' => $item->title,
                 'summary' => $item->summary,
                 'labels' => $item->labels ?? [],
-                'fields' => $item->fields ?? [],
+                'fields' => (object) ($item->fields ?? []),
                 'source' => $item->document->original_name,
                 'owner_id' => (string) $ownerId,
+                'evidence' => $item->evidence ?? [],
+                'review_status' => 'approved',
+                'is_active' => true,
+                'archived' => false,
             ])->values()->all()],
         )->throw();
     }
@@ -1075,7 +1164,7 @@ class NewsCreatorController extends Controller
     {
         try {
             $this->aiClient()->delete(
-                rtrim(config('services.apakhabar_ai.url'), '/')."/rag/information/{$informationId}",
+                rtrim(config('services.apakhabar_ai.url'), '/')."/rag/information/{$informationId}?owner_id=".rawurlencode((string) auth()->id()),
             )->throw();
         } catch (\Throwable $exception) {
             report($exception);

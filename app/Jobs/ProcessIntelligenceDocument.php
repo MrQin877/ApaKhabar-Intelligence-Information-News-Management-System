@@ -3,10 +3,10 @@
 namespace App\Jobs;
 
 use App\Models\IntelligenceDocument;
-use App\Models\IntelligenceInformation;
 use App\Models\IntelligenceExtractionRequest;
-use App\Models\IntelligentNewsSession;
+use App\Models\IntelligenceInformation;
 use App\Models\IntelligentNewsMessage;
+use App\Models\IntelligentNewsSession;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -75,18 +75,18 @@ class ProcessIntelligenceDocument implements ShouldBeUnique, ShouldQueue
         ]);
 
         $request = $this->client()->attach(
-                'files',
-                Storage::disk($document->storage_disk)->get($document->storage_path),
-                $document->original_name,
-            );
+            'files',
+            Storage::disk($document->storage_disk)->get($document->storage_path),
+            $document->original_name,
+        );
         $result = $request->post(
-                rtrim(config('services.apakhabar_ai.url'), '/').'/documents/batch-extract',
-                [
-                    'extraction_mode' => $extractionRequest?->mode ?? 'general',
-                    'extraction_query' => $extractionRequest?->normalized_query,
-                    'keywords_json' => json_encode($extractionRequest?->keywords ?? []),
-                ],
-            )
+            rtrim(config('services.apakhabar_ai.url'), '/').'/documents/batch-extract',
+            [
+                'extraction_mode' => $extractionRequest?->mode ?? 'general',
+                'extraction_query' => $extractionRequest?->normalized_query,
+                'keywords_json' => json_encode($extractionRequest?->keywords ?? []),
+            ],
+        )
             ->throw()
             ->json('results.0');
 
@@ -129,7 +129,7 @@ class ProcessIntelligenceDocument implements ShouldBeUnique, ShouldQueue
                 'ai_document_id' => $result['document']['document_id'] ?? null,
                 'character_count' => $result['document']['character_count'] ?? null,
                 'status' => 'ready',
-                'embedding_status' => ($result['chunks_indexed'] ?? 0) > 0 ? 'ready' : 'failed',
+                'embedding_status' => ($result['chunks_indexed'] ?? 0) > 0 ? 'ready' : 'pending',
                 'error_message' => null,
                 'processed_at' => now(),
             ]);

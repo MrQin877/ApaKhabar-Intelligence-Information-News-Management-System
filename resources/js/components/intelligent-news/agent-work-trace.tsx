@@ -4,11 +4,12 @@ import {
     ChevronRight,
     FileSearch,
     LoaderCircle,
-    Search,
-    Sparkles,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
-import type { AgentRun } from '@/components/intelligent-news/types';
+import { useState } from 'react';
+import type {
+    AgentRun,
+    AgentRunEvent,
+} from '@/components/intelligent-news/types';
 import { Button } from '@/components/ui/button';
 import {
     Collapsible,
@@ -20,48 +21,14 @@ type AgentWorkTraceProps = {
     elapsedSeconds: number;
     hasSources: boolean;
     hasFiles: boolean;
+    events?: AgentRunEvent[];
 };
 
 export function AgentWorkTrace({
     elapsedSeconds,
-    hasSources,
-    hasFiles,
+    events = [],
 }: AgentWorkTraceProps) {
     const [open, setOpen] = useState(true);
-    const events = useMemo(
-        () => [
-            {
-                at: 0,
-                icon: Sparkles,
-                label: 'Memahami permintaan',
-                detail: 'Menentukan apakah tugas ini ekstraksi, pencarian, atau penulisan berita.',
-            },
-            {
-                at: 2,
-                icon: FileSearch,
-                label: hasFiles ? 'Membaca file' : 'Memeriksa sumber',
-                detail: hasFiles
-                    ? 'Mengambil teks dan bukti yang dapat diverifikasi dari lampiran.'
-                    : hasSources
-                      ? 'Memeriksa informasi dan dokumen yang telah dipilih.'
-                      : 'Memeriksa konteks yang tersedia dalam percakapan.',
-            },
-            {
-                at: 5,
-                icon: Search,
-                label: 'Mencocokkan fakta',
-                detail: 'Membandingkan fakta, waktu, pelaku, lokasi, dan sumber yang tersedia.',
-            },
-            {
-                at: 9,
-                icon: Sparkles,
-                label: 'Menulis hasil',
-                detail: 'Menyusun jawaban dan memeriksa struktur, bahasa, serta kualitas.',
-            },
-        ],
-        [hasFiles, hasSources],
-    );
-    const visibleEvents = events.filter((event) => elapsedSeconds >= event.at);
 
     return (
         <Collapsible open={open} onOpenChange={setOpen} className="max-w-2xl">
@@ -81,30 +48,28 @@ export function AgentWorkTrace({
                     </Button>
                 </CollapsibleTrigger>
             </div>
-            <CollapsibleContent className="space-y-4 pt-4">
-                {visibleEvents.map((event, index) => {
-                    const Icon = event.icon;
-                    const complete = index < visibleEvents.length - 1;
-
-                    return (
-                        <div
-                            key={event.label}
-                            className="grid grid-cols-[1.25rem_1fr] gap-2 text-sm"
-                        >
-                            {complete ? (
-                                <Check className="mt-0.5 size-4 text-primary" />
-                            ) : (
-                                <Icon className="mt-0.5 size-4 text-muted-foreground" />
-                            )}
-                            <div>
-                                <p className="font-medium">{event.label}</p>
+            <CollapsibleContent className="space-y-4 pt-4" aria-live="polite">
+                {events.length === 0 && (
+                    <p className="text-sm text-muted-foreground">
+                        Menunggu pembaruan dari layanan AI…
+                    </p>
+                )}
+                {events.map((event) => (
+                    <div
+                        key={event.id}
+                        className="grid grid-cols-[1.25rem_1fr] gap-2 text-sm"
+                    >
+                        <Check className="mt-0.5 size-4 text-primary" />
+                        <div>
+                            <p className="font-medium">{event.label}</p>
+                            {event.content !== event.label && (
                                 <p className="mt-1 leading-6 text-muted-foreground">
-                                    {event.detail}
+                                    {event.content}
                                 </p>
-                            </div>
+                            )}
                         </div>
-                    );
-                })}
+                    </div>
+                ))}
             </CollapsibleContent>
         </Collapsible>
     );
