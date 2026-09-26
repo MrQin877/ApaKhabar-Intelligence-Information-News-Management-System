@@ -87,6 +87,7 @@ Route::prefix('admin')
 
         // General AI assistant. News generation and document extraction are
         // capabilities of this workspace, not its navigation parent.
+        Route::post('/ai-assistant/category-proposals/{message}', [\App\Http\Controllers\Admin\AssistantCategoryController::class, 'decide'])->name('assistant.category-decision');
         Route::get('/ai-assistant', [NewsCreatorController::class, 'create'])->name('assistant.index');
         Route::get('/ai-assistant/runs/{requestId}', [NewsCreatorController::class, 'agentProgress'])->name('assistant.progress');
         Route::post('/ai-assistant/generate-async', [NewsCreatorController::class, 'generateAsync'])->name('assistant.generate-async');

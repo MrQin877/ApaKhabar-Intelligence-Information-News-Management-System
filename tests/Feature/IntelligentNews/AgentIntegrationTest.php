@@ -296,3 +296,52 @@ test('assistant page includes selected processing documents for live progress', 
         ->component('admin/intelligentnewscreator/chat')->has('documents', 1)
         ->where('documents.0.id', $document->id)->where('documents.0.status', 'processing'));
 });
+
+test('reprocessing replaces soft deleted extraction items without duplicate keys', function () {
+    Storage::fake('local');
+    $owner = User::factory()->create();
+    $old = approvedAgentSource($owner);
+    $document = $old->document;
+    $request = $document->extractionRequests()->create([
+        'requested_by' => $owner->getKey(), 'mode' => 'general', 'status' => 'completed', 'keywords' => [],
+    ]);
+    $old->update(['extraction_request_id' => $request->id, 'reviewed_by' => $owner->getKey(), 'reviewed_at' => now()]);
+    Storage::disk('local')->put($document->storage_path, 'Updated data');
+    Http::fake(['*/documents/batch-extract' => Http::response(['results' => [[
+        'status' => 'ready', 'document' => ['document_id' => 'updated', 'character_count' => 12],
+        'extraction' => ['information' => [[
+            'type' => 'Event', 'title' => 'Updated event', 'summary' => '1000 records, not verified people.',
+            'fields' => ['attendance_record_count' => 1000],
+            'evidence' => [['source' => 'rows=2-1001', 'quote' => 'Calculated from all rows']],
+        ]]], 'chunks_indexed' => 0,
+    ]]])]);
+    $job = new ProcessIntelligenceDocument($document->id, $request->id);
+    $job->handle();
+    $job->handle();
+    expect($document->information()->count())->toBe(1);
+    expect($old->fresh()->title)->toBe('Updated event');
+    expect($old->fresh()->review_status)->toBe('pending');
+    expect($old->fresh()->reviewed_by)->toBeNull();
+    expect($old->fresh()->deleted_at)->toBeNull();
+    expect($old->fresh()->fields['attendance_record_count'])->toBe(1000);
+    expect($request->fresh()->status)->toBe('completed');
+});
+
+test('generation rereads only selected owner approved original files', function () {
+    Storage::fake('local');
+    $owner = User::factory()->create();
+    $source = approvedAgentSource($owner);
+    $foreign = approvedAgentSource(User::factory()->create());
+    Storage::disk('local')->put($source->document->storage_path, 'Original workshop facts.');
+    $normalized = ['document_id' => 'original', 'filename' => 'workshop.txt', 'media_type' => 'text/plain',
+        'character_count' => 24, 'elements' => [['element_type' => 'paragraph', 'content' => 'Original workshop facts.',
+            'source' => ['filename' => 'workshop.txt', 'paragraph' => 1]]]];
+    Http::fake([
+        '*/documents/upload' => Http::response($normalized),
+        '*/news/generate' => Http::response(['status' => 'insufficient_evidence', 'guidance' => 'Test complete.']),
+    ]);
+    app(NewsGenerationService::class)->generate($owner->getKey(), ['information_ids' => [$source->id, $foreign->id], 'prompt' => 'Buat berita']);
+    Http::assertSent(fn ($request) => str_ends_with($request->url(), '/news/generate')
+        && (array) $request['original_documents'] === [(string) $source->id => $normalized]);
+    Http::assertSentCount(2);
+});

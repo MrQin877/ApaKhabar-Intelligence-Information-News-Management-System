@@ -85,6 +85,7 @@ export interface AgentRun {
 }
 
 export interface NewsSession {
+    current_intent?: string | null;
     id: number;
     status:
         | 'collecting_sources'
@@ -155,6 +156,8 @@ export interface Recommendation {
 }
 
 export interface AssistantPageProps {
+    sessions?: import('./session-panel').AssistantSessionSummary[];
+    categories?: { categoryID: number; name: string }[];
     informationItems: InformationItem[];
     pendingInformation?: PendingInformationItem[];
     documents: DocumentItem[];

@@ -18,6 +18,7 @@ use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 class NewsGenerationService
@@ -25,6 +26,7 @@ class NewsGenerationService
     public static function rules(): array
     {
         return [
+            'mode' => ['nullable', 'in:auto,news'],
             'request_id' => ['nullable', 'uuid'],
             'session_id' => ['nullable', 'integer', 'exists:intelligent_news_sessions,id'],
             'draft_id' => ['nullable', 'integer', 'exists:intelligent_news_drafts,id'],
@@ -41,6 +43,13 @@ class NewsGenerationService
 
     public function generate(int $userId, array $validated): array
     {
+
+        if (($validated['mode'] ?? 'news') === 'auto') {
+            $conversation = app(AssistantConversationService::class)->respond($userId, $validated);
+            if ($conversation !== null) {
+                return $conversation;
+            }
+        }
 
         $session = null;
         if ($validated['session_id'] ?? null) {
@@ -261,6 +270,8 @@ class NewsGenerationService
                         ->keys()->map(fn ($field) => substr($field, strlen('web_source:')))->values()->all(),
                 ];
             }
+            $runEvent('source_loading', 'Membaca dokumen asli', 'Membaca ulang file sumber untuk verifikasi draf.');
+            $payload['original_documents'] = (object) $this->originalDocuments($items);
             IntelligentNewsRunEvent::create([
                 'run_id' => $run->id, 'sequence' => $run->events()->count() + 1,
                 'event_type' => 'agent_run', 'label' => 'Agen editorial dimulai', 'content' => 'Menjalankan alur editorial.',
@@ -458,6 +469,17 @@ class NewsGenerationService
             'payload' => ['article' => $article, 'quality' => $result['quality'] ?? null],
             'draft_version_id' => $draftVersion->id,
         ]);
+        $proposal = $article['category_proposal'] ?? null;
+        if ($proposal && filled($proposal['name'] ?? null) && filled($proposal['reason'] ?? null)
+            && mb_strlen($proposal['name']) <= 100 && mb_strlen($proposal['reason']) <= 1000
+            && ! NewsCategory::whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower(trim($proposal['name']))])->exists()) {
+            $session->messages()->create([
+                'role' => 'assistant', 'intent' => 'category_proposal',
+                'content' => 'Kategori baru diusulkan: '.trim($proposal['name']),
+                'payload' => ['category_proposal' => ['name' => trim($proposal['name']), 'reason' => $proposal['reason'],
+                    'draft_id' => $draft->id, 'draft_version' => $draft->version, 'status' => 'pending']],
+            ]);
+        }
         $runEvent('complete', 'Draf selesai', 'Draf, sumber, dan skor kualitas telah disimpan untuk ditinjau.');
         $run->update(['status' => 'completed', 'current_stage' => 'complete', 'completed_at' => now()]);
 
@@ -465,6 +487,32 @@ class NewsGenerationService
             'draft' => $draft->id,
             'session' => $session->id,
         ], false)];
+    }
+
+    private function originalDocuments($items): array
+    {
+        $originals = [];
+        foreach ($items->groupBy('document_id') as $group) {
+            $document = $group->first()->document;
+            try {
+                $disk = Storage::disk($document->storage_disk);
+                if (! $disk->exists($document->storage_path) || $disk->size($document->storage_path) > 20 * 1024 * 1024) {
+                    continue;
+                }
+                // Read only owner-scoped, selected approved sources, never a model-supplied path.
+                $normalized = $this->aiClient()->attach('file', $disk->get($document->storage_path), $document->original_name)
+                    ->post(rtrim(config('services.apakhabar_ai.url'), '/').'/documents/upload')
+                    ->throw()->json();
+                foreach ($group as $item) {
+                    $originals[(string) $item->id] = $normalized;
+                }
+            } catch (\Throwable $exception) {
+                // Missing originals must yield a review flag, never a false verification pass.
+                report($exception);
+            }
+        }
+
+        return $originals;
     }
 
     private function aiClient(): PendingRequest
@@ -494,6 +542,10 @@ class NewsGenerationService
     {
         $categories = NewsCategory::query()->active()
             ->orderBy('display_order')->get(['categoryID', 'name', 'is_default']);
+        $proposedName = mb_strtolower(trim((string) data_get($article, 'category_proposal.name', '')));
+        if ($proposedName !== '' && ($existing = $categories->first(fn ($category) => mb_strtolower(trim($category->name)) === $proposedName))) {
+            return (int) $existing->getKey();
+        }
         $requested = mb_strtolower(trim((string) ($article['category'] ?? '')));
         $labels = collect($article['labels'] ?? [])->map(fn ($label) => mb_strtolower((string) $label));
 

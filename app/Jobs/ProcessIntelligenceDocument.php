@@ -111,10 +111,13 @@ class ProcessIntelligenceDocument implements ShouldBeUnique, ShouldQueue
             }
             foreach ($result['extraction']['information'] as $index => $item) {
                 $quality = $this->extractionQuality($item);
-                IntelligenceInformation::create([
+                $information = IntelligenceInformation::withTrashed()->updateOrCreate([
                     'document_id' => $document->id,
                     'extraction_request_id' => $extractionRequest?->id,
                     'item_index' => $index,
+                ], [
+                    'reviewed_by' => null,
+                    'reviewed_at' => null,
                     'type' => $item['type'],
                     'title' => $item['title'],
                     'summary' => $item['summary'],
@@ -132,6 +135,9 @@ class ProcessIntelligenceDocument implements ShouldBeUnique, ShouldQueue
                         json_encode($item['fields'] ?? []),
                     ]),
                 ]);
+                if ($information->trashed()) {
+                    $information->restore();
+                }
             }
 
             $document->update([
@@ -262,6 +268,13 @@ class ProcessIntelligenceDocument implements ShouldBeUnique, ShouldQueue
                             'document_ids' => $session->selected_document_ids ?? [],
                         ],
                     ]);
+                    if (in_array($session->current_intent, ['question', 'analysis'], true) && filled($session->prompt)) {
+                        $requestId = (string) Str::uuid();
+                        Cache::put(GenerateIntelligentNews::cacheKey($session->created_by, $requestId), ['status' => 'queued', 'events' => []], now()->addDay());
+                        $session->messages()->create(['role' => 'system', 'intent' => 'queued_request', 'content' => 'Menganalisis hasil ekstraksi.', 'payload' => ['request_id' => $requestId]]);
+                        GenerateIntelligentNews::dispatch($session->created_by, ['request_id' => $requestId, 'session_id' => $session->id,
+                            'prompt' => $session->prompt, 'mode' => 'auto'])->onQueue('generation');
+                    }
                 }
             });
     }

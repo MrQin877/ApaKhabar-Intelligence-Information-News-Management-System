@@ -1,3 +1,5 @@
+import { CategoryProposalCard } from '@/components/intelligent-news/category-proposal';
+import { SessionPanel } from '@/components/intelligent-news/session-panel';
 import { Head, router, usePage } from '@inertiajs/react';
 import {
     AlignCenter,
@@ -114,6 +116,8 @@ const breadcrumbs: BreadcrumbItem[] = [
 ];
 
 export default function NewsCreatorAgent({
+    sessions = [],
+    categories = [],
     informationItems,
     pendingInformation = [],
     documents,
@@ -326,7 +330,8 @@ export default function NewsCreatorAgent({
                 if (data.message?.role === 'user') {
                     setPendingUserMessage({
                         content: data.message.content,
-                        informationAttachments: data.message.payload?.information_attachments ?? [],
+                        informationAttachments:
+                            data.message.payload?.information_attachments ?? [],
                     });
                 }
 
@@ -576,7 +581,9 @@ export default function NewsCreatorAgent({
         const oversized = incoming.find((file) => file.size > 20 * 1024 * 1024);
 
         if (oversized) {
-            window.alert(`${oversized.name} melebihi batas 20 MB per file. Pisahkan atau kompres file terlebih dahulu.`);
+            window.alert(
+                `${oversized.name} melebihi batas 20 MB per file. Pisahkan atau kompres file terlebih dahulu.`,
+            );
 
             return;
         }
@@ -599,7 +606,10 @@ export default function NewsCreatorAgent({
             }
 
             const generationIntent =
-                /\b(generate|create|write|make|buat|bikin|tulis|susun|hasilkan)\b.{0,40}\b(news|article|berita|artikel|laporan)\b/i.test(
+                !/\b(jangan|do not|don't|not now|belum)\b/i.test(
+                    submittedPrompt,
+                ) &&
+                /\b(generate|create|write|make|buatkan|buat|bikin|tuliskan|tulis|susunkan|susun|hasilkan)\b.{0,40}\b(news|article|berita|artikel|laporan)\b/i.test(
                     submittedPrompt,
                 );
             const generalExtraction =
@@ -609,7 +619,21 @@ export default function NewsCreatorAgent({
                 );
             data.append(
                 'intent',
-                generationIntent ? 'generate_news' : 'extract_information',
+                generationIntent
+                    ? 'generate_news'
+                    : /\b(simpan saja|store only|save only)\b/i.test(
+                            submittedPrompt,
+                        )
+                      ? 'store_document'
+                      : /\b(bandingkan|analisis|analyze|compare)\b/i.test(
+                              submittedPrompt,
+                          )
+                        ? 'analysis'
+                        : /[?]|\b(apa|berapa|siapa|kapan|what|how many|who|when)\b/i.test(
+                                submittedPrompt,
+                            )
+                          ? 'question'
+                          : 'extract_information',
             );
             data.append(
                 'extraction_mode',
@@ -679,6 +703,10 @@ export default function NewsCreatorAgent({
         setActiveRequestId(requestId);
         setLiveEvents([]);
         void startGeneration({
+            mode:
+                questions.length > 0 && Object.keys(submittedAnswers).length > 0
+                    ? 'news'
+                    : 'auto',
             request_id: requestId,
             draft_id: editedArticle?.draft_id ?? null,
             session_id: newsSession?.id ?? null,
@@ -704,6 +732,17 @@ export default function NewsCreatorAgent({
             new Set([...informationIds, ...newlyApprovedIds]),
         );
         setInformationIds(approvedIds);
+        if (newsSession.current_intent !== 'generate_news') {
+            router.reload({
+                only: [
+                    'informationItems',
+                    'pendingInformation',
+                    'newsSession',
+                    'sessions',
+                ],
+            });
+            return;
+        }
         setBusy(true);
         setElapsedSeconds(0);
         const requestId = crypto.randomUUID();
@@ -719,6 +758,21 @@ export default function NewsCreatorAgent({
             tone: 'formal',
         });
     }
+
+    useEffect(() => {
+        const current = sessions.find((s) => s.id === newsSession?.id);
+        if (current?.request_id && !activeRequestId) {
+            setActiveRequestId(current.request_id);
+            setBusy(true);
+        }
+    }, [sessions, newsSession?.id, activeRequestId]);
+    useEffect(() => {
+        const timer = window.setInterval(
+            () => router.reload({ only: ['sessions'] }),
+            8000,
+        );
+        return () => window.clearInterval(timer);
+    }, []);
 
     function saveDraft() {
         if (!editedArticle) {
@@ -929,6 +983,7 @@ export default function NewsCreatorAgent({
                 ref={workspace}
                 className="-mt-16 flex h-screen min-h-[640px] flex-col overflow-hidden bg-background text-foreground lg:flex-row"
             >
+                <SessionPanel sessions={sessions} current={newsSession?.id} />
                 <section
                     className={`relative flex min-h-0 min-w-0 flex-1 flex-col bg-background ${previewOpen && editedArticle ? 'border-b lg:border-b-0' : 'w-full'}`}
                 >
@@ -954,19 +1009,27 @@ export default function NewsCreatorAgent({
                                             <AssistantConversationIntro />
                                         )}
                                     </MessageScrollerItem>
-                                    {(newsSession?.messages ?? []).map(
-                                        (message) => (
+                                    {(newsSession?.messages ?? [])
+                                        .filter(
+                                            (message) =>
+                                                message.intent !==
+                                                'queued_request',
+                                        )
+                                        .map((message) => (
                                             <MessageScrollerItem
                                                 key={message.id}
                                                 messageId={`history-${message.id}`}
                                             >
+                                                <CategoryProposalCard
+                                                    message={message}
+                                                    categories={categories}
+                                                />
                                                 <ChatMessage
                                                     message={message}
                                                     documents={documents}
                                                 />
                                             </MessageScrollerItem>
-                                        ),
-                                    )}
+                                        ))}
                                     {!busy &&
                                         (newsSession?.runs ?? [])
                                             .slice(-1)

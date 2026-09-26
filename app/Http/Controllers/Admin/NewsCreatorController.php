@@ -168,7 +168,21 @@ class NewsCreatorController extends Controller
                 ]);
         }
 
+        $sessions = IntelligentNewsSession::where('created_by', $request->user()->getKey())
+            ->whereNull('archived_at')->latest('updated_at')->limit(30)->get()->map(function ($session) use ($request) {
+                $queued = $session->messages()->reorder()->latest('id')->where('intent', 'queued_request')->first();
+                $requestId = data_get($queued?->payload, 'request_id');
+                $progress = $requestId ? Cache::get(GenerateIntelligentNews::cacheKey($request->user()->getKey(), $requestId)) : null;
+                $pendingCategory = $session->messages()->where('intent', 'category_proposal')->where('payload->category_proposal->status', 'pending')->exists();
+
+                return ['id' => $session->id, 'title' => $session->title ?: mb_substr($session->prompt ?: 'Dokumen dan informasi', 0, 70),
+                    'status' => in_array($progress['status'] ?? '', ['queued', 'running', 'failed']) ? $progress['status'] : ($pendingCategory ? 'awaiting_approval' : $session->status),
+                    'request_id' => in_array($progress['status'] ?? '', ['queued', 'running']) ? $requestId : null];
+            });
+
         return inertia('admin/intelligentnewscreator/chat', [
+            'sessions' => $sessions,
+            'categories' => NewsCategory::active()->orderBy('name')->get(['categoryID', 'name']),
             'informationItems' => $information,
             'documents' => $documents,
             'generatedArticle' => $generatedArticle,
@@ -196,7 +210,7 @@ class NewsCreatorController extends Controller
             'information_ids.*' => ['integer', 'exists:intelligence_information,id'],
             'document_ids' => ['nullable', 'array'],
             'document_ids.*' => ['integer', 'exists:intelligence_documents,id'],
-            'intent' => ['nullable', 'in:extract_information,generate_news'],
+            'intent' => ['nullable', 'in:extract_information,generate_news,store_document,question,analysis'],
             'extraction_mode' => ['nullable', 'in:general,targeted'],
             'extraction_query' => ['nullable', 'string', 'max:2000', 'required_if:extraction_mode,targeted'],
             'keywords' => ['nullable', 'array', 'max:20'],
@@ -256,7 +270,7 @@ class NewsCreatorController extends Controller
         $existingDocumentIds = collect($session->selected_document_ids ?? []);
         $session->fill([
             'created_by' => $request->user()->getKey(),
-            'status' => 'processing_files',
+            'status' => ($validated['intent'] ?? '') === 'store_document' ? 'collecting_sources' : 'processing_files',
             'current_intent' => $intent,
             'prompt' => $validated['prompt'] ?? $session->prompt,
             'selected_document_ids' => $documentModels->pluck('id')
@@ -290,18 +304,25 @@ class NewsCreatorController extends Controller
             'session_id' => $session->id,
             'role' => 'assistant',
             'intent' => 'document_processing',
-            'content' => "Saya menerima {$documentModels->count()} file: {$fileNames}. Saya akan membaca dokumen, mengekstrak fakta dan bukti, lalu memberi tahu Anda ketika proses selesai. Anda boleh meninggalkan halaman ini sementara pemrosesan berjalan.",
+            'content' => $intent === 'store_document' ? "File disimpan: {$fileNames}. Ekstraksi dan pembuatan berita belum dijalankan. Anda dapat memprosesnya dari Arsip Dokumen." : "Saya menerima {$documentModels->count()} file: {$fileNames}. Saya akan membaca dokumen, mengekstrak fakta dan bukti, lalu memberi tahu Anda ketika proses selesai. Anda boleh meninggalkan halaman ini sementara pemrosesan berjalan.",
             'payload' => [
                 'status' => 'processing',
                 'document_ids' => $documentModels->pluck('id')->all(),
             ],
         ]);
 
-        $documents->each(fn (array $pair) => ProcessIntelligenceDocument::dispatch($pair[0]->id, $pair[1]->id)
-            ->onQueue('documents'));
+        if ($intent === 'store_document') {
+            $documents->each(function (array $pair) {
+                $pair[0]->update(['status' => 'ready']);
+                $pair[1]->update(['status' => 'completed', 'completed_at' => now()]);
+            });
+        } else {
+            $documents->each(fn (array $pair) => ProcessIntelligenceDocument::dispatch($pair[0]->id, $pair[1]->id)
+                ->onQueue('documents'));
+        }
 
         return redirect()->route('admin.assistant.index', ['session' => $session->id])
-            ->with('success', "{$documentModels->count()} dokumen disimpan dan sedang diproses di latar belakang.");
+            ->with('success', $intent === 'store_document' ? 'Dokumen disimpan tanpa ekstraksi.' : "{$documentModels->count()} dokumen disimpan dan sedang diproses di latar belakang.");
     }
 
     public function retryDocument(Request $request, IntelligenceDocument $document): RedirectResponse
@@ -421,6 +442,14 @@ class NewsCreatorController extends Controller
             'status' => 'queued', 'events' => [], 'queued_at' => now()->timestamp,
         ], now()->addDay())) {
             try {
+                $session = isset($validated['session_id'])
+                    ? IntelligentNewsSession::where('created_by', $request->user()->getKey())->findOrFail($validated['session_id'])
+                    : IntelligentNewsSession::create(['created_by' => $request->user()->getKey(), 'status' => 'collecting_sources',
+                        'title' => mb_substr($validated['prompt'] ?? 'Percakapan baru', 0, 100),
+                        'selected_document_ids' => [], 'selected_information_ids' => [], 'user_facts' => [], 'pending_questions' => [], 'conflicts' => []]);
+                $validated['session_id'] = $session->id;
+                $session->messages()->create(['role' => 'system', 'intent' => 'queued_request', 'content' => 'Permintaan sedang diproses.', 'payload' => ['request_id' => $validated['request_id']]]);
+                $session->touch();
                 GenerateIntelligentNews::dispatch($request->user()->getKey(), $validated)->onQueue('generation');
             } catch (\Throwable $exception) {
                 Cache::forget($key);
