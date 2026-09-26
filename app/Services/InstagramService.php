@@ -6,52 +6,16 @@ use App\Support\PublishLog;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 class InstagramService
 {
     public function configured(): bool
     {
-        $base = trim((string) config('services.instagram.public_base_url'));
-        try {
-            $this->validateImage($base);
-        } catch (ValidationException) {
-            return false;
-        }
-        $parts = parse_url($base);
-
         return (bool) (preg_match('/^\d+$/', (string) config('services.instagram.user_id'))
             && trim((string) config('services.instagram.access_token')) !== ''
-            && in_array($parts['path'] ?? '', ['', '/'], true)
-            && ! isset($parts['query']) && ! isset($parts['fragment']));
-    }
-
-    public function publicImageUrl(string $imageUrl): string
-    {
-        $parts = parse_url($imageUrl);
-        $path = $parts['path'] ?? '';
-        $host = strtolower(trim($parts['host'] ?? '', '[]'));
-        $local = $host === 'localhost' || str_ends_with($host, '.localhost')
-            || (filter_var($host, FILTER_VALIDATE_IP)
-                && ! filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE));
-
-        // Storage-backed image paths must use the dedicated public origin configured for Meta,
-        // even when APP_URL itself is publicly reachable.
-        if (str_starts_with($path, '/storage/')) {
-            $imageUrl = rtrim((string) config('services.instagram.public_base_url'), '/')
-                .$path
-                .(isset($parts['query']) ? '?'.$parts['query'] : '');
-        } elseif ($local && in_array($parts['scheme'] ?? '', ['http', 'https'], true)
-            && ! isset($parts['user']) && ! isset($parts['pass'])) {
-            $imageUrl = rtrim((string) config('services.instagram.public_base_url'), '/')
-                .$path
-                .(isset($parts['query']) ? '?'.$parts['query'] : '')
-                .(isset($parts['fragment']) ? '#'.$parts['fragment'] : '');
-        }
-
-        $this->validateImage($imageUrl);
-
-        return $imageUrl;
+            && app(CloudinaryService::class)->configured());
     }
 
     public function validateImage(?string $imageUrl): void
@@ -76,18 +40,47 @@ class InstagramService
             Log::warning('Instagram publishing configuration is missing or invalid.');
             throw ValidationException::withMessages(['platforms' => 'Akun Instagram belum dikonfigurasi. Hubungi administrator.']);
         }
-        $imageUrl = $this->publicImageUrl($imageUrl);
         $extension = strtolower(pathinfo(parse_url($imageUrl, PHP_URL_PATH) ?: '', PATHINFO_EXTENSION));
         if ($extension === 'png') {
-            $imageUrl = app(InstagramImageService::class)->convertPngToPublicJpeg($imageUrl);
-            $imageUrl = $this->publicImageUrl($imageUrl);
+            $imageUrl = app(InstagramImageService::class)->convertPngToJpeg($imageUrl);
         } elseif (! in_array($extension, ['jpg', 'jpeg'], true)) {
             throw ValidationException::withMessages(['platforms' => 'Instagram memerlukan gambar JPG atau PNG.']);
         }
-        PublishLog::write('instagram.image_url', [...$context, 'image_url' => $imageUrl]);
         if (! trim($caption) || mb_strlen($caption) > 2200) {
             throw ValidationException::withMessages(['platforms' => 'Caption Instagram harus berisi 1–2200 karakter.']);
         }
+
+        $path = parse_url($imageUrl, PHP_URL_PATH) ?: '';
+        if (preg_match('~(?:^|/)(news-images/.+)$~', $path, $match)) {
+            $relativePath = $match[1];
+            if (str_contains('/'.$relativePath.'/', '/../') || str_contains($relativePath, '\\')) {
+                throw ValidationException::withMessages(['platforms' => 'Path gambar Instagram tidak valid.']);
+            }
+            $disk = Storage::disk($extension === 'png' ? 'public' : config('filesystems.news_media_disk', 'public'));
+            if (! $disk->exists($relativePath)) {
+                throw ValidationException::withMessages(['platforms' => 'Gambar Instagram tidak ditemukan.']);
+            }
+            $jpeg = $disk->get($relativePath);
+        } else {
+            $this->validateImage($imageUrl);
+            try {
+                $response = Http::withoutRedirecting()->connectTimeout(5)->timeout(25)->get($imageUrl);
+            } catch (ConnectionException) {
+                throw ValidationException::withMessages(['platforms' => 'Gambar Instagram tidak dapat diunduh untuk disiapkan.']);
+            }
+            if (! $response->successful()) {
+                throw ValidationException::withMessages(['platforms' => 'Gambar Instagram tidak dapat diunduh untuk disiapkan.']);
+            }
+            $jpeg = $response->body();
+        }
+        $jpeg = app(InstagramImageService::class)->normalizeJpeg($jpeg, $context);
+        PublishLog::write('instagram.jpeg_verified', [...$context,
+            ...app(InstagramImageService::class)->jpegMetadata($jpeg),
+        ]);
+        $imageUrl = app(CloudinaryService::class)->uploadJpeg($jpeg, context: $context);
+        $this->validateImage($imageUrl);
+        app(InstagramImageService::class)->probeCloudinary($imageUrl, $context);
+        PublishLog::write('instagram.image_url', [...$context, 'image_url' => $imageUrl]);
 
         $creationId = $this->send('media', ['image_url' => $imageUrl, 'caption' => $caption], $context);
 
@@ -99,6 +92,11 @@ class InstagramService
         $url = 'https://graph.instagram.com/'.config('services.instagram.graph_version')
             .'/'.config('services.instagram.user_id').'/'.$step;
         PublishLog::write('instagram.'.$step.'.started', $context);
+        if ($step === 'media') {
+            PublishLog::write('instagram.media.request', [...$context,
+                'parameters' => array_intersect_key($payload, array_flip(['image_url', 'caption'])),
+            ]);
+        }
         try {
             // Never automatically retry publishing: a timed-out request may have succeeded.
             $response = Http::asForm()->connectTimeout(5)->timeout(25)->post($url, [

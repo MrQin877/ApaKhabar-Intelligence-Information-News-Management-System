@@ -1,10 +1,14 @@
 <?php
 
 return [
+    'cloudinary' => [
+        'cloud_name' => env('CLOUDINARY_CLOUD_NAME'),
+        'api_key' => env('CLOUDINARY_API_KEY'),
+        'api_secret' => env('CLOUDINARY_API_SECRET'),
+    ],
     'instagram' => [
         'user_id' => env('INSTAGRAM_USER_ID'),
         'access_token' => env('INSTAGRAM_ACCESS_TOKEN'),
-        'public_base_url' => env('INSTAGRAM_PUBLIC_BASE_URL'),
         'graph_version' => env('META_GRAPH_VERSION', 'v25.0'),
     ],
     'apakhabar_ai' => [
