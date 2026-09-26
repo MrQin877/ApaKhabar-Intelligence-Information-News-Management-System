@@ -1,5 +1,10 @@
 import { Paperclip } from 'lucide-react';
-import type { DocumentItem, SessionMessage } from '@/components/intelligent-news/types';
+import type {
+    DocumentItem,
+    SessionMessage,
+    InformationItem,
+} from '@/components/intelligent-news/types';
+import { InformationAttachments } from './information-attachments';
 
 type ChatMessageProps = {
     message: SessionMessage;
@@ -12,17 +17,24 @@ export function ChatMessage({ message, documents }: ChatMessageProps) {
     }
 
     const attachedNames: string[] = (() => {
-        if (!message.payload) return [];
+        if (!message.payload) {
+return [];
+}
+
         const filenames = message.payload.filenames;
+
         if (Array.isArray(filenames) && filenames.length > 0) {
             return filenames as string[];
         }
+
         const docIds = message.payload.document_ids;
+
         if (Array.isArray(docIds) && docIds.length > 0 && documents) {
             return docIds
                 .map((id) => documents.find((d) => d.id === id)?.original_name)
                 .filter(Boolean) as string[];
         }
+
         return [];
     })();
 
@@ -32,6 +44,9 @@ export function ChatMessage({ message, documents }: ChatMessageProps) {
                 <div className="rounded-3xl bg-muted px-4 py-3 text-sm leading-6 text-foreground">
                     {message.content}
                 </div>
+                <InformationAttachments
+                    items={message.payload?.information_attachments ?? []}
+                />
                 {attachedNames.length > 0 && (
                     <div className="mt-1.5 flex flex-wrap justify-end gap-1">
                         {attachedNames.map((name) => (
@@ -59,15 +74,18 @@ export function ChatMessage({ message, documents }: ChatMessageProps) {
 export function PendingUserMessage({
     children,
     attachments,
+    informationAttachments = [],
 }: {
     children: string;
     attachments?: string[];
+    informationAttachments?: InformationItem[];
 }) {
     return (
         <div className="ml-auto max-w-[78%]">
             <div className="rounded-3xl bg-muted px-4 py-3 text-sm leading-6 text-foreground">
                 {children}
             </div>
+            <InformationAttachments items={informationAttachments} />
             {attachments && attachments.length > 0 && (
                 <div className="mt-1.5 flex flex-wrap justify-end gap-1">
                     {attachments.map((name) => (

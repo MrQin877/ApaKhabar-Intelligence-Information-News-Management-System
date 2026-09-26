@@ -57,12 +57,12 @@
         ],
         "dev": [
             "Composer\\Config::disableProcessTimeout",
-            "npx concurrently -c \"#93c5fd,#c4b5fd,#a7f3d0,#fdba74\" \"php artisan serve\" \"php artisan queue:work --queue=documents,default --tries=5 --timeout=210\" \"php artisan schedule:work\" \"npm run dev\" --names='server,queue,scheduler,vite'"
+            "npx concurrently --restart-tries=-1 --restart-after=5000 -c \"#93c5fd,#c4b5fd,#a7f3d0,#fdba74\" \"bash scripts/serve.sh\" \"php artisan queue:work --queue=documents,default --tries=5 --timeout=1250\" \"php artisan queue:work --queue=generation --tries=1 --timeout=1250\" \"php artisan schedule:work\" \"npm run dev\" --names='server,documents,generation,scheduler,vite'"
         ],
         "dev:ssr": [
             "npm run build:ssr",
             "Composer\\Config::disableProcessTimeout",
-            "npx concurrently -c \"#93c5fd,#c4b5fd,#fb7185,#fdba74\" \"php artisan serve\" \"php artisan queue:work --queue=documents,default --tries=5 --timeout=210\" \"php artisan pail --timeout=0\" \"php artisan inertia:start-ssr\" --names=server,queue,logs,ssr --kill-others"
+            "npx concurrently --restart-tries=-1 --restart-after=5000 -c \"#93c5fd,#c4b5fd,#fb7185,#fdba74\" \"bash scripts/serve.sh\" \"php artisan queue:work --queue=documents,default --tries=5 --timeout=1250\" \"php artisan queue:work --queue=generation --tries=1 --timeout=1250\" \"php artisan pail --timeout=0\" \"php artisan inertia:start-ssr\" --names=server,documents,generation,logs,ssr --kill-others"
         ],
         "lint": [
             "pint --parallel"

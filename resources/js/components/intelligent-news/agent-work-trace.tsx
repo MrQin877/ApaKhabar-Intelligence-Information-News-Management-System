@@ -22,13 +22,28 @@ type AgentWorkTraceProps = {
     hasSources: boolean;
     hasFiles: boolean;
     events?: AgentRunEvent[];
+    connectionMessage?: string;
 };
 
 export function AgentWorkTrace({
     elapsedSeconds,
     events = [],
+    connectionMessage,
 }: AgentWorkTraceProps) {
     const [open, setOpen] = useState(true);
+
+    const visibleEvents = events.filter(
+        (event, index) =>
+            event.event_type !== 'stage_started' ||
+            !events
+                .slice(index + 1)
+                .some(
+                    (later) =>
+                        ['stage_completed', 'stage_failed'].includes(
+                            later.event_type,
+                        ) && later.payload?.stage === event.payload?.stage,
+                ),
+    );
 
     return (
         <Collapsible open={open} onOpenChange={setOpen} className="max-w-2xl">
@@ -49,19 +64,41 @@ export function AgentWorkTrace({
                 </CollapsibleTrigger>
             </div>
             <CollapsibleContent className="space-y-4 pt-4" aria-live="polite">
+                {connectionMessage && (
+                    <p className="text-xs text-muted-foreground">
+                        {connectionMessage}
+                    </p>
+                )}
                 {events.length === 0 && (
                     <p className="text-sm text-muted-foreground">
                         Menunggu pembaruan dari layanan AI…
                     </p>
                 )}
-                {events.map((event) => (
+                {visibleEvents.map((event) => (
                     <div
                         key={event.id}
                         className="grid grid-cols-[1.25rem_1fr] gap-2 text-sm"
                     >
-                        <Check className="mt-0.5 size-4 text-primary" />
+                        {event.event_type === 'stage_started' ? (
+                            <LoaderCircle className="mt-0.5 size-4 animate-spin text-primary" />
+                        ) : event.event_type === 'stage_failed' ? (
+                            <span className="mt-1.5 size-2 rounded-full bg-destructive" />
+                        ) : (
+                            <Check className="mt-0.5 size-4 text-primary" />
+                        )}
                         <div>
-                            <p className="font-medium">{event.label}</p>
+                            <p className="font-medium">
+                                {event.label}
+                                {event.payload?.elapsed_seconds !==
+                                    undefined && (
+                                    <span className="ml-2 font-normal text-muted-foreground">
+                                        {event.payload.elapsed_seconds.toFixed(
+                                            1,
+                                        )}{' '}
+                                        dtk
+                                    </span>
+                                )}
+                            </p>
                             {event.content !== event.label && (
                                 <p className="mt-1 leading-6 text-muted-foreground">
                                     {event.content}

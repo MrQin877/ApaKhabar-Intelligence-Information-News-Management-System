@@ -4,6 +4,7 @@ export interface InformationItem {
     title: string;
     summary: string;
     labels: string[];
+    evidence?: Array<{ source: string; quote: string }>;
     document: { id: number; original_name: string };
 }
 
@@ -51,11 +52,17 @@ export interface SessionMessage {
     role: 'user' | 'assistant' | 'tool' | 'system';
     intent: string | null;
     content: string | null;
-    payload: Record<string, unknown> | null;
+    payload:
+        | (Record<string, unknown> & {
+              information_attachments?: InformationItem[];
+          })
+        | null;
     created_at: string;
 }
 
 export interface AgentRunEvent {
+    timestamp?: number;
+    payload?: { stage?: string; elapsed_seconds?: number };
     id: number;
     event_type: string;
     tool_name: string | null;

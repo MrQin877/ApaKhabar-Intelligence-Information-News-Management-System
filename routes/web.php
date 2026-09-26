@@ -89,6 +89,8 @@ Route::prefix('admin')
         // capabilities of this workspace, not its navigation parent.
         Route::get('/ai-assistant', [NewsCreatorController::class, 'create'])->name('assistant.index');
         Route::get('/ai-assistant/runs/{requestId}', [NewsCreatorController::class, 'agentProgress'])->name('assistant.progress');
+        Route::post('/ai-assistant/generate-async', [NewsCreatorController::class, 'generateAsync'])->name('assistant.generate-async');
+        Route::get('/ai-assistant/documents/{document}/progress', [NewsCreatorController::class, 'documentProgress'])->name('assistant.document-progress');
         Route::post('/ai-assistant/generate', [NewsCreatorController::class, 'generate'])->name('assistant.generate');
         Route::post('/ai-assistant/recommendations', [NewsCreatorController::class, 'recommend'])->name('assistant.recommendations');
         Route::put('/ai-assistant/drafts/{draft}', [NewsCreatorController::class, 'updateDraft'])->name('assistant.drafts.update');

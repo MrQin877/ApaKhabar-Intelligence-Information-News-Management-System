@@ -15,9 +15,11 @@ use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Throwable;
 
 class ProcessIntelligenceDocument implements ShouldBeUnique, ShouldQueue
@@ -26,9 +28,11 @@ class ProcessIntelligenceDocument implements ShouldBeUnique, ShouldQueue
 
     public int $tries = 5;
 
-    public int $timeout = 210;
+    public int $timeout = 1250;
 
-    public int $uniqueFor = 600;
+    public bool $failOnTimeout = true;
+
+    public int $uniqueFor = 1500;
 
     public function __construct(
         public int $documentId,
@@ -47,7 +51,7 @@ class ProcessIntelligenceDocument implements ShouldBeUnique, ShouldQueue
 
     public function middleware(): array
     {
-        return [(new WithoutOverlapping($this->uniqueId()))->releaseAfter(10)->expireAfter(300)];
+        return [(new WithoutOverlapping($this->uniqueId()))->releaseAfter(10)->expireAfter(1300)];
     }
 
     public function handle(): void
@@ -74,6 +78,8 @@ class ProcessIntelligenceDocument implements ShouldBeUnique, ShouldQueue
             'last_attempted_at' => now(),
         ]);
 
+        $progressId = (string) Str::uuid();
+        Cache::put('document-progress:'.$document->id, $progressId, now()->addDay());
         $request = $this->client()->attach(
             'files',
             Storage::disk($document->storage_disk)->get($document->storage_path),
@@ -82,6 +88,7 @@ class ProcessIntelligenceDocument implements ShouldBeUnique, ShouldQueue
         $result = $request->post(
             rtrim(config('services.apakhabar_ai.url'), '/').'/documents/batch-extract',
             [
+                'progress_id' => $progressId,
                 'extraction_mode' => $extractionRequest?->mode ?? 'general',
                 'extraction_query' => $extractionRequest?->normalized_query,
                 'keywords_json' => json_encode($extractionRequest?->keywords ?? []),
@@ -90,8 +97,10 @@ class ProcessIntelligenceDocument implements ShouldBeUnique, ShouldQueue
             ->throw()
             ->json('results.0');
 
-        if (($result['status'] ?? null) !== 'ready' || empty($result['extraction']['information'])) {
-            throw new \RuntimeException($result['error'] ?? 'No information was extracted.');
+        if (($result['status'] ?? null) !== 'ready') {
+            $this->fail(new \RuntimeException($result['error'] ?? 'Document extraction failed.'));
+
+            return;
         }
 
         DB::transaction(function () use ($document, $extractionRequest, $result): void {
@@ -181,7 +190,7 @@ class ProcessIntelligenceDocument implements ShouldBeUnique, ShouldQueue
     {
         $client = Http::acceptJson()
             ->connectTimeout(max(1, (int) config('services.apakhabar_ai.connect_timeout', 5)))
-            ->timeout(max(1, (int) config('services.apakhabar_ai.timeout', 180)));
+            ->timeout(min(1200, max(1, (int) config('services.apakhabar_ai.timeout', 1200))));
 
         if ($token = config('services.apakhabar_ai.token')) {
             $client->withHeaders(['X-ApaKhabar-Service-Token' => $token]);

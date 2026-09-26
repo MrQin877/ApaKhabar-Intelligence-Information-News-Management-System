@@ -13,8 +13,8 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\GenerateIntelligentNews;
 use App\Jobs\ProcessIntelligenceDocument;
-use App\Models\AiQualityEvaluation;
 use App\Models\IntelligenceDocument;
 use App\Models\IntelligenceExtractionRequest;
 use App\Models\IntelligenceInformation;
@@ -24,17 +24,15 @@ use App\Models\IntelligentNewsMessage;
 use App\Models\IntelligentNewsRun;
 use App\Models\IntelligentNewsRunEvent;
 use App\Models\IntelligentNewsSession;
-use App\Models\IntelligentNewsSourceSelection;
 use App\Models\NewsCategory;
+use App\Services\NewsGenerationService;
 use Illuminate\Http\Client\PendingRequest;
-use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -63,8 +61,13 @@ class NewsCreatorController extends Controller
             ->limit(200)
             ->get();
 
+        $newsSession = $request->integer('session')
+            ? IntelligentNewsSession::query()->with(['messages', 'runs.events'])
+                ->where('created_by', $request->user()->getKey())->find($request->integer('session'))
+            : null;
         $generatedArticle = null;
-        if ($draftId = $request->integer('draft')) {
+        // A completed conversation owns its preview even when reopened without ?draft=.
+        if ($draftId = ($request->integer('draft') ?: $newsSession?->draft_id)) {
             $draft = IntelligentNewsDraft::query()
                 ->with(['informationSources.document', 'category', 'qualityEvaluations'])
                 ->where('created_by', $request->user()->getKey())
@@ -133,39 +136,36 @@ class NewsCreatorController extends Controller
             ->limit(200)
             ->get(['id', 'original_name', 'status', 'created_at']);
 
-        $newsSession = null;
         $pendingInformation = collect();
-        if ($sessionId = $request->integer('session')) {
-            $newsSession = IntelligentNewsSession::query()
-                ->with(['messages', 'runs.events'])
-                ->where('created_by', $request->user()->getKey())
-                ->find($sessionId);
-
-            if ($newsSession) {
-                $pendingInformation = IntelligenceInformation::query()
-                    ->with('document:id,original_name')
-                    ->whereIn('document_id', $newsSession->selected_document_ids ?? [])
-                    ->where('review_status', 'pending')
-                    ->whereHas('document', fn ($query) => $query
-                        ->where('uploaded_by', $request->user()->getKey())
-                        ->whereNull('archived_at'))
-                    ->orderBy('document_id')
-                    ->orderBy('item_index')
-                    ->get()
-                    ->map(fn (IntelligenceInformation $item) => [
-                        'id' => $item->id,
-                        'document_id' => $item->document_id,
-                        'title' => $item->title,
-                        'summary' => $item->summary,
-                        'evidence' => $item->evidence ?? [],
-                        'confidence' => $item->confidence,
-                        'quality_score' => $item->quality_score,
-                        'document' => [
-                            'id' => $item->document->id,
-                            'original_name' => $item->document->original_name,
-                        ],
-                    ]);
-            }
+        if ($newsSession) {
+            $documents = $documents->merge(IntelligenceDocument::query()
+                ->where('uploaded_by', $request->user()->getKey())
+                ->whereIn('id', $newsSession->selected_document_ids ?? [])
+                ->whereNull('archived_at')
+                ->get(['id', 'original_name', 'status', 'created_at']))->values();
+            $pendingInformation = IntelligenceInformation::query()
+                ->with('document:id,original_name')
+                ->whereIn('document_id', $newsSession->selected_document_ids ?? [])
+                ->where('review_status', 'pending')
+                ->whereHas('document', fn ($query) => $query
+                    ->where('uploaded_by', $request->user()->getKey())
+                    ->whereNull('archived_at'))
+                ->orderBy('document_id')
+                ->orderBy('item_index')
+                ->get()
+                ->map(fn (IntelligenceInformation $item) => [
+                    'id' => $item->id,
+                    'document_id' => $item->document_id,
+                    'title' => $item->title,
+                    'summary' => $item->summary,
+                    'evidence' => $item->evidence ?? [],
+                    'confidence' => $item->confidence,
+                    'quality_score' => $item->quality_score,
+                    'document' => [
+                        'id' => $item->document->id,
+                        'original_name' => $item->document->original_name,
+                    ],
+                ]);
         }
 
         return inertia('admin/intelligentnewscreator/chat', [
@@ -342,21 +342,60 @@ class NewsCreatorController extends Controller
         ], 'inline');
     }
 
+    public function documentProgress(Request $request, IntelligenceDocument $document): JsonResponse
+    {
+        abort_unless($document->uploaded_by === $request->user()->getKey(), 403);
+        if (in_array($document->status, ['ready', 'failed'], true)) {
+            return response()->json(['stage' => $document->status, 'label' => $document->status === 'ready'
+                ? 'Dokumen selesai diproses' : 'Pemrosesan dokumen gagal']);
+        }
+        $id = Cache::get('document-progress:'.$document->id);
+        if (! $id) {
+            return response()->json(['stage' => 'queued', 'label' => 'Menunggu pekerja antrean dokumen']);
+        }
+        try {
+            $result = $this->aiClient()->timeout(3)->get(
+                rtrim(config('services.apakhabar_ai.url'), '/').'/documents/progress/'.$id,
+            );
+            if ($result->status() === 404) {
+                return response()->json(['stage' => 'starting', 'label' => 'Mengirim dokumen ke layanan AI']);
+            }
+
+            return response()->json($result->throw()->json());
+        } catch (\Throwable $exception) {
+            return response()->json(['stage' => 'unavailable', 'label' => 'Pembaruan terputus; mencoba lagi'], 503);
+        }
+    }
+
     public function agentProgress(Request $request, string $requestId): JsonResponse
     {
+        $job = Cache::get(
+            GenerateIntelligentNews::cacheKey($request->user()->getKey(), $requestId),
+        );
+        if ($job && in_array($job['status'], ['queued', 'completed', 'failed'], true)) {
+            return response()->json($job);
+        }
         $event = IntelligentNewsRunEvent::query()
             ->where('event_type', 'agent_run')
             ->where('payload->client_request_id', $requestId)
             ->whereIn('run_id', IntelligentNewsRun::query()->whereIn('session_id',
                 IntelligentNewsSession::query()->where('created_by', $request->user()->getKey())->select('id')
-            )->select('id'))->latest('id')->firstOrFail();
+            )->select('id'))->latest('id')->first();
+        if (! $event) {
+            abort_unless($job, 404);
+
+            return response()->json($job);
+        }
+        $message = IntelligentNewsMessage::find(
+            IntelligentNewsRun::whereKey($event->run_id)->value('user_message_id'),
+        );
         try {
             $response = $this->aiClient()->timeout(5)->get(
                 rtrim(config('services.apakhabar_ai.url'), '/').'/agent/runs/'.rawurlencode($event->payload['agent_run_id']),
                 ['owner_id' => (string) $request->user()->getKey()],
             )->throw()->json();
 
-            return response()->json(['status' => $response['status'], 'events' => $response['events'] ?? []]);
+            return response()->json(['status' => $job ? 'running' : $response['status'], 'events' => $response['events'] ?? [], 'message' => $message]);
         } catch (\Throwable $exception) {
             return response()->json(['status' => 'unavailable', 'events' => []], 503);
         }
@@ -364,433 +403,32 @@ class NewsCreatorController extends Controller
 
     public function generate(Request $request): RedirectResponse
     {
-        $validated = $request->validate([
-            'request_id' => ['nullable', 'uuid'],
-            'session_id' => ['nullable', 'integer', 'exists:intelligent_news_sessions,id'],
-            'draft_id' => ['nullable', 'integer', 'exists:intelligent_news_drafts,id'],
-            'information_ids' => ['nullable', 'array'],
-            'information_ids.*' => ['integer', 'exists:intelligence_information,id'],
-            'document_ids' => ['nullable', 'array'],
-            'document_ids.*' => ['integer', 'exists:intelligence_documents,id'],
-            'prompt' => ['nullable', 'string', 'max:2000'],
-            'tone' => ['nullable', 'string', 'max:50'],
-            'answers' => ['nullable', 'array'],
-            'answers.*' => ['nullable', 'string', 'max:2000'],
-        ]);
-
-        $session = null;
-        if ($validated['session_id'] ?? null) {
-            $session = IntelligentNewsSession::query()
-                ->where('created_by', $request->user()->getKey())
-                ->findOrFail($validated['session_id']);
-        }
-
-        $documentIds = collect($validated['document_ids'] ?? $session?->selected_document_ids ?? [])
-            ->map(fn ($id) => (int) $id);
-        $documentIds = IntelligenceDocument::query()
-            ->where('uploaded_by', $request->user()->getKey())
-            ->whereNull('archived_at')
-            ->whereIn('id', $documentIds)
-            ->pluck('id');
-        $informationIds = collect($validated['information_ids'] ?? $session?->selected_information_ids ?? [])
-            ->map(fn ($id) => (int) $id);
-        if ($documentIds->isNotEmpty()) {
-            $informationIds = $informationIds->merge(
-                IntelligenceInformation::query()
-                    ->whereIn('document_id', $documentIds)
-                    ->where('is_active', true)
-                    ->pluck('id'),
-            );
-        }
-        $informationIds = $informationIds->unique()->values();
-        $informationIds = IntelligenceInformation::query()
-            ->whereIn('id', $informationIds)
-            ->whereHas('document', fn ($query) => $query
-                ->where('uploaded_by', $request->user()->getKey())
-                ->whereNull('archived_at'))
-            ->pluck('id');
-
-        $pendingAgentRunId = $session?->status === 'awaiting_answers'
-            ? IntelligentNewsMessage::where('session_id', $session->id)
-                ->where('role', 'assistant')->latest('id')->value('payload')
-            : null;
-        $pendingAgentRunId = data_get($pendingAgentRunId, 'agent_run_id');
-        $currentDraft = isset($validated['draft_id'])
-            ? IntelligentNewsDraft::where('created_by', $request->user()->getKey())
-                ->where('status', 'draft')->findOrFail($validated['draft_id'])
-            : null;
-        $userFacts = collect($session?->user_facts ?? []);
-        $submittedAnswers = collect($validated['answers'] ?? [])->filter(fn ($value) => filled($value));
-        $factualAnswers = $submittedAnswers->reject(fn ($value, $field) => str_starts_with($field, 'web_source:'));
-        foreach (($validated['answers'] ?? []) as $field => $value) {
-            if (filled($value) && ! str_starts_with($field, 'web_source:')) {
-                $userFacts = $userFacts->reject(fn ($fact) => ($fact['field'] ?? null) === $field);
-                $userFacts->push(['field' => $field, 'value' => $value]);
-            }
-        }
-        $clarificationCompleted = (bool) $session && (
-            (int) $session->clarification_rounds >= 1 || $factualAnswers->isNotEmpty()
+        $result = app(NewsGenerationService::class)->generate(
+            $request->user()->getKey(), $request->validate(NewsGenerationService::rules()),
         );
-        if ($session && $factualAnswers->isNotEmpty()) {
-            $session->update([
-                'user_facts' => $userFacts->values()->all(),
-                'clarification_rounds' => 1,
-            ]);
-        }
 
-        $turnPrompt = trim((string) ($validated['prompt'] ?? ''));
-        $effectivePrompt = $turnPrompt;
-        if ($effectivePrompt === '' && $submittedAnswers->isNotEmpty()) {
-            $effectivePrompt = (string) $session?->prompt;
-        }
-        if ($informationIds->isEmpty() && $userFacts->isEmpty() && blank($effectivePrompt)) {
-            throw ValidationException::withMessages([
-                'generation' => 'Select information or a document before generating news.',
-            ]);
-        }
+        return isset($result['errors']) ? back()->withErrors($result['errors']) : redirect($result['url']);
+    }
 
-        $items = IntelligenceInformation::with('document')
-            ->whereIn('id', $informationIds)
-            ->where('is_active', true)
-            ->where('review_status', 'approved')
-            ->get();
-        $unapprovedCount = IntelligenceInformation::query()
-            ->whereIn('id', $informationIds)
-            ->where('review_status', '!=', 'approved')
-            ->count();
-
-        if ($unapprovedCount > 0) {
-            throw ValidationException::withMessages([
-                'generation' => "{$unapprovedCount} informasi yang dipilih belum disetujui moderator. Tinjau informasi di Arsip Dokumen, setujui fakta yang benar, lalu kirim kembali permintaan ini.",
-            ]);
-        }
-
-        if (! $session) {
-            $session = IntelligentNewsSession::create([
-                'created_by' => $request->user()->getKey(),
-                'status' => 'ready_to_generate',
-                'current_intent' => 'generate_news',
-                'prompt' => $effectivePrompt,
-                'selected_document_ids' => $documentIds->values()->all(),
-                'selected_information_ids' => $informationIds->all(),
-                'user_facts' => $userFacts->values()->all(),
-                'pending_questions' => [],
-                'conflicts' => [],
-            ]);
-        } else {
-            $session->update([
-                'prompt' => $turnPrompt !== '' ? $turnPrompt : $session->prompt,
-                'current_intent' => 'generate_news',
-                'selected_document_ids' => $documentIds->values()->all(),
-                'selected_information_ids' => $informationIds->all(),
-                'last_message_at' => now(),
-            ]);
-        }
-        $answerSummary = $submittedAnswers->values()->implode(', ');
-        $userMessage = IntelligentNewsMessage::create([
-            'session_id' => $session->id,
-            'role' => 'user',
-            'intent' => ($validated['draft_id'] ?? null) ? 'revise_news' : 'generate_news',
-            'content' => $turnPrompt !== ''
-                ? $turnPrompt
-                : ($answerSummary !== '' ? "Saya memilih: {$answerSummary}" : 'Lanjutkan permintaan ini.'),
-            'payload' => [
-                'information_ids' => $informationIds->all(),
-                'document_ids' => $documentIds->values()->all(),
-                'answers' => $validated['answers'] ?? [],
-            ],
-        ]);
-        $run = IntelligentNewsRun::create([
-            'session_id' => $session->id,
-            'user_message_id' => $userMessage->id,
-            'intent' => ($validated['draft_id'] ?? null) ? 'revise_news' : 'generate_news',
-            'status' => 'running',
-            'current_stage' => 'understanding_request',
-            'started_at' => now(),
-        ]);
-        $selectedInformation = IntelligenceInformation::query()
-            ->whereIn('id', $informationIds)
-            ->get(['id', 'document_id', 'title', 'summary']);
-        foreach ($selectedInformation as $source) {
-            IntelligentNewsSourceSelection::create([
-                'session_id' => $session->id,
-                'message_id' => $userMessage->id,
-                'run_id' => $run->id,
-                'source_type' => 'information',
-                'information_id' => $source->id,
-                'document_id' => $source->document_id,
-                'title' => $source->title,
-                'source_snapshot' => ['summary' => $source->summary],
-                'decision' => 'approved',
-                'decided_by' => $request->user()->getKey(),
-                'decided_at' => now(),
-            ]);
-        }
-        $runEvent = function (string $type, string $label, string $content, ?string $tool = null) use ($run): void {
-            IntelligentNewsRunEvent::create([
-                'run_id' => $run->id,
-                'sequence' => $run->events()->count() + 1,
-                'event_type' => $type,
-                'tool_name' => $tool,
-                'label' => $label,
-                'content' => $content,
-            ]);
-            $run->update(['current_stage' => $type]);
-        };
-        $runEvent('commentary', 'Memahami permintaan', 'Menentukan tujuan pengguna dan konteks percakapan yang relevan.');
-        $runEvent('tool', 'Memeriksa sumber', $informationIds->isNotEmpty()
-            ? 'Memeriksa informasi dan dokumen yang telah disetujui moderator.'
-            : 'Memeriksa fakta yang tersedia dalam prompt dan percakapan.', 'source_check');
-
-        $payload = [
-            'information' => [
-                'information' => $items->map(fn ($item) => [
-                    'information_id' => (string) $item->id,
-                    'type' => $item->type,
-                    'title' => $item->title,
-                    'summary' => $item->summary,
-                    'labels' => $item->labels,
-                    'fields' => (object) ($item->fields ?? []),
-                    'evidence' => $item->evidence,
-                    'confidence' => $item->confidence ?? 0,
-                ])->values()->all(),
-            ],
-            'owner_id' => (string) $request->user()->getKey(),
-            'session_id' => (string) $session->id,
-            'run_id' => $validated['request_id'] ?? 'laravel-'.$run->id,
-            'eligible_information_ids' => $items->pluck('id')->map(fn ($id) => (string) $id)->all(),
-            'allow_web' => (bool) config('services.apakhabar_ai.web_discovery', false),
-            'default_category' => NewsCategory::query()->active()->where('is_default', true)->value('name'),
-            'current_draft' => $currentDraft ? array_merge($currentDraft->only([
-                'headline', 'subheadline', 'lead', 'body', 'summary', 'labels', 'sources_used', 'warnings',
-            ]), ['language' => 'id', 'category' => $currentDraft->category?->name]) : null,
-            'language' => 'id',
-            'tone' => $validated['tone'] ?? 'formal',
-            'instructions' => $effectivePrompt,
-            'user_facts' => $userFacts->values()->all(),
-            'clarification_completed' => $clarificationCompleted,
-            'available_categories' => NewsCategory::query()->active()
-                ->orderBy('display_order')->orderBy('name')->pluck('name')->all(),
-        ];
-
-        try {
-            $runEvent('commentary', 'Menyusun draf', 'Mengirim fakta terverifikasi dan arahan editorial ke model AI.');
-            $endpoint = '/news/generate';
-            if ($pendingAgentRunId && $submittedAnswers->isNotEmpty()) {
-                $endpoint = '/agent/runs/'.rawurlencode($pendingAgentRunId).'/resume';
-                $payload = [
-                    'owner_id' => (string) $request->user()->getKey(),
-                    'eligible_information_ids' => $items->pluck('id')->map(fn ($id) => (string) $id)->all(),
-                    'answers' => $factualAnswers->map(fn ($value, $field) => ['field' => $field, 'value' => $value])->values()->all(),
-                    'approved_web_source_ids' => $submittedAnswers
-                        ->filter(fn ($value, $field) => str_starts_with($field, 'web_source:') && $value === 'Setujui')
-                        ->keys()->map(fn ($field) => substr($field, strlen('web_source:')))->values()->all(),
-                ];
+    public function generateAsync(Request $request): JsonResponse
+    {
+        $validated = $request->validate(array_merge(NewsGenerationService::rules(), [
+            'request_id' => ['required', 'uuid'],
+        ]));
+        abort_if(config('queue.default') === 'sync', 503, 'Configure an asynchronous queue and start the queue worker.');
+        $key = GenerateIntelligentNews::cacheKey($request->user()->getKey(), $validated['request_id']);
+        if (Cache::add($key, [
+            'status' => 'queued', 'events' => [], 'queued_at' => now()->timestamp,
+        ], now()->addDay())) {
+            try {
+                GenerateIntelligentNews::dispatch($request->user()->getKey(), $validated)->onQueue('generation');
+            } catch (\Throwable $exception) {
+                Cache::forget($key);
+                throw $exception;
             }
-            IntelligentNewsRunEvent::create([
-                'run_id' => $run->id, 'sequence' => $run->events()->count() + 1,
-                'event_type' => 'agent_run', 'label' => 'Agen editorial dimulai', 'content' => 'Menjalankan alur editorial.',
-                'payload' => [
-                    'client_request_id' => $validated['request_id'] ?? 'laravel-'.$run->id,
-                    'agent_run_id' => $pendingAgentRunId && $submittedAnswers->isNotEmpty() ? $pendingAgentRunId : $payload['run_id'],
-                ],
-            ]);
-            $result = $this->aiClient()
-                ->post(rtrim(config('services.apakhabar_ai.url'), '/').$endpoint, $payload)
-                ->throw()
-                ->json();
-            IntelligentNewsRunEvent::create([
-                'run_id' => $run->id, 'sequence' => $run->events()->count() + 1,
-                'event_type' => 'agent_context', 'label' => 'Prosedur editorial tercatat', 'content' => 'Rencana dan versi keahlian disimpan untuk peninjauan.',
-                'payload' => ['skills_used' => $result['skills_used'] ?? [], 'plan' => $result['plan'] ?? [], 'metrics' => $result['metrics'] ?? []],
-            ]);
-            foreach (($result['events'] ?? []) as $event) {
-                IntelligentNewsRunEvent::create([
-                    'run_id' => $run->id,
-                    'sequence' => $run->events()->count() + 1,
-                    'event_type' => $event['event_type'],
-                    'tool_name' => $event['tool_name'] ?? null,
-                    'label' => $event['label'],
-                    'content' => $event['content'] ?? $event['label'],
-                    'payload' => $event['payload'] ?? [],
-                ]);
-            }
-        } catch (\Throwable $exception) {
-            report($exception);
-            $runEvent('error', 'Proses gagal', 'Penyedia AI tidak menyelesaikan permintaan.');
-            $run->update([
-                'status' => 'failed',
-                'error_message' => $exception->getMessage(),
-                'completed_at' => now(),
-            ]);
-
-            if ($exception instanceof RequestException && $exception->response->status() === 422) {
-                $detail = $exception->response->json('detail');
-                $message = is_array($detail)
-                    ? collect($detail)->map(fn ($error) => data_get($error, 'msg'))->filter()->implode('; ')
-                    : (string) $detail;
-
-                return back()->withErrors([
-                    'generation' => 'Permintaan ditolak karena data tidak sesuai: '.($message ?: 'payload tidak valid.'),
-                ]);
-            }
-
-            $provider = config('services.apakhabar_ai.provider', 'AI lokal');
-
-            return back()->withErrors([
-                'generation' => "Layanan {$provider} belum menyelesaikan permintaan. Pastikan FastAPI dan penyedia model aktif, lalu coba lagi.",
-            ]);
         }
 
-        if ($guidance = ($result['guidance'] ?? null)) {
-            $runEvent('commentary', 'Memerlukan informasi yang lebih berguna', $guidance);
-            $run->update(['status' => 'completed', 'current_stage' => 'insufficient_evidence', 'completed_at' => now()]);
-            $session->update(['status' => 'collecting_sources', 'pending_questions' => []]);
-
-            return back()->withErrors(['guidance' => $guidance]);
-        }
-
-        if (! ($result['article'] ?? null)) {
-            if ($clarificationCompleted && ($result['status'] ?? '') !== 'awaiting_approval') {
-                return back()->withErrors([
-                    'generation' => 'Klarifikasi sudah selesai, tetapi AI gagal membuat draf. Coba lagi tanpa menjawab pertanyaan tambahan.',
-                ]);
-            }
-            $pendingQuestions = $result['completeness']['missing'] ?? [];
-            if (($result['status'] ?? '') === 'awaiting_approval') {
-                $pendingQuestions = collect($result['web_sources'] ?? [])->map(fn ($source) => [
-                    'field' => 'web_source:'.$source['source_id'],
-                    'importance' => 'required',
-                    'kind' => 'unverified_subject',
-                    'question' => 'Gunakan sumber ini sebagai bukti: '.$source['title'].'?',
-                    'options' => ['Setujui', 'Tolak'],
-                    'selection_type' => 'single',
-                    'sources' => [$source],
-                ])->all();
-            }
-            $toolCalls = $result['tool_calls'] ?? [];
-            if (empty($toolCalls) && ($result['tool_call'] ?? null)) {
-                $toolCalls = [$result['tool_call']];
-            }
-            if (! empty($toolCalls)) {
-                $pendingQuestions = collect($toolCalls)->take(3)->map(
-                    fn ($call, $index) => [
-                        'field' => data_get($call, 'arguments.field'),
-                        'importance' => 'required',
-                        'kind' => data_get($pendingQuestions, "$index.kind", 'missing_fact'),
-                        'reason' => data_get($call, 'arguments.lead_in'),
-                        'question' => data_get($call, 'arguments.question'),
-                        'options' => data_get($call, 'arguments.options', []),
-                        'selection_type' => data_get($call, 'arguments.select_type', 'single'),
-                        'sources' => $index === 0 ? ($result['web_sources'] ?? []) : [],
-                    ]
-                )->values()->all();
-            }
-            $session ??= new IntelligentNewsSession;
-            $session->fill([
-                'created_by' => $request->user()->getKey(),
-                'status' => 'awaiting_answers',
-                'prompt' => $validated['prompt'] ?? $session->prompt,
-                'selected_document_ids' => $documentIds->values()->all(),
-                'selected_information_ids' => $informationIds->all(),
-                'user_facts' => $userFacts->values()->all(),
-                'pending_questions' => $pendingQuestions,
-                'conflicts' => $result['completeness']['conflicts'] ?? [],
-            ]);
-            $session->save();
-            $runEvent('commentary', 'Memerlukan keputusan pengguna', 'Satu putaran klarifikasi diperlukan sebelum draf dibuat.');
-            $run->update(['status' => 'awaiting_approval', 'completed_at' => now()]);
-
-            IntelligentNewsMessage::create([
-                'session_id' => $session->id,
-                'role' => 'assistant',
-                'intent' => 'clarification',
-                'content' => 'Informasi tambahan diperlukan sebelum draf dapat dibuat.',
-                'payload' => ['questions' => $pendingQuestions, 'agent_run_id' => $result['run_id'] ?? null],
-            ]);
-
-            return redirect()->route('admin.assistant.index', ['session' => $session->id]);
-        }
-
-        $article = $result['article'];
-        $categoryId = $this->resolveCategoryId($article);
-        [$draft, $draftVersion] = DB::transaction(function () use ($request, $validated, $article, $items, $session, $categoryId, $result) {
-            $draft = isset($validated['draft_id'])
-                ? IntelligentNewsDraft::query()
-                    ->where('created_by', $request->user()->getKey())
-                    ->where('status', 'draft')
-                    ->findOrFail($validated['draft_id'])
-                : new IntelligentNewsDraft;
-            $nextVersion = $draft->exists ? $draft->version + 1 : 1;
-            $draft->fill([
-                'created_by' => $request->user()->getKey(),
-                'creation_method' => 'ai',
-                'category_id' => $categoryId,
-                'headline' => $article['headline'],
-                'subheadline' => $article['subheadline'] ?? null,
-                'lead' => $article['lead'],
-                'body' => $article['body'],
-                'summary' => $article['summary'],
-                'labels' => $article['labels'] ?? [],
-                'sources_used' => $article['sources_used'] ?? [],
-                'warnings' => $article['warnings'] ?? [],
-                'user_prompt' => $validated['prompt'] ?? $session?->prompt,
-                'version' => $nextVersion,
-                'reviewed_at' => null,
-            ]);
-            $draft->save();
-            $draft->informationSources()->sync($items->pluck('id'));
-            $draftVersion = $this->storeDraftVersion(
-                $draft,
-                $request->user()->getKey(),
-                $draft->wasRecentlyCreated ? 'generated' : 'regenerated',
-                $draft->wasRecentlyCreated ? 'initial_ai' : 'ai_revision',
-                $validated['prompt'] ?? null,
-            );
-
-            if ($quality = ($result['quality'] ?? null)) {
-                AiQualityEvaluation::create([
-                    'draft_id' => $draft->id,
-                    'draft_version_id' => $draftVersion->id,
-                    'evaluation_version' => $quality['evaluation_version'] ?? 'news-quality-v1',
-                    'evaluator_model' => $quality['evaluator_model'] ?? null,
-                    'overall_score' => $quality['quality_score'],
-                    'quality_label' => $quality['quality_label'],
-                    'publish_blocked' => $quality['publish_blocked'] ?? false,
-                    'dimensions' => $quality['dimensions'] ?? [],
-                    'claim_checks' => $quality['claim_checks'] ?? [],
-                    'warnings' => $quality['warnings'] ?? [],
-                ]);
-            }
-
-            return [$draft, $draftVersion];
-        });
-
-        if ($session) {
-            $session->update([
-                'status' => 'draft_generated',
-                'user_facts' => $userFacts->values()->all(),
-                'pending_questions' => [],
-                'conflicts' => [],
-                'draft_id' => $draft->id,
-            ]);
-        }
-
-        IntelligentNewsMessage::create([
-            'session_id' => $session->id,
-            'role' => 'assistant',
-            'intent' => 'generate_news',
-            'content' => $article['headline'],
-            'payload' => ['article' => $article, 'quality' => $result['quality'] ?? null],
-            'draft_version_id' => $draftVersion->id,
-        ]);
-        $runEvent('complete', 'Draf selesai', 'Draf, sumber, dan skor kualitas telah disimpan untuk ditinjau.');
-        $run->update(['status' => 'completed', 'current_stage' => 'complete', 'completed_at' => now()]);
-
-        return redirect()->route('admin.assistant.index', [
-            'draft' => $draft->id,
-            'session' => $session->id,
-        ]);
+        return response()->json(['request_id' => $validated['request_id'], 'status' => 'queued'], 202);
     }
 
     public function recommend(Request $request): JsonResponse

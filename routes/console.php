@@ -17,7 +17,7 @@ Schedule::call(function (): void {
         ->where('status', 'processing')
         ->where(function ($query) {
             $query->whereNull('last_attempted_at')
-                ->orWhere('last_attempted_at', '<', now()->subMinutes(5));
+                ->orWhere('last_attempted_at', '<', now()->subMinutes(25));
         })
         ->pluck('id')
         ->each(fn (int $id) => ProcessIntelligenceDocument::dispatch($id)->onQueue('documents'));

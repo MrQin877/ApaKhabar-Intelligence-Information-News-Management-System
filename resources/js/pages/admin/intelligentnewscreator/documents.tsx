@@ -307,6 +307,14 @@ export default function DocumentLibrary({
             return window.alert('Maksimum lima file untuk setiap unggahan.');
         }
 
+        const oversized = files.find((file) => file.size > 20 * 1024 * 1024);
+
+        if (oversized) {
+            window.alert(`${oversized.name} melebihi batas 20 MB per file. Pisahkan atau kompres file terlebih dahulu.`);
+
+            return;
+        }
+
         const supported = [
             'pdf',
             'docx',
@@ -362,7 +370,9 @@ export default function DocumentLibrary({
     }
 
     function confirmReview() {
-        if (!reviewTarget) return;
+        if (!reviewTarget) {
+return;
+}
 
         const ids = reviewTarget.items.map((item) => item.id);
         const url =
@@ -388,7 +398,9 @@ export default function DocumentLibrary({
     }
 
     function confirmArchiveAction() {
-        if (!archiveTarget) return;
+        if (!archiveTarget) {
+return;
+}
 
         router.post(
             `/admin/documents/${archiveTarget.document.id}/${archiveTarget.action}`,

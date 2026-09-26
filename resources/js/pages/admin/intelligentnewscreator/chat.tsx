@@ -58,6 +58,7 @@ import type {
     Article,
     AssistantPageProps,
     AgentRunEvent,
+    InformationItem,
     Recommendation,
 } from '@/components/intelligent-news/types';
 import { WorkspaceActions } from '@/components/intelligent-news/workspace-actions';
@@ -124,7 +125,14 @@ export default function NewsCreatorAgent({
     initialManualFact = '',
     autoGenerate = false,
 }: AssistantPageProps) {
-    const errors = (usePage().props.errors ?? {}) as Record<string, string>;
+    const progressStorageKey = `ai-generation:${usePage().props.auth.user?.id ?? 'guest'}:${newsSession?.id ?? 'new'}`;
+    const [generationErrors, setGenerationErrors] = useState<
+        Record<string, string>
+    >({});
+    const errors = {
+        ...((usePage().props.errors ?? {}) as Record<string, string>),
+        ...generationErrors,
+    };
     const fileInput = useRef<HTMLInputElement>(null);
     const composerInput = useRef<HTMLTextAreaElement>(null);
     const newsImageInput = useRef<HTMLInputElement>(null);
@@ -134,6 +142,7 @@ export default function NewsCreatorAgent({
     const [pendingUserMessage, setPendingUserMessage] = useState<{
         content: string;
         attachments?: string[];
+        informationAttachments?: InformationItem[];
     } | null>(null);
     const [files, setFiles] = useState<File[]>([]);
     const [manualFact, setManualFact] = useState(initialManualFact ?? '');
@@ -152,13 +161,127 @@ export default function NewsCreatorAgent({
     const [busy, setBusy] = useState(false);
     const [activeRequestId, setActiveRequestId] = useState<string | null>(null);
     const [liveEvents, setLiveEvents] = useState<AgentRunEvent[]>([]);
+    const [progressMessage, setProgressMessage] = useState(
+        'Menunggu pekerja antrean AI…',
+    );
+    const startGeneration = useCallback(
+        async (payload: Record<string, unknown>) => {
+            const selectedIds = new Set(
+                (payload.information_ids ?? []) as number[],
+            );
+            const selectedDocuments = new Set(
+                (payload.document_ids ?? []) as number[],
+            );
+            const candidates = new Map(
+                [...informationItems, ...pendingInformation].map((item) => [
+                    item.id,
+                    item,
+                ]),
+            );
+            const attachments = [...candidates.values()].filter(
+                (item) =>
+                    selectedIds.has(item.id) ||
+                    (selectedDocuments.has(item.document_id) &&
+                        informationItems.some(
+                            (approved) => approved.id === item.id,
+                        )),
+            );
+            setPendingUserMessage((previous) => ({
+                content:
+                    previous?.content ??
+                    String(payload.prompt || 'Lanjutkan permintaan ini.'),
+                informationAttachments: attachments,
+            }));
+            setGenerationErrors({});
+            setProgressMessage('Menunggu pekerja antrean AI…');
+
+            try {
+                sessionStorage.setItem(
+                    progressStorageKey,
+                    JSON.stringify({
+                        id: payload.request_id,
+                        started: Date.now(),
+                    }),
+                );
+            } catch {
+                /* Storage can be disabled; polling still works. */
+            }
+
+            try {
+                const response = await fetch(
+                    '/admin/ai-assistant/generate-async',
+                    {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            Accept: 'application/json',
+                            'X-CSRF-TOKEN':
+                                document.querySelector<HTMLMetaElement>(
+                                    'meta[name="csrf-token"]',
+                                )?.content ?? '',
+                        },
+                        body: JSON.stringify(payload),
+                    },
+                );
+                const data = await response.json();
+
+                if (!response.ok) {
+                    const messages = Object.values(data.errors ?? {})
+                        .flat()
+                        .join(' ');
+
+                    throw new Error(
+                        messages ||
+                            data.message ||
+                            'Permintaan AI tidak dapat dimulai.',
+                    );
+                }
+            } catch (error) {
+                try {
+                    sessionStorage.removeItem(progressStorageKey);
+                } catch {
+                    /* Storage unavailable. */
+                }
+
+                setGenerationErrors({
+                    generation:
+                        error instanceof Error
+                            ? error.message
+                            : 'Permintaan AI gagal.',
+                });
+                setBusy(false);
+                setActiveRequestId(null);
+                setPendingUserMessage(null);
+            }
+        },
+        [progressStorageKey, informationItems, pendingInformation],
+    );
+    useEffect(() => {
+        try {
+            const saved = JSON.parse(
+                sessionStorage.getItem(progressStorageKey) ?? 'null',
+            );
+
+            if (saved?.id && Date.now() - saved.started < 86400000) {
+                autoGenerated.current = true;
+                setActiveRequestId(saved.id);
+                setElapsedSeconds(
+                    Math.floor((Date.now() - saved.started) / 1000),
+                );
+                setBusy(true);
+            }
+        } catch {
+            /* No recoverable local progress. */
+        }
+    }, [progressStorageKey]);
     useEffect(() => {
         if (!busy || !activeRequestId) {
-return;
-}
+            return;
+        }
 
         const controller = new AbortController();
         let timer: ReturnType<typeof setTimeout>;
+        let missing = 0;
         const poll = async () => {
             try {
                 const response = await fetch(
@@ -169,24 +292,114 @@ return;
                     },
                 );
 
-                if (response.ok) {
-                    const data = await response.json();
-                    setLiveEvents(
-                        data.events.map(
-                            (event: AgentRunEvent & { sequence: number }) => ({
-                                ...event,
-                                id: event.sequence,
-                            }),
+                if (
+                    response.status === 401 ||
+                    response.status === 403 ||
+                    response.status === 419
+                ) {
+                    setGenerationErrors({
+                        generation:
+                            'Sesi berakhir. Muat ulang halaman untuk masuk kembali.',
+                    });
+                    setBusy(false);
+
+                    return;
+                }
+
+                if (!response.ok) {
+                    if (response.status === 404 && ++missing > 15) {
+                        setGenerationErrors({
+                            generation:
+                                'Proses tidak ditemukan. Muat ulang percakapan lalu coba lagi.',
+                        });
+                        setBusy(false);
+
+                        return;
+                    }
+
+                    throw new Error('Progress unavailable');
+                }
+
+                missing = 0;
+                const data = await response.json();
+
+                if (data.message?.role === 'user') {
+                    setPendingUserMessage({
+                        content: data.message.content,
+                        informationAttachments: data.message.payload?.information_attachments ?? [],
+                    });
+                }
+
+                if (data.status === 'completed' || data.status === 'failed') {
+                    try {
+                        sessionStorage.removeItem(progressStorageKey);
+                    } catch {
+                        /* Storage unavailable. */
+                    }
+                }
+
+                if (data.status === 'completed' && data.url) {
+                    setBusy(false);
+                    setActiveRequestId(null);
+                    setPendingUserMessage(null);
+                    // Old queued results can contain APP_URL's host rather than this tab's host.
+                    const destination = new URL(
+                        data.url,
+                        window.location.origin,
+                    );
+                    router.visit(destination.pathname + destination.search, {
+                        preserveScroll: true,
+                    });
+
+                    return;
+                }
+
+                if (data.status === 'failed') {
+                    setGenerationErrors(
+                        Object.fromEntries(
+                            Object.entries(
+                                data.errors ?? {
+                                    generation: 'Proses AI gagal.',
+                                },
+                            ).map(([key, value]) => [
+                                key,
+                                Array.isArray(value)
+                                    ? value.join(' ')
+                                    : String(value),
+                            ]),
                         ),
                     );
+                    setBusy(false);
+                    setActiveRequestId(null);
+                    setPendingUserMessage(null);
+
+                    return;
                 }
+
+                setProgressMessage(
+                    data.status === 'queued'
+                        ? 'Menunggu pekerja antrean AI. Proses belum dimulai.'
+                        : 'Terhubung ke layanan AI · pembaruan setiap 2 detik',
+                );
+                setLiveEvents(
+                    (data.events ?? []).map(
+                        (event: AgentRunEvent & { sequence: number }) => ({
+                            ...event,
+                            id: event.sequence,
+                        }),
+                    ),
+                );
             } catch {
-                /* The generation request reports failures; polling can retry. */
+                if (!controller.signal.aborted) {
+                    setProgressMessage(
+                        'Pembaruan terputus; mencoba menyambung kembali…',
+                    );
+                }
             }
 
             if (!controller.signal.aborted) {
-timer = setTimeout(poll, 2000);
-}
+                timer = setTimeout(poll, 2000);
+            }
         };
         void poll();
 
@@ -194,7 +407,7 @@ timer = setTimeout(poll, 2000);
             controller.abort();
             clearTimeout(timer);
         };
-    }, [busy, activeRequestId]);
+    }, [busy, activeRequestId, progressStorageKey]);
     const [picker, setPicker] = useState(false);
     const [pickerTab, setPickerTab] = useState<
         'information' | 'documents' | 'manual'
@@ -360,6 +573,14 @@ timer = setTimeout(poll, 2000);
             return;
         }
 
+        const oversized = incoming.find((file) => file.size > 20 * 1024 * 1024);
+
+        if (oversized) {
+            window.alert(`${oversized.name} melebihi batas 20 MB per file. Pisahkan atau kompres file terlebih dahulu.`);
+
+            return;
+        }
+
         setFiles((current) => [...current, ...incoming]);
     }
     function submit(answerOverrides: Record<string, string> = {}) {
@@ -417,9 +638,11 @@ timer = setTimeout(poll, 2000);
             const attachedNames = files.map((f) => f.name);
             setFiles([]);
             setDocumentIds([]);
+
             if (fileInput.current) {
                 fileInput.current.value = '';
             }
+
             setBusy(true);
             setElapsedSeconds(0);
             setPendingUserMessage({
@@ -445,7 +668,8 @@ timer = setTimeout(poll, 2000);
             .filter(Boolean)
             .join(', ');
         setPendingUserMessage({
-            content: submittedPrompt ||
+            content:
+                submittedPrompt ||
                 (answerText
                     ? `Saya memilih: ${answerText}`
                     : 'Lanjutkan permintaan ini.'),
@@ -454,31 +678,21 @@ timer = setTimeout(poll, 2000);
         const requestId = crypto.randomUUID();
         setActiveRequestId(requestId);
         setLiveEvents([]);
-        router.post(
-            '/admin/ai-assistant/generate',
-            {
-                request_id: requestId,
-                draft_id: editedArticle?.draft_id ?? null,
-                session_id: newsSession?.id ?? null,
-                information_ids: informationIds,
-                document_ids: documentIds,
-                prompt: submittedPrompt || null,
-                answers: manualFact.trim()
-                    ? {
-                          ...submittedAnswers,
-                          additional_context: manualFact.trim(),
-                      }
-                    : submittedAnswers,
-                tone: 'formal',
-            },
-            {
-                onError: () => setPrompt(submittedPrompt),
-                onFinish: () => {
-                    setBusy(false);
-                    setPendingUserMessage(null);
-                },
-            },
-        );
+        void startGeneration({
+            request_id: requestId,
+            draft_id: editedArticle?.draft_id ?? null,
+            session_id: newsSession?.id ?? null,
+            information_ids: informationIds,
+            document_ids: documentIds,
+            prompt: submittedPrompt || null,
+            answers: manualFact.trim()
+                ? {
+                      ...submittedAnswers,
+                      additional_context: manualFact.trim(),
+                  }
+                : submittedAnswers,
+            tone: 'formal',
+        });
     }
 
     function continueAfterInformationReview(newlyApprovedIds: number[]) {
@@ -495,19 +709,15 @@ timer = setTimeout(poll, 2000);
         const requestId = crypto.randomUUID();
         setActiveRequestId(requestId);
         setLiveEvents([]);
-        router.post(
-            '/admin/ai-assistant/generate',
-            {
-                request_id: requestId,
-                session_id: newsSession.id,
-                information_ids: approvedIds,
-                document_ids: [],
-                prompt: null,
-                answers: {},
-                tone: 'formal',
-            },
-            { onFinish: () => setBusy(false) },
-        );
+        void startGeneration({
+            request_id: requestId,
+            session_id: newsSession.id,
+            information_ids: approvedIds,
+            document_ids: [],
+            prompt: null,
+            answers: {},
+            tone: 'formal',
+        });
     }
 
     function saveDraft() {
@@ -608,26 +818,23 @@ timer = setTimeout(poll, 2000);
         const requestId = crypto.randomUUID();
         setActiveRequestId(requestId);
         setLiveEvents([]);
-        router.post(
-            '/admin/ai-assistant/generate',
-            {
-                request_id: requestId,
-                information_ids: preselectedInformationIds,
-                document_ids: initialDocumentIds,
-                prompt: initialPrompt || null,
-                answers: initialManualFact
-                    ? { additional_context: initialManualFact }
-                    : {},
-                tone: 'formal',
-            },
-            { onFinish: () => setBusy(false) },
-        );
+        void startGeneration({
+            request_id: requestId,
+            information_ids: preselectedInformationIds,
+            document_ids: initialDocumentIds,
+            prompt: initialPrompt || null,
+            answers: initialManualFact
+                ? { additional_context: initialManualFact }
+                : {},
+            tone: 'formal',
+        });
     }, [
         autoGenerate,
         initialDocumentIds,
         initialPrompt,
         initialManualFact,
         preselectedInformationIds,
+        startGeneration,
     ]);
 
     useEffect(() => {
@@ -776,7 +983,12 @@ timer = setTimeout(poll, 2000);
                                     {pendingUserMessage && (
                                         <MessageScrollerItem messageId="pending-user-message">
                                             <PendingUserMessage
-                                                attachments={pendingUserMessage.attachments}
+                                                attachments={
+                                                    pendingUserMessage.attachments
+                                                }
+                                                informationAttachments={
+                                                    pendingUserMessage.informationAttachments
+                                                }
                                             >
                                                 {pendingUserMessage.content}
                                             </PendingUserMessage>
@@ -787,7 +999,14 @@ timer = setTimeout(poll, 2000);
                                             messageId="processing-files"
                                             scrollAnchor
                                         >
-                                            <DocumentProcessingStatus />
+                                            <DocumentProcessingStatus
+                                                documents={documents.filter(
+                                                    (doc) =>
+                                                        newsSession?.selected_document_ids.includes(
+                                                            doc.id,
+                                                        ),
+                                                )}
+                                            />
                                         </MessageScrollerItem>
                                     )}
                                     {reviewingExtraction &&
@@ -812,6 +1031,9 @@ timer = setTimeout(poll, 2000);
                                             <AgentWorkTrace
                                                 elapsedSeconds={elapsedSeconds}
                                                 events={liveEvents}
+                                                connectionMessage={
+                                                    progressMessage
+                                                }
                                                 hasSources={hasSources}
                                                 hasFiles={files.length > 0}
                                             />
@@ -1683,37 +1905,45 @@ timer = setTimeout(poll, 2000);
                                                                 value="documents"
                                                                 className="max-h-[48vh] space-y-2 overflow-y-auto"
                                                             >
-                                                                {documents.map(
-                                                                    (
-                                                                        document,
-                                                                    ) => (
-                                                                        <label
-                                                                            key={
-                                                                                document.id
-                                                                            }
-                                                                            className="flex cursor-pointer items-center gap-3 rounded-lg border p-3 hover:bg-muted/50"
-                                                                        >
-                                                                            <Checkbox
-                                                                                checked={documentIds.includes(
-                                                                                    document.id,
-                                                                                )}
-                                                                                onCheckedChange={() =>
-                                                                                    toggle(
-                                                                                        documentIds,
+                                                                {documents
+                                                                    .filter(
+                                                                        (
+                                                                            document,
+                                                                        ) =>
+                                                                            document.status ===
+                                                                            'ready',
+                                                                    )
+                                                                    .map(
+                                                                        (
+                                                                            document,
+                                                                        ) => (
+                                                                            <label
+                                                                                key={
+                                                                                    document.id
+                                                                                }
+                                                                                className="flex cursor-pointer items-center gap-3 rounded-lg border p-3 hover:bg-muted/50"
+                                                                            >
+                                                                                <Checkbox
+                                                                                    checked={documentIds.includes(
                                                                                         document.id,
-                                                                                        setDocumentIds,
-                                                                                    )
-                                                                                }
-                                                                            />
-                                                                            <FileText className="size-4" />
-                                                                            <span className="text-sm font-medium">
-                                                                                {
-                                                                                    document.original_name
-                                                                                }
-                                                                            </span>
-                                                                        </label>
-                                                                    ),
-                                                                )}
+                                                                                    )}
+                                                                                    onCheckedChange={() =>
+                                                                                        toggle(
+                                                                                            documentIds,
+                                                                                            document.id,
+                                                                                            setDocumentIds,
+                                                                                        )
+                                                                                    }
+                                                                                />
+                                                                                <FileText className="size-4" />
+                                                                                <span className="text-sm font-medium">
+                                                                                    {
+                                                                                        document.original_name
+                                                                                    }
+                                                                                </span>
+                                                                            </label>
+                                                                        ),
+                                                                    )}
                                                             </TabsContent>
                                                             <TabsContent value="manual">
                                                                 <div className="space-y-2 rounded-lg border p-3">
