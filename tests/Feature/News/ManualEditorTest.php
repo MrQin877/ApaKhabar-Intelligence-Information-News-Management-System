@@ -4,6 +4,7 @@ use App\Models\IntelligentNewsDraft;
 use App\Models\News;
 use App\Models\User;
 use App\Models\UserRole;
+use App\Support\NewsImageUrl;
 use Illuminate\Http\Testing\File;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -29,6 +30,7 @@ function manualArticle(array $overrides = []): array
 }
 
 beforeEach(function () {
+    config(['services.facebook.page_id' => null, 'services.facebook.page_access_token' => null]);
     config(['services.instagram.user_id' => null, 'services.instagram.access_token' => null, 'services.instagram.public_base_url' => null]);
     $this->actingAs(User::factory()->create(['roleID' => UserRole::firstOrCreate(['name' => 'admin'])->getKey()]));
 });
@@ -52,7 +54,13 @@ test('manual editor saves formatting and cover without publishing', function () 
 
 test('manual publishing saves the current fields and homepage preference', function () {
     $this->post('/admin/news/manual', manualArticle(['intent' => 'publish']))
-        ->assertSessionHasNoErrors()->assertRedirect('/admin/news');
+        ->assertSessionHasNoErrors()->assertRedirect('/admin/news/manual/1/edit')
+        ->assertSessionHas('publishResult.success', true)
+        ->assertSessionHas('publishResult.results.application.success', true)
+        ->assertSessionHas('publishResult.completion_url', route('admin.news-workspace.index'));
+    $this->get('/admin/news/manual/1/edit')->assertInertia(fn (Assert $page) => $page
+        ->where('publishResult.success', true)
+        ->where('publishResult.results.application.success', true));
     $news = News::sole();
     expect($news->title)->toBe('Berita kegiatan warga')->and($news->show_on_homepage)->toBeFalse();
     expect(IntelligentNewsDraft::sole()->status)->toBe('published');
@@ -106,7 +114,7 @@ test('legacy text draft requests still save and a reviewed edit publishes curren
         ->and($draft->show_on_homepage)->toBeTrue();
     $this->put('/admin/news/manual/'.$draft->id, manualArticle([
         'headline' => 'Judul final untuk publik', 'intent' => 'publish', 'show_on_homepage' => true,
-    ]))->assertSessionHasNoErrors()->assertRedirect('/admin/news');
+    ]))->assertSessionHasNoErrors()->assertRedirect('/admin/news/manual/'.$draft->id.'/edit');
     expect(News::sole()->title)->toBe('Judul final untuk publik')->and(News::sole()->show_on_homepage)->toBeTrue();
 });
 
@@ -155,8 +163,26 @@ test('legacy local news images are normalized for API and web without rewriting 
 
     $this->getJson('/api/news')->assertOk()->assertJsonPath('0.image', $expected);
     $this->getJson('/api/news/'.$news->getKey())->assertOk()->assertJsonPath('data.image', $expected);
-    $this->get('/news/'.$news->getKey())->assertInertia(fn (Assert $page) => $page->where('news.image', $expected));
+    $this->get('/news/'.$news->getKey())->assertInertia(fn (Assert $page) => $page->where('news.image', '/storage/news-images/cover.png'));
     expect($news->fresh()->getRawOriginal('image'))->toBe($legacy);
-    expect(\App\Support\NewsImageUrl::resolve('https://cdn.example.com/storage/cover.png'))
+    expect(NewsImageUrl::resolve('https://cdn.example.com/storage/cover.png'))
         ->toBe('https://cdn.example.com/storage/cover.png');
+});
+
+test('website pages serve original LAN images from the browser origin without changing API or stored URLs', function () {
+    config(['app.url' => 'http://192.168.1.10:8000']);
+    $this->post('/admin/news/manual', manualArticle(['intent' => 'publish']))->assertSessionHasNoErrors();
+    $news = News::sole();
+    $original = 'http://192.168.68.59:8000/storage/news-images/original.png';
+    $news->update(['image' => $original, 'show_on_homepage' => true]);
+
+    $this->get('/')->assertInertia(fn (Assert $page) => $page->where('featuredNews.image', '/storage/news-images/original.png'));
+    $this->get('/news')->assertInertia(fn (Assert $page) => $page->where('newsList.0.image', '/storage/news-images/original.png'));
+    $this->get('/news/'.$news->getKey())->assertInertia(fn (Assert $page) => $page->where('news.image', '/storage/news-images/original.png'));
+    $this->getJson('/api/news/'.$news->getKey())->assertJsonPath('data.image', $original);
+    expect($news->fresh()->getRawOriginal('image'))->toBe($original);
+    expect(NewsImageUrl::forWeb('https://cdn.example.com/storage/news-images/cover.png'))
+        ->toBe('https://cdn.example.com/storage/news-images/cover.png');
+    expect(NewsImageUrl::forWeb('https://res.cloudinary.com/demo/image/upload/cover.jpg'))
+        ->toBe('https://res.cloudinary.com/demo/image/upload/cover.jpg');
 });

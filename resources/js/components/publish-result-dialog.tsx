@@ -15,6 +15,7 @@ type PublishResult = {
     success: boolean;
     attempt_id: string;
     retry_url?: string;
+    completion_url?: string;
     results: Record<string, { success: boolean; message: string }>;
 };
 
@@ -35,7 +36,13 @@ export function PublishResultDialog() {
         instagram: 'Instagram',
         facebook: 'Facebook',
     };
-    const close = () => setDismissed(publishResult.attempt_id);
+    const close = () => {
+        setDismissed(publishResult.attempt_id);
+
+        if (publishResult.success && publishResult.completion_url) {
+            router.visit(publishResult.completion_url);
+        }
+    };
 
     return (
         <Dialog
@@ -77,7 +84,7 @@ export function PublishResultDialog() {
                                     />
                                 )}
                                 {names[platform] ?? platform} —{' '}
-                                {result.success ? 'Berhasil' : 'Gagal'}
+                                {result.success ? 'Berhasil diterbitkan' : 'Gagal'}
                             </div>
                             {!result.success && (
                                 <p className="text-muted-foreground">

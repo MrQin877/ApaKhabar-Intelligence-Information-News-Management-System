@@ -36,6 +36,7 @@ function instagramSequence()
 }
 
 beforeEach(function () {
+    config(['services.facebook.page_id' => null, 'services.facebook.page_access_token' => null]);
     config(['services.instagram.user_id' => '12345', 'services.instagram.access_token' => 'server-secret']);
     config(['services.cloudinary.cloud_name' => 'demo', 'services.cloudinary.api_key' => 'cloud-key', 'services.cloudinary.api_secret' => 'cloud-secret']);
     config(['services.instagram.public_base_url' => 'https://public.example.com']);
@@ -52,7 +53,11 @@ beforeEach(function () {
 
 test('manual Instagram publishing uses Cloudinary and two Meta calls and respects platform selection', function (array $platforms, int $websiteCount) {
     instagramSequence()->push(['id' => '111'])->push(['id' => '222']);
-    $this->post('/admin/news/manual', [...$this->article, 'platforms' => $platforms])->assertSessionHasNoErrors()->assertRedirect('/admin/news');
+    $this->post('/admin/news/manual', [...$this->article, 'platforms' => $platforms])
+        ->assertSessionHasNoErrors()->assertRedirect('/admin/news/manual/1/edit')
+        ->assertSessionHas('publishResult.success', true)
+        ->assertSessionHas('publishResult.results.instagram.success', true)
+        ->assertSessionHas('publishResult.completion_url', route('admin.news-workspace.index'));
     expect(News::count())->toBe($websiteCount);
     expect(IntelligentNewsDraft::sole()->status)->toBe('published');
     Http::assertSentCount(5);

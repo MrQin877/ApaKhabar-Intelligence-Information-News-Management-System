@@ -3,6 +3,8 @@
 namespace App\Services\News;
 
 use App\Models\SocialConnection;
+use App\Services\FacebookPublishingService;
+use App\Services\InstagramService;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\ValidationException;
 
@@ -20,8 +22,14 @@ class MetaConnections
         $platforms = [['id' => 'website', 'name' => 'Website ApaKhabar', 'account' => parse_url(config('app.url'), PHP_URL_HOST), 'status' => 'connected', 'connect_url' => null]];
         foreach (['facebook' => 'Facebook', 'instagram' => 'Instagram'] as $id => $name) {
             if ($id === 'instagram') {
-                $ready = app(\App\Services\InstagramService::class)->configured();
+                $ready = app(InstagramService::class)->configured();
                 $platforms[] = ['id' => $id, 'name' => $name, 'account' => $ready ? 'ApaKhabar' : null, 'status' => $ready ? 'connected' : 'disconnected', 'connect_url' => $this->configured($id) ? route('admin.social.instagram.start') : null];
+
+                continue;
+            }
+            if ($id === 'facebook' && app(FacebookPublishingService::class)->configured()) {
+                $platforms[] = ['id' => $id, 'name' => $name, 'account' => 'ApaKhabar', 'status' => 'connected', 'connect_url' => null];
+
                 continue;
             }
             $connection = $connections->get($id);

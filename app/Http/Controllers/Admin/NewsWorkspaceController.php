@@ -7,6 +7,7 @@ use App\Models\IntelligentNewsDraft;
 use App\Models\IntelligentNewsSession;
 use App\Models\News;
 use App\Models\NewsCategory;
+use App\Services\FacebookPublishingService;
 use App\Services\InstagramService;
 use App\Services\News\ArticleHtml;
 use App\Services\News\MetaConnections;
@@ -233,6 +234,16 @@ class NewsWorkspaceController extends Controller
 
                         return $news->getKey();
                     }
+                    if ($platform === 'facebook') {
+                        if ($draft->facebook_post_id) {
+                            return $draft->facebook_post_id;
+                        }
+                        $message = trim(html_entity_decode(strip_tags($draft->headline."\n\n".$draft->summary), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+                        $id = app(FacebookPublishingService::class)->publish(NewsImageUrl::resolve($draft->image), $message, $context);
+                        $draft->update(['facebook_post_id' => $id]);
+
+                        return $id;
+                    }
                     if ($draft->instagram_media_id) {
                         return $draft->instagram_media_id;
                     }
@@ -244,7 +255,11 @@ class NewsWorkspaceController extends Controller
 
                     return $id;
                 });
-                $results[$key] = ['success' => true, 'message' => $platform === 'website' ? 'Berhasil diterbitkan ke Aplikasi' : 'Berhasil diterbitkan ke Instagram'];
+                $results[$key] = ['success' => true, 'message' => match ($platform) {
+                    'website' => 'Berhasil diterbitkan ke Aplikasi',
+                    'facebook' => 'Berhasil diterbitkan ke Facebook',
+                    default => 'Berhasil diterbitkan ke Instagram',
+                }];
                 PublishLog::write($key.'.success', [...$context, 'news_id' => $platform === 'website' ? $id : null, 'media_id' => $platform === 'instagram' ? $id : null]);
             } catch (\Throwable $exception) {
                 $message = $exception instanceof ValidationException
@@ -260,13 +275,14 @@ class NewsWorkspaceController extends Controller
             $draft->update(['status' => 'published']);
         }
         $result = ['success' => $success, 'results' => $results, 'draft_id' => $draft->id,
-            'attempt_id' => $context['attempt_id'], 'retry_url' => route('admin.news-workspace.manual.edit', $draft)];
+            'attempt_id' => $context['attempt_id'], 'retry_url' => route('admin.news-workspace.manual.edit', $draft),
+            'completion_url' => route('admin.news-workspace.index')];
         PublishLog::write('final_result', [...$context, 'news_id' => $draft->published_news_id, ...$result]);
         if ($request->expectsJson() && ! $request->header('X-Inertia')) {
             return response()->json($result);
         }
 
-        return redirect()->route($success ? 'admin.news-workspace.index' : 'admin.news-workspace.manual.edit', $success ? [] : ['draft' => $draft])
+        return redirect()->route('admin.news-workspace.manual.edit', $draft)
             ->with('publishResult', $result);
     }
 
@@ -388,8 +404,8 @@ class NewsWorkspaceController extends Controller
             'platforms' => ['required', 'array', 'min:1', 'max:3'],
             'platforms.*' => ['required', 'string', 'distinct', Rule::in(['website', 'facebook', 'instagram'])],
         ]);
-        if (in_array('facebook', $data['platforms'], true)) {
-            throw ValidationException::withMessages(['platforms' => 'Penerbitan Facebook belum tersedia.']);
+        if (in_array('facebook', $data['platforms'], true) && ! app(FacebookPublishingService::class)->configured()) {
+            throw ValidationException::withMessages(['platforms' => 'Halaman Facebook belum dikonfigurasi. Hubungi administrator.']);
         }
 
     }

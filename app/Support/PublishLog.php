@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\Log;
 
 class PublishLog
 {
-    public static function write(string $stage, array $context = [], string $level = 'info'): void
+    public static function write(string $stage, array $context = [], string $level = 'info', ?string $channel = null): void
     {
         $secrets = [];
         $collect = function ($values) use (&$collect, &$secrets) {
@@ -43,6 +43,10 @@ class PublishLog
 
             return $value;
         };
-        Log::log($level, 'manual_publish.'.$stage, $clean($context));
+        if ($channel !== null) {
+            Log::channel($channel)->log($level, 'manual_publish.'.$stage, $clean($context));
+        } else {
+            Log::log($level, 'manual_publish.'.$stage, $clean($context));
+        }
     }
 }

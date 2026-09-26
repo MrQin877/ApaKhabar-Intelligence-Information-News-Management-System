@@ -4,6 +4,7 @@ namespace App\Http\Controllers\News;
 
 use App\Http\Controllers\Controller;
 use App\Services\News\NewsService;
+use App\Support\NewsImageUrl;
 use Inertia\Inertia;
 use Illuminate\Http\Request;
 
@@ -27,7 +28,7 @@ class NewsController extends Controller
                 'id' => $item['id'],
                 'title' => $item['title'],
                 'excerpt' => $item['excerpt'],
-                'image' => $item['image'],
+                'image' => NewsImageUrl::forWeb($item['image']),
                 'date' => $item['date'],
                 'category' => $item['category'],
             ])->all(),
@@ -53,7 +54,7 @@ class NewsController extends Controller
                 'title' => $news['title'],
                 'excerpt' => $news['excerpt'],
                 'content' => $news['content'],
-                'image' => $news['image'],
+                'image' => NewsImageUrl::forWeb($news['image']),
                 'date' => $news['date'],
                 'category' => $news['category'],
                 'views' => $news['views'],

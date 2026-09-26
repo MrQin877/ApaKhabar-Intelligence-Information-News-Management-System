@@ -7,6 +7,8 @@ use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
 
 beforeEach(function () {
+    config(['services.instagram.user_id' => null, 'services.instagram.access_token' => null]);
+    config(['services.facebook.page_id' => null, 'services.facebook.page_access_token' => null]);
     $this->actingAs(User::factory()->create(['roleID' => UserRole::firstOrCreate(['name' => 'admin'])->getKey()]));
     config([
         'meta.facebook.app_id' => 'test-app', 'meta.facebook.app_secret' => 'test-secret',

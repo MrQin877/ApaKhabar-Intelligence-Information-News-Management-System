@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Home;
 use App\Http\Controllers\Controller;
 use App\Models\Broadcast;
 use App\Models\News;
+use App\Support\NewsImageUrl;
 use Inertia\Inertia;
 use Laravel\Fortify\Features;
 
@@ -17,7 +18,7 @@ class WelcomeController extends Controller
                 'id' => (string) $item->getKey(),
                 'title' => $item->title,
                 'excerpt' => $item->excerpt ?? '',
-                'image' => $item->image ?? 'https://placehold.co/600x400',
+                'image' => NewsImageUrl::forWeb($item->image) ?? 'https://placehold.co/600x400',
                 'date' => optional($item->created_at)->format('d F Y') ?? '-',
                 'category' => $item->category ?? 'Umum',
             ];
