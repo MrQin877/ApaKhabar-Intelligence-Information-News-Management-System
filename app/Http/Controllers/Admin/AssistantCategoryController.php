@@ -17,6 +17,7 @@ class AssistantCategoryController extends Controller
     public function decide(Request $request, IntelligentNewsMessage $message)
     {
         abort_unless($message->session->created_by === $request->user()->getKey(), 403);
+        $message->session->assertWritable();
         $data = $request->validate(['decision' => ['required', 'in:approve,existing,cancel'],
             'category_id' => ['required_if:decision,existing', 'nullable', 'integer']]);
         abort_if($data['decision'] === 'approve' && ! $request->user()->isAdmin(), 403);

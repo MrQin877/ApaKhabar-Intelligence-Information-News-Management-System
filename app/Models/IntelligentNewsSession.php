@@ -24,6 +24,17 @@ class IntelligentNewsSession extends Model
         'last_message_at' => 'datetime',
     ];
 
+    public function draft()
+    {
+        return $this->belongsTo(IntelligentNewsDraft::class, 'draft_id');
+    }
+
+    public function assertWritable(): void
+    {
+        abort_if($this->draft()->where('status', 'published')->exists(), 409,
+            'Percakapan berita terbit hanya dapat dibaca. Mulai percakapan baru untuk perubahan.');
+    }
+
     public function messages()
     {
         return $this->hasMany(IntelligentNewsMessage::class, 'session_id')->oldest();

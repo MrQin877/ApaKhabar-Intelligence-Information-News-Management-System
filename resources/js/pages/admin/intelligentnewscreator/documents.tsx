@@ -10,6 +10,7 @@ import {
     Eye,
     FileSearch,
     FileText,
+    FileSpreadsheet,
     LoaderCircle,
     MoreHorizontal,
     RotateCcw,
@@ -35,6 +36,13 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogDescription,
+} from '@/components/ui/dialog';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -87,7 +95,7 @@ interface ExtractedInformation {
 interface DocumentItem {
     id: number;
     name: string;
-    type: 'pdf' | 'docx' | 'img';
+    type: 'pdf' | 'docx' | 'img' | 'spreadsheet' | 'txt';
     size: string;
     date: string;
     status: DocStatus;
@@ -197,8 +205,13 @@ export default function DocumentLibrary({
     archived?: boolean;
 }) {
     const errors = (usePage().props.errors ?? {}) as Record<string, string>;
-    const [filter, setFilter] = useState<LibraryFilter>('all');
-    const [query, setQuery] = useState('');
+    const [fileType, updateFileType] = useState('all');
+    const [page, setPage] = useState(1);
+    const [pageSize, updatePageSize] = useState(10);
+    const [preview, setPreview] = useState<DocumentItem | null>(null);
+    const [previewLoading, setPreviewLoading] = useState(false);
+    const [filter, updateFilter] = useState<LibraryFilter>('all');
+    const [query, updateQuery] = useState('');
     const [selectedId, setSelectedId] = useState<number | null>(null);
     const [reviewPage, setReviewPage] = useState(1);
     const [dragging, setDragging] = useState(false);
@@ -217,6 +230,22 @@ export default function DocumentLibrary({
         label: string;
         progress: number;
     } | null>(null);
+    const setFilter = (value: LibraryFilter) => {
+        setPage(1);
+        updateFilter(value);
+    };
+    const setQuery = (value: string) => {
+        setPage(1);
+        updateQuery(value);
+    };
+    const setFileType = (value: string) => {
+        setPage(1);
+        updateFileType(value);
+    };
+    const setPageSize = (value: number) => {
+        setPage(1);
+        updatePageSize(value);
+    };
     const fileInput = useRef<HTMLInputElement>(null);
 
     const selected = useMemo(
@@ -267,9 +296,19 @@ export default function DocumentLibrary({
                     .toLocaleLowerCase('id')
                     .includes(needle);
 
-            return matchesState && matchesQuery;
+            return (
+                matchesState &&
+                matchesQuery &&
+                (fileType === 'all' || document.type === fileType)
+            );
         });
-    }, [documents, filter, query]);
+    }, [documents, filter, query, fileType]);
+    const pageCount = Math.max(1, Math.ceil(shownDocuments.length / pageSize));
+    const safePage = Math.min(page, pageCount);
+    const paginatedDocuments = shownDocuments.slice(
+        (safePage - 1) * pageSize,
+        safePage * pageSize,
+    );
 
     useEffect(() => {
         if (!documents.some((document) => document.status === 'processing')) {
@@ -291,11 +330,8 @@ export default function DocumentLibrary({
     }
 
     function previewDocument(document: DocumentItem) {
-        window.open(
-            `/admin/documents/${document.id}/preview`,
-            '_blank',
-            'noopener,noreferrer',
-        );
+        setPreviewLoading(true);
+        setPreview(document);
     }
 
     function upload(files: File[]) {
@@ -310,7 +346,9 @@ export default function DocumentLibrary({
         const oversized = files.find((file) => file.size > 20 * 1024 * 1024);
 
         if (oversized) {
-            window.alert(`${oversized.name} melebihi batas 20 MB per file. Pisahkan atau kompres file terlebih dahulu.`);
+            window.alert(
+                `${oversized.name} melebihi batas 20 MB per file. Pisahkan atau kompres file terlebih dahulu.`,
+            );
 
             return;
         }
@@ -371,8 +409,8 @@ export default function DocumentLibrary({
 
     function confirmReview() {
         if (!reviewTarget) {
-return;
-}
+            return;
+        }
 
         const ids = reviewTarget.items.map((item) => item.id);
         const url =
@@ -399,8 +437,8 @@ return;
 
     function confirmArchiveAction() {
         if (!archiveTarget) {
-return;
-}
+            return;
+        }
 
         router.post(
             `/admin/documents/${archiveTarget.document.id}/${archiveTarget.action}`,
@@ -414,6 +452,60 @@ return;
 
     return (
         <>
+            <Dialog
+                open={Boolean(preview)}
+                onOpenChange={(open) => !open && setPreview(null)}
+            >
+                <DialogContent className="flex h-[90dvh] max-w-[96vw] flex-col sm:max-w-[96vw]">
+                    <DialogHeader>
+                        <DialogTitle className="truncate pr-8">
+                            {preview?.name}
+                        </DialogTitle>
+                        <DialogDescription>
+                            Pratinjau dokumen asli. Untuk format dan isi
+                            lengkap, unduh file.
+                        </DialogDescription>
+                    </DialogHeader>
+                    {preview && (
+                        <>
+                            <div className="flex gap-2">
+                                <Button variant="outline" size="sm" asChild>
+                                    <a
+                                        href={`/admin/documents/${preview.id}/preview?download=1`}
+                                    >
+                                        Unduh asli
+                                    </a>
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                        openReview(preview);
+                                        setPreview(null);
+                                    }}
+                                >
+                                    Tinjau informasi
+                                </Button>
+                            </div>
+                            {previewLoading && (
+                                <p
+                                    role="status"
+                                    className="text-sm text-muted-foreground"
+                                >
+                                    Memuat pratinjau…
+                                </p>
+                            )}
+                            <iframe
+                                key={preview.id}
+                                title={`Pratinjau ${preview.name}`}
+                                src={`/admin/documents/${preview.id}/preview`}
+                                onLoad={() => setPreviewLoading(false)}
+                                className="min-h-0 flex-1 rounded-lg border bg-white"
+                            />
+                        </>
+                    )}
+                </DialogContent>
+            </Dialog>
             <Head title={archived ? 'Arsip Dokumen' : 'Pustaka Dokumen'} />
             <div className="min-h-full bg-background p-4 text-foreground md:p-6">
                 <div className="mx-auto flex max-w-7xl flex-col gap-6">
@@ -442,13 +534,7 @@ return;
                                 {archived ? <FileText /> : <Archive />}
                                 {archived ? 'Pustaka aktif' : 'Lihat arsip'}
                             </Button>
-                            {!archived && (
-                                <Button
-                                    onClick={() => fileInput.current?.click()}
-                                >
-                                    <Upload /> Unggah dokumen
-                                </Button>
-                            )}
+                            
                         </div>
                     </header>
 
@@ -468,53 +554,17 @@ return;
                         </Alert>
                     )}
 
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                        {[
-                            {
-                                label: 'Semua dokumen',
-                                value: counts.all,
-                                icon: FileText,
-                            },
-                            {
-                                label: 'Perlu ditinjau',
-                                value: counts.review,
-                                icon: Clock3,
-                            },
-                            {
-                                label: 'Sedang diproses',
-                                value: counts.processing,
-                                icon: LoaderCircle,
-                            },
-                            {
-                                label: 'Disetujui',
-                                value: counts.approved,
-                                icon: ShieldCheck,
-                            },
-                        ].map(({ label, value, icon: Icon }) => (
-                            <Card
-                                key={label}
-                                className="gap-2 py-4 shadow-none"
-                            >
-                                <CardContent className="flex items-center justify-between px-4">
-                                    <div>
-                                        <p className="text-xs text-muted-foreground">
-                                            {label}
-                                        </p>
-                                        <p className="mt-1 text-2xl font-semibold">
-                                            {value}
-                                        </p>
-                                    </div>
-                                    <Icon
-                                        className={`size-5 text-muted-foreground ${label === 'Sedang diproses' && value > 0 ? 'animate-spin' : ''}`}
-                                    />
-                                </CardContent>
-                            </Card>
-                        ))}
-                    </div>
-
                     {!archived && (
-                        <Card
-                            className={`border-dashed py-0 shadow-none transition-colors ${dragging ? 'border-primary bg-primary/5' : ''}`}
+                        <div
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => fileInput.current?.click()}
+                            onKeyDown={(e) => {
+ if (e.key === 'Enter' || e.key === ' ') {
+fileInput.current?.click()
+} 
+}}
+                            className={`flex flex-col sm:flex-row items-center gap-4 rounded-xl border-2 border-dashed p-4 transition-colors cursor-pointer ${dragging ? 'border-primary bg-primary/5' : 'border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50'}`}
                             onDragEnter={(event) => {
                                 event.preventDefault();
                                 setDragging(true);
@@ -529,49 +579,106 @@ return;
                             }}
                             onDrop={dropFiles}
                         >
-                            <CardContent className="flex flex-col items-center gap-3 px-5 py-7 text-center sm:flex-row sm:text-left">
-                                <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                                    <Upload />
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                    <p className="font-medium">
-                                        Letakkan hingga lima dokumen di sini
-                                    </p>
-                                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                                        PDF, Word, Excel, CSV, teks, dan gambar
-                                        OCR · maksimum 20 MB per file
-                                    </p>
-                                    {uploading && (
-                                        <div className="mt-3 max-w-md">
-                                            <Progress
-                                                value={uploading.progress}
-                                            />
-                                            <p className="mt-1 text-xs text-muted-foreground">
-                                                Mengunggah {uploading.label} ·{' '}
-                                                {Math.round(uploading.progress)}
-                                                %
-                                            </p>
-                                        </div>
-                                    )}
-                                </div>
-                                <Button
-                                    variant="outline"
-                                    onClick={() => fileInput.current?.click()}
-                                >
-                                    Pilih file
-                                </Button>
-                                <input
-                                    ref={fileInput}
-                                    type="file"
-                                    multiple
-                                    className="hidden"
-                                    accept=".pdf,.docx,.xlsx,.xlsm,.csv,.txt,.jpg,.jpeg,.png"
-                                    onChange={changeFiles}
-                                />
-                            </CardContent>
-                        </Card>
+                            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                                <Upload className="size-5" />
+                            </div>
+                            <div className="flex-1 min-w-0 text-center sm:text-left">
+                                <p className="text-sm font-medium">
+                                    Klik untuk memilih atau seret hingga 5 dokumen ke area ini
+                                </p>
+                                <p className="mt-0.5 text-xs text-muted-foreground">
+                                    Mendukung PDF, Word, Excel, CSV, teks, dan gambar (Maks 20 MB/file)
+                                </p>
+                                {uploading && (
+                                    <div className="mt-3 max-w-sm" onClick={(e) => e.stopPropagation()}>
+                                        <Progress value={uploading.progress} className="h-1.5" />
+                                        <p className="mt-1.5 text-xs text-muted-foreground font-medium">
+                                            Mengunggah {uploading.label} · {Math.round(uploading.progress)}%
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                            <input
+                                ref={fileInput}
+                                type="file"
+                                multiple
+                                className="hidden"
+                                accept=".pdf,.docx,.xlsx,.xlsm,.csv,.txt,.jpg,.jpeg,.png"
+                                onChange={changeFiles}
+                            />
+                        </div>
                     )}
 
+                    <section
+                        aria-label="Jenis file"
+                        className="grid grid-cols-2 gap-3 sm:grid-cols-4"
+                    >
+                        {[
+                            {
+                                type: 'all',
+                                label: 'Semua file',
+                                icon: FileText,
+                            },
+                            { type: 'docx', label: 'Word', icon: FileText },
+                            {
+                                type: 'spreadsheet',
+                                label: 'Excel & CSV',
+                                icon: FileSpreadsheet,
+                            },
+                            { type: 'pdf', label: 'PDF', icon: FileText },
+                        ].map(({ type, label, icon: Icon }) => (
+                            <button
+                                key={type}
+                                onClick={() => setFileType(type)}
+                                aria-pressed={fileType === type}
+                                className={`rounded-xl border bg-card p-4 text-left transition hover:border-primary ${fileType === type ? 'border-primary ring-1 ring-primary/20' : ''}`}
+                            >
+                                <Icon className="mb-3 size-5 text-muted-foreground" />
+                                <span className="block text-sm font-medium">
+                                    {label}
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                    {
+                                        documents.filter(
+                                            (d) =>
+                                                type === 'all' ||
+                                                d.type === type,
+                                        ).length
+                                    }{' '}
+                                    file
+                                </span>
+                            </button>
+                        ))}
+                    </section>
+                    {!query &&
+                        filter === 'all' &&
+                        fileType === 'all' &&
+                        documents.length > 0 && (
+                            <section aria-label="File terbaru">
+                                <h2 className="mb-3 text-sm font-medium">
+                                    Baru ditambahkan
+                                </h2>
+                                <div className="grid gap-3 sm:grid-cols-3">
+                                    {documents.slice(0, 3).map((d) => (
+                                        <button
+                                            key={d.id}
+                                            onClick={() => previewDocument(d)}
+                                            className="flex min-w-0 items-center gap-3 rounded-lg border bg-card p-3 text-left hover:bg-muted"
+                                        >
+                                            <FileText className="size-5 shrink-0 text-muted-foreground" />
+                                            <span className="min-w-0">
+                                                <span className="block truncate text-sm font-medium">
+                                                    {d.name}
+                                                </span>
+                                                <span className="text-xs text-muted-foreground">
+                                                    {d.size} · Pratinjau
+                                                </span>
+                                            </span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </section>
+                        )}
                     <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
                         <Tabs
                             value={filter}
@@ -609,6 +716,24 @@ return;
                         </div>
                     </div>
 
+                    <div className="flex items-center justify-between gap-3 text-sm">
+                        <p className="text-muted-foreground">
+                            {shownDocuments.length} file ditemukan
+                        </p>
+                        <select
+                            aria-label="Filter jenis file"
+                            className="rounded-md border bg-background p-2"
+                            value={fileType}
+                            onChange={(e) => setFileType(e.target.value)}
+                        >
+                            <option value="all">Semua jenis file</option>
+                            <option value="pdf">PDF</option>
+                            <option value="docx">Word</option>
+                            <option value="spreadsheet">Excel & CSV</option>
+                            <option value="img">Gambar</option>
+                            <option value="txt">Teks</option>
+                        </select>
+                    </div>
                     {shownDocuments.length === 0 ? (
                         <Card className="border-dashed py-14 text-center shadow-none">
                             <CardContent>
@@ -632,9 +757,6 @@ return;
                                             Dokumen
                                         </TableHead>
                                         <TableHead>Informasi</TableHead>
-                                        <TableHead className="min-w-40">
-                                            Kualitas
-                                        </TableHead>
                                         <TableHead>Status</TableHead>
                                         <TableHead>Diperbarui</TableHead>
                                         <TableHead>
@@ -645,7 +767,7 @@ return;
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {shownDocuments.map((document) => {
+                                    {paginatedDocuments.map((document) => {
                                         const pending = document.extract.filter(
                                             (item) =>
                                                 item.review_status ===
@@ -657,8 +779,6 @@ return;
                                                     item.review_status ===
                                                     'approved',
                                             ).length;
-                                        const quality =
-                                            documentQuality(document);
 
                                         return (
                                             <TableRow key={document.id}>
@@ -672,7 +792,7 @@ return;
                                                                 type="button"
                                                                 className="block max-w-72 truncate text-left font-medium hover:underline"
                                                                 onClick={() =>
-                                                                    openReview(
+                                                                    previewDocument(
                                                                         document,
                                                                     )
                                                                 }
@@ -702,37 +822,6 @@ return;
                                                                 : `${approved} disetujui`}
                                                         </p>
                                                     </div>
-                                                </TableCell>
-                                                <TableCell>
-                                                    {quality === null ? (
-                                                        <span className="text-muted-foreground">
-                                                            —
-                                                        </span>
-                                                    ) : (
-                                                        <div className="max-w-36 space-y-1.5">
-                                                            <div className="flex justify-between gap-3 text-xs">
-                                                                <span className="font-medium">
-                                                                    {quality.toFixed(
-                                                                        1,
-                                                                    )}
-                                                                    %
-                                                                </span>
-                                                                <span className="text-muted-foreground">
-                                                                    {quality >=
-                                                                    85
-                                                                        ? 'Sangat baik'
-                                                                        : quality >=
-                                                                            70
-                                                                          ? 'Baik'
-                                                                          : 'Perlu cek'}
-                                                                </span>
-                                                            </div>
-                                                            <Progress
-                                                                value={quality}
-                                                                className="h-1.5"
-                                                            />
-                                                        </div>
-                                                    )}
                                                 </TableCell>
                                                 <TableCell>
                                                     <StatusBadge
@@ -879,6 +968,44 @@ return;
                                     })}
                                 </TableBody>
                             </Table>
+                            <div className="flex flex-wrap items-center justify-between gap-3 border-t px-5 py-3 text-sm">
+                                <label>
+                                    File per halaman{' '}
+                                    <select
+                                        aria-label="File per halaman"
+                                        value={pageSize}
+                                        onChange={(e) =>
+                                            setPageSize(Number(e.target.value))
+                                        }
+                                        className="ml-2 rounded border bg-background p-1"
+                                    >
+                                        {[10, 20, 50].map((n) => (
+                                            <option key={n}>{n}</option>
+                                        ))}
+                                    </select>
+                                </label>
+                                <div className="flex items-center gap-3">
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        disabled={safePage === 1}
+                                        onClick={() => setPage(safePage - 1)}
+                                    >
+                                        Sebelumnya
+                                    </Button>
+                                    <span>
+                                        {safePage} / {pageCount}
+                                    </span>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        disabled={safePage === pageCount}
+                                        onClick={() => setPage(safePage + 1)}
+                                    >
+                                        Berikutnya
+                                    </Button>
+                                </div>
+                            </div>
                         </Card>
                     )}
                 </div>

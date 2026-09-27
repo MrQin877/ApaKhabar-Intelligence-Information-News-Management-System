@@ -6,7 +6,9 @@ import type { SessionMessage } from './types';
 export function CategoryProposalCard({
     message,
     categories,
+    readOnly = false,
 }: {
+    readOnly?: boolean;
     message: SessionMessage;
     categories: { categoryID: number; name: string }[];
 }) {
@@ -16,7 +18,11 @@ export function CategoryProposalCard({
     const [selected, setSelected] = useState('');
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
-    if (!proposal) return null;
+
+    if (!proposal) {
+return null;
+}
+
     const decide = (decision: string) => {
         setBusy(true);
         setError('');
@@ -30,6 +36,7 @@ export function CategoryProposalCard({
             },
         );
     };
+
     return (
         <section
             className="space-y-3 rounded-xl border bg-card p-4"
@@ -37,7 +44,7 @@ export function CategoryProposalCard({
         >
             <p className="font-medium">Usulan kategori: {proposal.name}</p>
             <p className="text-sm text-muted-foreground">{proposal.reason}</p>
-            {proposal.status === 'pending' ? (
+            {proposal.status === 'pending' && !readOnly ? (
                 <>
                     <p className="text-xs text-muted-foreground">
                         Kategori belum dibuat. Draf menggunakan kategori

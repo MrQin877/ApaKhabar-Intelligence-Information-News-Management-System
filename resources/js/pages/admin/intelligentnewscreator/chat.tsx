@@ -1,5 +1,3 @@
-import { CategoryProposalCard } from '@/components/intelligent-news/category-proposal';
-import { SessionPanel } from '@/components/intelligent-news/session-panel';
 import { Head, router, usePage } from '@inertiajs/react';
 import {
     AlignCenter,
@@ -30,13 +28,7 @@ import {
     Undo2,
     X,
 } from 'lucide-react';
-import React, {
-    useCallback,
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
-} from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     AgentWorkTrace,
     SavedAgentWorkTrace,
@@ -45,6 +37,7 @@ import {
     AssistantConversationIntro,
     AssistantEmptyState,
 } from '@/components/intelligent-news/assistant-empty-state';
+import { CategoryProposalCard } from '@/components/intelligent-news/category-proposal';
 import {
     ChatMessage,
     PendingUserMessage,
@@ -56,6 +49,8 @@ import {
     QualityScoreBadge,
     QualityScoreBreakdown,
 } from '@/components/intelligent-news/quality-score';
+import { SessionPanel } from '@/components/intelligent-news/session-panel';
+import { SourcePicker } from '@/components/intelligent-news/source-picker';
 import type {
     Article,
     AssistantPageProps,
@@ -78,19 +73,12 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
     Collapsible,
     CollapsibleContent,
     CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogHeader,
-    DialogTitle,
-} from '@/components/ui/dialog';
+
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -106,7 +94,7 @@ import {
     MessageScrollerProvider,
     MessageScrollerViewport,
 } from '@/components/ui/message-scroller';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+
 import { Textarea } from '@/components/ui/textarea';
 import AppLayout from '@/layouts/app-layout';
 import type { BreadcrumbItem } from '@/types';
@@ -116,6 +104,7 @@ const breadcrumbs: BreadcrumbItem[] = [
 ];
 
 export default function NewsCreatorAgent({
+    conversationReadOnly = false,
     sessions = [],
     categories = [],
     informationItems,
@@ -261,6 +250,10 @@ export default function NewsCreatorAgent({
         [progressStorageKey, informationItems, pendingInformation],
     );
     useEffect(() => {
+        if (!newsSession?.id || conversationReadOnly) {
+            return;
+        }
+
         try {
             const saved = JSON.parse(
                 sessionStorage.getItem(progressStorageKey) ?? 'null',
@@ -277,7 +270,7 @@ export default function NewsCreatorAgent({
         } catch {
             /* No recoverable local progress. */
         }
-    }, [progressStorageKey]);
+    }, [progressStorageKey, newsSession?.id, conversationReadOnly]);
     useEffect(() => {
         if (!busy || !activeRequestId) {
             return;
@@ -417,7 +410,6 @@ export default function NewsCreatorAgent({
     const [pickerTab, setPickerTab] = useState<
         'information' | 'documents' | 'manual'
     >('information');
-    const [query, setQuery] = useState('');
     const [recommendations, setRecommendations] = useState<Recommendation[]>(
         [],
     );
@@ -448,23 +440,6 @@ export default function NewsCreatorAgent({
         processingFiles ||
         errors.guidance,
     );
-    const shownInformation = useMemo(() => {
-        const needle = query.trim().toLocaleLowerCase('id');
-
-        return needle
-            ? informationItems.filter((item) =>
-                  [
-                      item.title,
-                      item.summary,
-                      item.document.original_name,
-                      ...item.labels,
-                  ]
-                      .join(' ')
-                      .toLocaleLowerCase('id')
-                      .includes(needle),
-              )
-            : informationItems;
-    }, [informationItems, query]);
     const actions = errors.guidance
         ? [
               'Pilih informasi tersimpan',
@@ -591,8 +566,24 @@ export default function NewsCreatorAgent({
         setFiles((current) => [...current, ...incoming]);
     }
     function submit(answerOverrides: Record<string, string> = {}) {
+        if (conversationReadOnly) {
+            return;
+        }
+
         const submittedPrompt = prompt.trim();
         const submittedAnswers = { ...answers, ...answerOverrides };
+
+        if (
+            !files.length &&
+            !submittedPrompt &&
+            !Object.values(submittedAnswers).some(Boolean)
+        ) {
+            setGenerationErrors({
+                prompt: 'Tulis pertanyaan atau instruksi sebelum mengirim.',
+            });
+
+            return;
+        }
 
         if (files.length) {
             setActiveRequestId(null);
@@ -732,6 +723,7 @@ export default function NewsCreatorAgent({
             new Set([...informationIds, ...newlyApprovedIds]),
         );
         setInformationIds(approvedIds);
+
         if (newsSession.current_intent !== 'generate_news') {
             router.reload({
                 only: [
@@ -741,8 +733,10 @@ export default function NewsCreatorAgent({
                     'sessions',
                 ],
             });
+
             return;
         }
+
         setBusy(true);
         setElapsedSeconds(0);
         const requestId = crypto.randomUUID();
@@ -761,6 +755,7 @@ export default function NewsCreatorAgent({
 
     useEffect(() => {
         const current = sessions.find((s) => s.id === newsSession?.id);
+
         if (current?.request_id && !activeRequestId) {
             setActiveRequestId(current.request_id);
             setBusy(true);
@@ -771,6 +766,7 @@ export default function NewsCreatorAgent({
             () => router.reload({ only: ['sessions'] }),
             8000,
         );
+
         return () => window.clearInterval(timer);
     }, []);
 
@@ -981,7 +977,7 @@ export default function NewsCreatorAgent({
             <Head title="Asisten AI" />
             <div
                 ref={workspace}
-                className="-mt-16 flex h-screen min-h-[640px] flex-col overflow-hidden bg-background text-foreground lg:flex-row"
+                className="relative -mt-16 flex h-screen min-h-[640px] flex-col overflow-hidden bg-background text-foreground lg:flex-row"
             >
                 <SessionPanel sessions={sessions} current={newsSession?.id} />
                 <section
@@ -1002,6 +998,15 @@ export default function NewsCreatorAgent({
                                 className={`px-5 pt-32 ${conversationStarted ? 'pb-56' : 'pb-28'} ${previewOpen && editedArticle ? '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden' : ''}`}
                             >
                                 <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-4">
+                                    {conversationReadOnly && (
+                                        <MessageScrollerItem messageId="read-only">
+                                            <p className="rounded-lg border p-3 text-sm">
+                                                Berita sudah terbit. Percakapan
+                                                ini hanya dapat dibaca. Mulai
+                                                percakapan baru untuk perubahan.
+                                            </p>
+                                        </MessageScrollerItem>
+                                    )}
                                     <MessageScrollerItem messageId="welcome">
                                         {!conversationStarted ? (
                                             <AssistantEmptyState />
@@ -1021,6 +1026,9 @@ export default function NewsCreatorAgent({
                                                 messageId={`history-${message.id}`}
                                             >
                                                 <CategoryProposalCard
+                                                    readOnly={
+                                                        conversationReadOnly
+                                                    }
                                                     message={message}
                                                     categories={categories}
                                                 />
@@ -1032,6 +1040,20 @@ export default function NewsCreatorAgent({
                                         ))}
                                     {!busy &&
                                         (newsSession?.runs ?? [])
+                                            .filter(
+                                                (run) =>
+                                                    run.user_message_id ===
+                                                    [
+                                                        ...(newsSession?.messages ??
+                                                            []),
+                                                    ]
+                                                        .reverse()
+                                                        .find(
+                                                            (message) =>
+                                                                message.role ===
+                                                                'user',
+                                                        )?.id,
+                                            )
                                             .slice(-1)
                                             .map((run) => (
                                                 <MessageScrollerItem
@@ -1072,7 +1094,8 @@ export default function NewsCreatorAgent({
                                             />
                                         </MessageScrollerItem>
                                     )}
-                                    {reviewingExtraction &&
+                                    {!conversationReadOnly &&
+                                        reviewingExtraction &&
                                         !processingFiles && (
                                             <MessageScrollerItem
                                                 messageId="extracted-information-review"
@@ -1102,218 +1125,249 @@ export default function NewsCreatorAgent({
                                             />
                                         </MessageScrollerItem>
                                     )}
-                                    {questions.length > 0 && (
-                                        <MessageScrollerItem
-                                            messageId="clarification-round"
-                                            scrollAnchor
-                                        >
-                                            <div className="max-w-[94%] space-y-3">
-                                                <p className="text-sm leading-6 text-muted-foreground">
-                                                    Jawab pertanyaan penting ini
-                                                    bersama-sama. Setelah itu,
-                                                    AI langsung membuat draf
-                                                    tanpa pertanyaan tambahan.
-                                                </p>
-                                                <Card className="gap-3 border-border bg-card py-4 shadow-none">
-                                                    <CardHeader className="gap-2 px-4">
-                                                        <div className="flex items-start justify-between gap-3">
-                                                            <CardTitle className="text-sm leading-6">
-                                                                Harap tentukan:
-                                                            </CardTitle>
-                                                            <Badge
-                                                                variant="outline"
-                                                                className="shrink-0 text-[10px]"
-                                                            >
-                                                                {
-                                                                    questions.length
-                                                                }{' '}
-                                                                pertanyaan
-                                                            </Badge>
-                                                        </div>
-                                                    </CardHeader>
-                                                    <CardContent className="space-y-3 px-4">
-                                                        {questions.map(
-                                                            (
-                                                                question,
-                                                                questionIndex,
-                                                            ) => {
-                                                                const selectionType =
-                                                                    question.selection_type ??
-                                                                    'single';
-                                                                const selectedValues =
-                                                                    (
-                                                                        answers[
-                                                                            question
-                                                                                .field
-                                                                        ] ?? ''
-                                                                    )
-                                                                        .split(
-                                                                            selectionType ===
-                                                                                'ranked'
-                                                                                ? ' > '
-                                                                                : ', ',
+                                    {!conversationReadOnly &&
+                                        questions.length > 0 && (
+                                            <MessageScrollerItem
+                                                messageId="clarification-round"
+                                                scrollAnchor
+                                            >
+                                                <div className="max-w-[94%] space-y-3">
+                                                    <p className="text-sm leading-6 text-muted-foreground">
+                                                        Jawab pertanyaan penting
+                                                        ini bersama-sama.
+                                                        Setelah itu, AI langsung
+                                                        membuat draf tanpa
+                                                        pertanyaan tambahan.
+                                                    </p>
+                                                    <Card className="gap-3 border-border bg-card py-4 shadow-none">
+                                                        <CardHeader className="gap-2 px-4">
+                                                            <div className="flex items-start justify-between gap-3">
+                                                                <CardTitle className="text-sm leading-6">
+                                                                    Harap
+                                                                    tentukan:
+                                                                </CardTitle>
+                                                                <Badge
+                                                                    variant="outline"
+                                                                    className="shrink-0 text-[10px]"
+                                                                >
+                                                                    {
+                                                                        questions.length
+                                                                    }{' '}
+                                                                    pertanyaan
+                                                                </Badge>
+                                                            </div>
+                                                        </CardHeader>
+                                                        <CardContent className="space-y-3 px-4">
+                                                            {questions.map(
+                                                                (
+                                                                    question,
+                                                                    questionIndex,
+                                                                ) => {
+                                                                    const selectionType =
+                                                                        question.selection_type ??
+                                                                        'single';
+                                                                    const selectedValues =
+                                                                        (
+                                                                            answers[
+                                                                                question
+                                                                                    .field
+                                                                            ] ??
+                                                                            ''
                                                                         )
-                                                                        .filter(
-                                                                            Boolean,
-                                                                        );
+                                                                            .split(
+                                                                                selectionType ===
+                                                                                    'ranked'
+                                                                                    ? ' > '
+                                                                                    : ', ',
+                                                                            )
+                                                                            .filter(
+                                                                                Boolean,
+                                                                            );
 
-                                                                return (
-                                                                    <div
-                                                                        key={
-                                                                            question.field
-                                                                        }
-                                                                        className="space-y-3 rounded-xl border border-border p-3"
-                                                                    >
-                                                                        <div className="space-y-1">
-                                                                            <p className="text-xs font-medium text-primary">
-                                                                                {questionIndex +
-                                                                                    1}
+                                                                    return (
+                                                                        <div
+                                                                            key={
+                                                                                question.field
+                                                                            }
+                                                                            className="space-y-3 rounded-xl border border-border p-3"
+                                                                        >
+                                                                            <div className="space-y-1">
+                                                                                <p className="text-xs font-medium text-primary">
+                                                                                    {questionIndex +
+                                                                                        1}
 
-                                                                                .
-                                                                            </p>
-                                                                            <p className="text-sm leading-6 font-medium">
-                                                                                {
-                                                                                    question.question
-                                                                                }
-                                                                            </p>
-                                                                            {question.reason && (
-                                                                                <p className="text-xs leading-5 text-muted-foreground">
+                                                                                    .
+                                                                                </p>
+                                                                                <p className="text-sm leading-6 font-medium">
                                                                                     {
-                                                                                        question.reason
+                                                                                        question.question
                                                                                     }
                                                                                 </p>
+                                                                                {question.reason && (
+                                                                                    <p className="text-xs leading-5 text-muted-foreground">
+                                                                                        {
+                                                                                            question.reason
+                                                                                        }
+                                                                                    </p>
+                                                                                )}
+                                                                            </div>
+                                                                            {question.sources?.map(
+                                                                                (
+                                                                                    source,
+                                                                                ) => (
+                                                                                    <a
+                                                                                        key={
+                                                                                            source.url
+                                                                                        }
+                                                                                        href={
+                                                                                            source.url
+                                                                                        }
+                                                                                        target="_blank"
+                                                                                        rel="noreferrer"
+                                                                                        className="block rounded-lg border p-3 transition-colors hover:border-primary/50 hover:bg-muted/40"
+                                                                                    >
+                                                                                        <span className="line-clamp-1 text-sm font-medium">
+                                                                                            {
+                                                                                                source.title
+                                                                                            }
+                                                                                        </span>
+                                                                                        <span className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
+                                                                                            {
+                                                                                                source.snippet
+                                                                                            }
+                                                                                        </span>
+                                                                                    </a>
+                                                                                ),
                                                                             )}
-                                                                        </div>
-                                                                        {question.sources?.map(
-                                                                            (
-                                                                                source,
-                                                                            ) => (
-                                                                                <a
-                                                                                    key={
-                                                                                        source.url
-                                                                                    }
-                                                                                    href={
-                                                                                        source.url
-                                                                                    }
-                                                                                    target="_blank"
-                                                                                    rel="noreferrer"
-                                                                                    className="block rounded-lg border p-3 transition-colors hover:border-primary/50 hover:bg-muted/40"
-                                                                                >
-                                                                                    <span className="line-clamp-1 text-sm font-medium">
-                                                                                        {
-                                                                                            source.title
-                                                                                        }
-                                                                                    </span>
-                                                                                    <span className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
-                                                                                        {
-                                                                                            source.snippet
-                                                                                        }
-                                                                                    </span>
-                                                                                </a>
-                                                                            ),
-                                                                        )}
-                                                                        {question
-                                                                            .options
-                                                                            ?.length ? (
-                                                                            <div className="grid gap-2">
-                                                                                {question.options.map(
-                                                                                    (
-                                                                                        option,
-                                                                                        optionIndex,
-                                                                                    ) => {
-                                                                                        const selected =
-                                                                                            selectedValues.includes(
-                                                                                                option,
-                                                                                            );
+                                                                            {question
+                                                                                .options
+                                                                                ?.length ? (
+                                                                                <div className="grid gap-2">
+                                                                                    {question.options.map(
+                                                                                        (
+                                                                                            option,
+                                                                                            optionIndex,
+                                                                                        ) => {
+                                                                                            const selected =
+                                                                                                selectedValues.includes(
+                                                                                                    option,
+                                                                                                );
 
-                                                                                        return (
-                                                                                            <Button
-                                                                                                key={
-                                                                                                    option
-                                                                                                }
-                                                                                                type="button"
-                                                                                                variant={
-                                                                                                    selected
-                                                                                                        ? 'default'
-                                                                                                        : 'outline'
-                                                                                                }
-                                                                                                className="h-auto justify-start px-4 py-3 text-left whitespace-normal"
-                                                                                                disabled={
-                                                                                                    busy
-                                                                                                }
-                                                                                                onClick={() => {
-                                                                                                    const next =
-                                                                                                        selectionType ===
-                                                                                                        'single'
-                                                                                                            ? [
-                                                                                                                  option,
-                                                                                                              ]
-                                                                                                            : selected
-                                                                                                              ? selectedValues.filter(
-                                                                                                                    (
-                                                                                                                        value,
-                                                                                                                    ) =>
-                                                                                                                        value !==
-                                                                                                                        option,
-                                                                                                                )
-                                                                                                              : [
-                                                                                                                    ...selectedValues,
-                                                                                                                    option,
-                                                                                                                ];
-                                                                                                    setAnswers(
-                                                                                                        (
-                                                                                                            current,
-                                                                                                        ) => ({
-                                                                                                            ...current,
-                                                                                                            [question.field]:
-                                                                                                                next.join(
-                                                                                                                    selectionType ===
-                                                                                                                        'ranked'
-                                                                                                                        ? ' > '
-                                                                                                                        : ', ',
-                                                                                                                ),
-                                                                                                        }),
-                                                                                                    );
-                                                                                                }}
-                                                                                            >
-                                                                                                {selectionType ===
-                                                                                                    'ranked' &&
-                                                                                                    selected && (
-                                                                                                        <Badge variant="secondary">
-                                                                                                            {selectedValues.indexOf(
-                                                                                                                option,
-                                                                                                            ) +
-                                                                                                                1}
-                                                                                                        </Badge>
-                                                                                                    )}
-                                                                                                <span>
-                                                                                                    {optionIndex +
-                                                                                                        1}
-
-                                                                                                    .{' '}
-                                                                                                    {
+                                                                                            return (
+                                                                                                <Button
+                                                                                                    key={
                                                                                                         option
                                                                                                     }
-                                                                                                </span>
-                                                                                            </Button>
-                                                                                        );
-                                                                                    },
-                                                                                )}
+                                                                                                    type="button"
+                                                                                                    variant={
+                                                                                                        selected
+                                                                                                            ? 'default'
+                                                                                                            : 'outline'
+                                                                                                    }
+                                                                                                    className="h-auto justify-start px-4 py-3 text-left whitespace-normal"
+                                                                                                    disabled={
+                                                                                                        busy
+                                                                                                    }
+                                                                                                    onClick={() => {
+                                                                                                        const next =
+                                                                                                            selectionType ===
+                                                                                                            'single'
+                                                                                                                ? [
+                                                                                                                      option,
+                                                                                                                  ]
+                                                                                                                : selected
+                                                                                                                  ? selectedValues.filter(
+                                                                                                                        (
+                                                                                                                            value,
+                                                                                                                        ) =>
+                                                                                                                            value !==
+                                                                                                                            option,
+                                                                                                                    )
+                                                                                                                  : [
+                                                                                                                        ...selectedValues,
+                                                                                                                        option,
+                                                                                                                    ];
+                                                                                                        setAnswers(
+                                                                                                            (
+                                                                                                                current,
+                                                                                                            ) => ({
+                                                                                                                ...current,
+                                                                                                                [question.field]:
+                                                                                                                    next.join(
+                                                                                                                        selectionType ===
+                                                                                                                            'ranked'
+                                                                                                                            ? ' > '
+                                                                                                                            : ', ',
+                                                                                                                    ),
+                                                                                                            }),
+                                                                                                        );
+                                                                                                    }}
+                                                                                                >
+                                                                                                    {selectionType ===
+                                                                                                        'ranked' &&
+                                                                                                        selected && (
+                                                                                                            <Badge variant="secondary">
+                                                                                                                {selectedValues.indexOf(
+                                                                                                                    option,
+                                                                                                                ) +
+                                                                                                                    1}
+                                                                                                            </Badge>
+                                                                                                        )}
+                                                                                                    <span>
+                                                                                                        {optionIndex +
+                                                                                                            1}
+
+                                                                                                        .{' '}
+                                                                                                        {
+                                                                                                            option
+                                                                                                        }
+                                                                                                    </span>
+                                                                                                </Button>
+                                                                                            );
+                                                                                        },
+                                                                                    )}
+                                                                                    <Input
+                                                                                        value={
+                                                                                            question.options.includes(
+                                                                                                answers[
+                                                                                                    question
+                                                                                                        .field
+                                                                                                ] ??
+                                                                                                    '',
+                                                                                            )
+                                                                                                ? ''
+                                                                                                : (answers[
+                                                                                                      question
+                                                                                                          .field
+                                                                                                  ] ??
+                                                                                                  '')
+                                                                                        }
+                                                                                        onChange={(
+                                                                                            event,
+                                                                                        ) =>
+                                                                                            setAnswers(
+                                                                                                (
+                                                                                                    current,
+                                                                                                ) => ({
+                                                                                                    ...current,
+                                                                                                    [question.field]:
+                                                                                                        event
+                                                                                                            .target
+                                                                                                            .value,
+                                                                                                }),
+                                                                                            )
+                                                                                        }
+                                                                                        placeholder="Atau ketik jawaban sendiri…"
+                                                                                    />
+                                                                                </div>
+                                                                            ) : (
                                                                                 <Input
                                                                                     value={
-                                                                                        question.options.includes(
-                                                                                            answers[
-                                                                                                question
-                                                                                                    .field
-                                                                                            ] ??
-                                                                                                '',
-                                                                                        )
-                                                                                            ? ''
-                                                                                            : (answers[
-                                                                                                  question
-                                                                                                      .field
-                                                                                              ] ??
-                                                                                              '')
+                                                                                        answers[
+                                                                                            question
+                                                                                                .field
+                                                                                        ] ??
+                                                                                        ''
                                                                                     }
                                                                                     onChange={(
                                                                                         event,
@@ -1330,64 +1384,37 @@ export default function NewsCreatorAgent({
                                                                                             }),
                                                                                         )
                                                                                     }
-                                                                                    placeholder="Atau ketik jawaban sendiri…"
+                                                                                    placeholder="Ketik jawaban Anda…"
                                                                                 />
-                                                                            </div>
-                                                                        ) : (
-                                                                            <Input
-                                                                                value={
-                                                                                    answers[
-                                                                                        question
-                                                                                            .field
-                                                                                    ] ??
-                                                                                    ''
-                                                                                }
-                                                                                onChange={(
-                                                                                    event,
-                                                                                ) =>
-                                                                                    setAnswers(
-                                                                                        (
-                                                                                            current,
-                                                                                        ) => ({
-                                                                                            ...current,
-                                                                                            [question.field]:
-                                                                                                event
-                                                                                                    .target
-                                                                                                    .value,
-                                                                                        }),
-                                                                                    )
-                                                                                }
-                                                                                placeholder="Ketik jawaban Anda…"
-                                                                            />
-                                                                        )}
-                                                                    </div>
-                                                                );
-                                                            },
-                                                        )}
-                                                        <Button
-                                                            type="button"
-                                                            className="w-full"
-                                                            disabled={
-                                                                busy ||
-                                                                !allQuestionsAnswered
-                                                            }
-                                                            onClick={() =>
-                                                                submit()
-                                                            }
-                                                        >
-                                                            {busy ? (
-                                                                <LoaderCircle className="animate-spin" />
-                                                            ) : (
-                                                                <ArrowUp />
+                                                                            )}
+                                                                        </div>
+                                                                    );
+                                                                },
                                                             )}
-                                                            Gunakan jawaban dan
-                                                            buat draf
-                                                        </Button>
-                                                    </CardContent>
-                                                </Card>
-                                            </div>
-                                        </MessageScrollerItem>
-                                    )}
+                                                            <Button
+                                                                type="button"
+                                                                className="w-full"
+                                                                disabled={
+                                                                    busy ||
+                                                                    !allQuestionsAnswered
+                                                                }
+                                                                onClick={() =>
+                                                                    submit()
+                                                                }
+                                                            >
+                                                                {busy ? (
+                                                                    <LoaderCircle className="animate-spin" />
+                                                                ) : (
+                                                                    <ArrowUp />
+                                                                )}
+                                                                Gunakan jawaban
+                                                                dan buat draf
+                                                            </Button>
+                                                        </CardContent>
+                                                    </Card>
+                                                </div>
+                                            </MessageScrollerItem>
+                                        )}
                                     {recommendations.length > 0 && (
                                         <MessageScrollerItem messageId="recommendations">
                                             <Card className="max-w-[92%] gap-3 py-4 shadow-none">
@@ -1561,6 +1588,7 @@ export default function NewsCreatorAgent({
                                                         <Button
                                                             size="sm"
                                                             disabled={
+                                                                conversationReadOnly ||
                                                                 !generatedArticle.reviewed_at ||
                                                                 Boolean(
                                                                     generatedArticle
@@ -1610,7 +1638,7 @@ export default function NewsCreatorAgent({
                         </MessageScroller>
                     </MessageScrollerProvider>
                     <div
-                        className={`pointer-events-none absolute inset-x-0 z-20 px-4 ${conversationStarted ? 'bottom-0 bg-gradient-to-t from-background via-background/95 to-transparent pt-12 pb-3' : 'top-[53%] pt-4'}`}
+                        className={`pointer-events-none absolute inset-x-0 z-20 px-4 ${conversationReadOnly ? 'hidden' : ''} ${conversationStarted ? 'bottom-0 bg-gradient-to-t from-background via-background/95 to-transparent pt-12 pb-3' : 'top-[53%] pt-4'}`}
                     >
                         <div className="pointer-events-auto mx-auto w-full max-w-4xl space-y-2">
                             {questions.length === 0 && (
@@ -1869,194 +1897,40 @@ export default function NewsCreatorAgent({
                                                         </DropdownMenuItem>
                                                     </DropdownMenuContent>
                                                 </DropdownMenu>
-                                                <Dialog
-                                                    open={picker}
-                                                    onOpenChange={setPicker}
-                                                >
-                                                    <DialogContent className="max-h-[80vh] sm:max-w-2xl">
-                                                        <DialogHeader>
-                                                            <DialogTitle>
-                                                                Pilih sumber
-                                                                yang disetujui
-                                                            </DialogTitle>
-                                                            <DialogDescription>
-                                                                Hanya sumber
-                                                                terpilih yang
-                                                                dipakai untuk
-                                                                membuat berita.
-                                                            </DialogDescription>
-                                                        </DialogHeader>
-                                                        <Input
-                                                            value={query}
-                                                            onChange={(event) =>
-                                                                setQuery(
-                                                                    event.target
-                                                                        .value,
-                                                                )
-                                                            }
-                                                            placeholder="Cari sumber…"
-                                                        />
-                                                        <Tabs
-                                                            value={pickerTab}
-                                                            onValueChange={(
-                                                                value,
-                                                            ) =>
-                                                                setPickerTab(
-                                                                    value as typeof pickerTab,
-                                                                )
-                                                            }
-                                                        >
-                                                            <TabsList>
-                                                                <TabsTrigger value="information">
-                                                                    Informasi
-                                                                </TabsTrigger>
-                                                                <TabsTrigger value="documents">
-                                                                    Dokumen
-                                                                </TabsTrigger>
-                                                                <TabsTrigger value="manual">
-                                                                    Fakta manual
-                                                                </TabsTrigger>
-                                                            </TabsList>
-                                                            <TabsContent
-                                                                value="information"
-                                                                className="max-h-[48vh] space-y-2 overflow-y-auto"
-                                                            >
-                                                                {shownInformation.map(
-                                                                    (item) => (
-                                                                        <label
-                                                                            key={
-                                                                                item.id
-                                                                            }
-                                                                            className="flex cursor-pointer gap-3 rounded-lg border p-3 hover:bg-muted/50"
-                                                                        >
-                                                                            <Checkbox
-                                                                                checked={informationIds.includes(
-                                                                                    item.id,
-                                                                                )}
-                                                                                onCheckedChange={() =>
-                                                                                    toggle(
-                                                                                        informationIds,
-                                                                                        item.id,
-                                                                                        setInformationIds,
-                                                                                    )
-                                                                                }
-                                                                            />
-                                                                            <span>
-                                                                                <span className="block text-sm font-medium">
-                                                                                    {
-                                                                                        item.title
-                                                                                    }
-                                                                                </span>
-                                                                                <span className="line-clamp-2 text-xs text-muted-foreground">
-                                                                                    {
-                                                                                        item.summary
-                                                                                    }
-                                                                                </span>
-                                                                                <span className="text-xs text-primary">
-                                                                                    {
-                                                                                        item
-                                                                                            .document
-                                                                                            .original_name
-                                                                                    }
-                                                                                </span>
-                                                                            </span>
-                                                                        </label>
-                                                                    ),
-                                                                )}
-                                                            </TabsContent>
-                                                            <TabsContent
-                                                                value="documents"
-                                                                className="max-h-[48vh] space-y-2 overflow-y-auto"
-                                                            >
-                                                                {documents
-                                                                    .filter(
-                                                                        (
-                                                                            document,
-                                                                        ) =>
-                                                                            document.status ===
-                                                                            'ready',
-                                                                    )
-                                                                    .map(
-                                                                        (
-                                                                            document,
-                                                                        ) => (
-                                                                            <label
-                                                                                key={
-                                                                                    document.id
-                                                                                }
-                                                                                className="flex cursor-pointer items-center gap-3 rounded-lg border p-3 hover:bg-muted/50"
-                                                                            >
-                                                                                <Checkbox
-                                                                                    checked={documentIds.includes(
-                                                                                        document.id,
-                                                                                    )}
-                                                                                    onCheckedChange={() =>
-                                                                                        toggle(
-                                                                                            documentIds,
-                                                                                            document.id,
-                                                                                            setDocumentIds,
-                                                                                        )
-                                                                                    }
-                                                                                />
-                                                                                <FileText className="size-4" />
-                                                                                <span className="text-sm font-medium">
-                                                                                    {
-                                                                                        document.original_name
-                                                                                    }
-                                                                                </span>
-                                                                            </label>
-                                                                        ),
-                                                                    )}
-                                                            </TabsContent>
-                                                            <TabsContent value="manual">
-                                                                <div className="space-y-2 rounded-lg border p-3">
-                                                                    <p className="text-sm font-medium">
-                                                                        Fakta
-                                                                        yang
-                                                                        diberikan
-                                                                        moderator
-                                                                    </p>
-                                                                    <p className="text-xs text-muted-foreground">
-                                                                        Fakta
-                                                                        ini akan
-                                                                        ditandai
-                                                                        sebagai
-                                                                        user-provided
-                                                                        dan
-                                                                        tidak
-                                                                        dianggap
-                                                                        berasal
-                                                                        dari
-                                                                        dokumen.
-                                                                    </p>
-                                                                    <Textarea
-                                                                        value={
-                                                                            manualFact
-                                                                        }
-                                                                        onChange={(
-                                                                            event,
-                                                                        ) =>
-                                                                            setManualFact(
-                                                                                event
-                                                                                    .target
-                                                                                    .value,
-                                                                            )
-                                                                        }
-                                                                        placeholder="Contoh: Kegiatan akan berlangsung pada 20 September 2026."
-                                                                    />
-                                                                </div>
-                                                            </TabsContent>
-                                                        </Tabs>
-                                                        <Button
-                                                            onClick={() =>
-                                                                setPicker(false)
-                                                            }
-                                                        >
-                                                            Gunakan sumber
-                                                            terpilih
-                                                        </Button>
-                                                    </DialogContent>
-                                                </Dialog>
+                                                {picker && (
+                                                    <SourcePicker
+                                                        tab={pickerTab}
+                                                        information={
+                                                            informationItems
+                                                        }
+                                                        documents={documents}
+                                                        informationIds={
+                                                            informationIds
+                                                        }
+                                                        documentIds={
+                                                            documentIds
+                                                        }
+                                                        manualFact={manualFact}
+                                                        onClose={() =>
+                                                            setPicker(false)
+                                                        }
+                                                        onApply={(
+                                                            info,
+                                                            docs,
+                                                            fact,
+                                                        ) => {
+                                                            setInformationIds(
+                                                                info,
+                                                            );
+                                                            setDocumentIds(
+                                                                docs,
+                                                            );
+                                                            setManualFact(fact);
+                                                            setPicker(false);
+                                                        }}
+                                                    />
+                                                )}
+
                                                 {(composerOverflowing ||
                                                     composerExpanded) && (
                                                     <Button
@@ -2184,22 +2058,25 @@ export default function NewsCreatorAgent({
                                     <>
                                         <Button
                                             variant="outline"
+                                            disabled={conversationReadOnly}
                                             onClick={() => setEditMode(true)}
                                         >
                                             <Edit3 /> Edit
                                         </Button>
-                                        {!editedArticle.reviewed_at && (
-                                            <Button
-                                                variant="secondary"
-                                                onClick={markReviewed}
-                                            >
-                                                Tandai sudah ditinjau
-                                            </Button>
-                                        )}
+                                        {!conversationReadOnly &&
+                                            !editedArticle.reviewed_at && (
+                                                <Button
+                                                    variant="secondary"
+                                                    onClick={markReviewed}
+                                                >
+                                                    Tandai sudah ditinjau
+                                                </Button>
+                                            )}
                                         <AlertDialog>
                                             <AlertDialogTrigger asChild>
                                                 <Button
                                                     disabled={
+                                                        conversationReadOnly ||
                                                         !editedArticle.reviewed_at ||
                                                         Boolean(
                                                             editedArticle

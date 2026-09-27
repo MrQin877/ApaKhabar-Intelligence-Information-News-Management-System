@@ -1,8 +1,8 @@
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const path = require('node:path');
-const vm = require('node:vm');
 const { test } = require('node:test');
+const vm = require('node:vm');
 const ts = require('typescript');
 
 const source = ts.transpileModule(readFileSync(path.resolve('resources/js/lib/phone-password-reset.ts'), 'utf8'), {
@@ -18,11 +18,16 @@ function client(cookie, replies) {
             calls.push({ url, ...options });
             const reply = replies.shift();
             assert.ok(reply, 'Unexpected extra request');
-            if (reply.cookie) document.cookie = reply.cookie;
+
+            if (reply.cookie) {
+document.cookie = reply.cookie;
+}
+
             return { status: reply.status, ok: reply.status < 400, json: async () => reply.data ?? {} };
         },
     };
     vm.runInNewContext(source, context);
+
     return { request: context.exports.phoneResetRequest, calls };
 }
 

@@ -71,6 +71,7 @@ export interface AgentRunEvent {
 }
 
 export interface AgentRun {
+    user_message_id?: number;
     id: number;
     status:
         | 'queued'
@@ -156,6 +157,7 @@ export interface Recommendation {
 }
 
 export interface AssistantPageProps {
+    conversationReadOnly?: boolean;
     sessions?: import('./session-panel').AssistantSessionSummary[];
     categories?: { categoryID: number; name: string }[];
     informationItems: InformationItem[];

@@ -7,6 +7,7 @@ use App\Models\IntelligenceDocument;
 use App\Models\IntelligenceInformation;
 use App\Models\IntelligentNewsSession;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Validation\ValidationException;
 
 class AssistantConversationService
 {
@@ -16,13 +17,23 @@ class AssistantConversationService
             ? IntelligentNewsSession::where('created_by', $userId)->findOrFail($input['session_id'])
             : IntelligentNewsSession::create(['created_by' => $userId, 'status' => 'collecting_sources',
                 'selected_document_ids' => [], 'selected_information_ids' => [], 'user_facts' => [], 'pending_questions' => [], 'conflicts' => []]);
+        $session?->assertWritable();
+
+        $message = trim($input['prompt'] ?? '');
+        if ($message === '') {
+            throw ValidationException::withMessages(['prompt' => 'Tulis pertanyaan atau instruksi sebelum mengirim.']);
+        }
+        // Unambiguous current-turn commands must reach the editorial clarification graph.
+        if (! preg_match('/\b(jangan|bukan|belum|do not|don.t|not now)\b/i', $message)
+            && preg_match('/^(?:(?:tolong|silakan|please)\s+)?(?:buat(?:kan)?|tulis(?:kan)?|susun(?:kan)?|hasilkan|generate|create|write|make)\s+(?:draf(?:t)?\s+)?(?:berita|artikel|news|article)\b/iu', $message)) {
+            return null;
+        }
         $ids = $input['information_ids'] ?? $session->selected_information_ids ?? [];
         $docs = array_unique(array_merge($input['document_ids'] ?? [], $session->selected_document_ids ?? []));
         $items = IntelligenceInformation::where('is_active', true)
             ->whereHas('document', fn ($q) => $q->where('uploaded_by', $userId)->whereNull('archived_at'))
             ->where(fn ($q) => $q->whereIn('id', $ids)->orWhereIn('document_id', $docs))
             ->limit(200)->get();
-        $message = trim($input['prompt'] ?? '') ?: 'Apa yang dapat dilakukan dengan informasi ini?';
         $history = $session->messages()->reorder()->latest('id')->limit(12)->get()->reverse()
             ->map(fn ($m) => ['role' => $m->role, 'content' => $m->content])->values()->all();
         $client = Http::acceptJson()->connectTimeout(5)->timeout(1200);

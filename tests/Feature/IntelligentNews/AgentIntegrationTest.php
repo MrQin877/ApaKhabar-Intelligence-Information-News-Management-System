@@ -335,13 +335,13 @@ test('generation rereads only selected owner approved original files', function 
     Storage::disk('local')->put($source->document->storage_path, 'Original workshop facts.');
     $normalized = ['document_id' => 'original', 'filename' => 'workshop.txt', 'media_type' => 'text/plain',
         'character_count' => 24, 'elements' => [['element_type' => 'paragraph', 'content' => 'Original workshop facts.',
-            'source' => ['filename' => 'workshop.txt', 'paragraph' => 1]]]];
+            'source' => ['filename' => 'workshop.txt', 'paragraph' => 1], 'metadata' => (object) []]]];
     Http::fake([
         '*/documents/upload' => Http::response($normalized),
         '*/news/generate' => Http::response(['status' => 'insufficient_evidence', 'guidance' => 'Test complete.']),
     ]);
     app(NewsGenerationService::class)->generate($owner->getKey(), ['information_ids' => [$source->id, $foreign->id], 'prompt' => 'Buat berita']);
     Http::assertSent(fn ($request) => str_ends_with($request->url(), '/news/generate')
-        && (array) $request['original_documents'] === [(string) $source->id => $normalized]);
+        && json_encode($request['original_documents']) === json_encode((object) [(string) $source->id => $normalized]));
     Http::assertSentCount(2);
 });

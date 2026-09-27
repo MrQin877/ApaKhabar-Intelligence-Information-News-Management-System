@@ -169,7 +169,8 @@ class NewsCreatorController extends Controller
         }
 
         $sessions = IntelligentNewsSession::where('created_by', $request->user()->getKey())
-            ->whereNull('archived_at')->latest('updated_at')->limit(30)->get()->map(function ($session) use ($request) {
+            ->whereNull('archived_at')->whereDoesntHave('draft', fn ($q) => $q->where('status', 'published'))
+            ->latest('updated_at')->get()->map(function ($session) use ($request) {
                 $queued = $session->messages()->reorder()->latest('id')->where('intent', 'queued_request')->first();
                 $requestId = data_get($queued?->payload, 'request_id');
                 $progress = $requestId ? Cache::get(GenerateIntelligentNews::cacheKey($request->user()->getKey(), $requestId)) : null;
@@ -177,8 +178,11 @@ class NewsCreatorController extends Controller
 
                 return ['id' => $session->id, 'title' => $session->title ?: mb_substr($session->prompt ?: 'Dokumen dan informasi', 0, 70),
                     'status' => in_array($progress['status'] ?? '', ['queued', 'running', 'failed']) ? $progress['status'] : ($pendingCategory ? 'awaiting_approval' : $session->status),
-                    'request_id' => in_array($progress['status'] ?? '', ['queued', 'running']) ? $requestId : null];
-            });
+                    'request_id' => in_array($progress['status'] ?? '', ['queued', 'running']) ? $requestId : null,
+                    'has_draft' => (bool) $session->draft_id,
+                    'recent' => $session->updated_at->greaterThanOrEqualTo(now()->subDays(7))];
+            })->filter(fn ($session) => in_array($session['status'], ['queued', 'running', 'processing_files', 'awaiting_answers', 'awaiting_approval', 'ready_to_generate'])
+                || (! $session['has_draft'] && $session['recent']))->values();
 
         return inertia('admin/intelligentnewscreator/chat', [
             'sessions' => $sessions,
@@ -191,6 +195,7 @@ class NewsCreatorController extends Controller
             'initialPrompt' => $request->query('prompt'),
             'initialManualFact' => $request->query('fact'),
             'autoGenerate' => $request->boolean('generate'),
+            'conversationReadOnly' => $newsSession?->draft?->status === 'published',
             'newsSession' => $newsSession,
             'pendingInformation' => $pendingInformation,
         ]);
@@ -216,6 +221,9 @@ class NewsCreatorController extends Controller
             'keywords' => ['nullable', 'array', 'max:20'],
             'keywords.*' => ['string', 'max:100'],
         ]);
+        if (! empty($validated['session_id'])) {
+            IntelligentNewsSession::where('created_by', $request->user()->getKey())->findOrFail($validated['session_id'])->assertWritable();
+        }
         $disk = config('filesystems.default');
         $documents = collect($validated['documents'])->map(function ($file) use ($request, $validated, $disk) {
             $path = $file->store('intelligence-documents', $disk);
@@ -267,6 +275,7 @@ class NewsCreatorController extends Controller
                 ->where('created_by', $request->user()->getKey())
                 ->findOrFail($validated['session_id'])
             : new IntelligentNewsSession;
+        $session->assertWritable();
         $existingDocumentIds = collect($session->selected_document_ids ?? []);
         $session->fill([
             'created_by' => $request->user()->getKey(),
@@ -350,7 +359,27 @@ class NewsCreatorController extends Controller
         abort_unless($disk->exists($document->storage_path), 404, 'File dokumen tidak ditemukan.');
 
         $extension = strtolower(pathinfo($document->original_name, PATHINFO_EXTENSION));
-        $previewable = in_array($extension, ['pdf', 'jpg', 'jpeg', 'png', 'txt', 'csv'], true);
+        if ($request->boolean('download')) {
+            return $disk->download($document->storage_path, $document->original_name);
+        }
+        if (in_array($extension, ['docx', 'xlsx', 'xlsm', 'csv'], true)) {
+            try {
+                $normalized = $this->aiClient()->attach('file', $disk->get($document->storage_path), $document->original_name)
+                    ->post(rtrim(config('services.apakhabar_ai.url'), '/').'/documents/upload')->throw()->json();
+                $elements = collect($normalized['elements'] ?? []);
+                $groups = $elements->groupBy(fn ($element) => data_get($element, 'source.sheet') ?: 'Isi dokumen');
+
+                return response()->view('documents.preview', ['document' => $document, 'groups' => $groups, 'error' => null])
+                    ->header('X-Content-Type-Options', 'nosniff')->header('Cache-Control', 'private, no-store');
+            } catch (\Throwable $exception) {
+                report($exception);
+
+                return response()->view('documents.preview', ['document' => $document, 'groups' => collect(),
+                    'error' => 'Pratinjau belum tersedia. Pastikan layanan AI aktif atau unduh file asli.'], 503);
+            }
+        }
+
+        $previewable = in_array($extension, ['pdf', 'jpg', 'jpeg', 'png', 'txt', 'csv', 'docx', 'xlsx', 'xlsm'], true);
 
         if (! $previewable) {
             return $disk->download($document->storage_path, $document->original_name);
@@ -447,6 +476,7 @@ class NewsCreatorController extends Controller
                     : IntelligentNewsSession::create(['created_by' => $request->user()->getKey(), 'status' => 'collecting_sources',
                         'title' => mb_substr($validated['prompt'] ?? 'Percakapan baru', 0, 100),
                         'selected_document_ids' => [], 'selected_information_ids' => [], 'user_facts' => [], 'pending_questions' => [], 'conflicts' => []]);
+                $session->assertWritable();
                 $validated['session_id'] = $session->id;
                 $session->messages()->create(['role' => 'system', 'intent' => 'queued_request', 'content' => 'Permintaan sedang diproses.', 'payload' => ['request_id' => $validated['request_id']]]);
                 $session->touch();
@@ -880,6 +910,8 @@ class NewsCreatorController extends Controller
                 'type' => match (strtolower(pathinfo($document->original_name, PATHINFO_EXTENSION))) {
                     'jpg', 'jpeg', 'png' => 'img',
                     'pdf' => 'pdf',
+                    'xlsx', 'xlsm', 'csv' => 'spreadsheet',
+                    'txt' => 'txt',
                     default => 'docx',
                 },
                 'size' => number_format($document->file_size / 1024 / 1024, 2).' MB',
@@ -891,7 +923,7 @@ class NewsCreatorController extends Controller
                 'attempts' => $document->processing_attempts,
                 'previewable' => in_array(
                     strtolower(pathinfo($document->original_name, PATHINFO_EXTENSION)),
-                    ['pdf', 'jpg', 'jpeg', 'png', 'txt', 'csv'],
+                    ['pdf', 'jpg', 'jpeg', 'png', 'txt', 'csv', 'docx', 'xlsx', 'xlsm'],
                     true,
                 ),
                 'category' => 'Information',

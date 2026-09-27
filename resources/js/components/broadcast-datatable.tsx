@@ -1,25 +1,16 @@
 "use client"
 
-import { useState } from "react"
 import { router } from '@inertiajs/react'
 import {
   flexRender,
-  useTable,
-  type ColumnDef,
-  type RowData,
-  type SortingState,
-  type ColumnFiltersState,
+  useTable
+  
+  
+  
+  
 } from "@tanstack/react-table"
-import { features, type DataTableFeatures } from "@/components/broadcast-data-table-features"
+import type {ColumnDef, RowData, SortingState, ColumnFiltersState} from "@tanstack/react-table";
 
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import {
   ChevronDown,
   Columns3,
@@ -35,6 +26,9 @@ import {
   CircleCheck,
   Users,
 } from "lucide-react"
+import { useState } from "react"
+import { features  } from "@/components/broadcast-data-table-features"
+import type {DataTableFeatures} from "@/components/broadcast-data-table-features";
 
 import {
   AlertDialog,
@@ -60,10 +54,13 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import {
-  Tabs,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs"
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination"
 import {
   Select,
   SelectContent,
@@ -72,13 +69,18 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from "@/components/ui/pagination"
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs"
 
 interface DataTableProps<TData extends RowData, TValue = unknown> {
   columns: ColumnDef<DataTableFeatures, TData, TValue>[]
@@ -591,6 +593,7 @@ export function DataTable<TData extends RowData, TValue = unknown>({ columns, da
 
               {Array.from({ length: Math.max(totalPages, 1) }, (_, index) => index + 1).map((page) => {
                 const isActive = page - 1 === currentPage
+
                 return (
                   <PaginationItem key={page}>
                     <PaginationLink

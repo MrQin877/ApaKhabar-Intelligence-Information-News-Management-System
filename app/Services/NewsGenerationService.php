@@ -58,6 +58,8 @@ class NewsGenerationService
                 ->findOrFail($validated['session_id']);
         }
 
+        $session?->assertWritable();
+
         $documentIds = collect($validated['document_ids'] ?? $session?->selected_document_ids ?? [])
             ->map(fn ($id) => (int) $id);
         $documentIds = IntelligenceDocument::query()
@@ -312,7 +314,7 @@ class NewsGenerationService
             if ($exception instanceof RequestException && $exception->response->status() === 422) {
                 $detail = $exception->response->json('detail');
                 $message = is_array($detail)
-                    ? collect($detail)->map(fn ($error) => data_get($error, 'msg'))->filter()->implode('; ')
+                    ? collect($detail)->map(fn ($error) => data_get($error, 'msg'))->filter()->unique()->take(3)->implode('; ')
                     : (string) $detail;
 
                 return ['errors' => [
@@ -502,7 +504,8 @@ class NewsGenerationService
                 // Read only owner-scoped, selected approved sources, never a model-supplied path.
                 $normalized = $this->aiClient()->attach('file', $disk->get($document->storage_path), $document->original_name)
                     ->post(rtrim(config('services.apakhabar_ai.url'), '/').'/documents/upload')
-                    ->throw()->json();
+                    ->throw()->object();
+                // Preserve JSON objects (including empty metadata) when forwarding to Python.
                 foreach ($group as $item) {
                     $originals[(string) $item->id] = $normalized;
                 }

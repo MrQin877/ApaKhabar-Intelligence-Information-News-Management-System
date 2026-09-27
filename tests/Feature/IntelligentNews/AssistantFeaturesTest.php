@@ -13,6 +13,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia;
 
 function assistantOwner()
@@ -119,4 +120,51 @@ test('stored files can be explicitly extracted later', function () {
     Queue::assertPushed(ProcessIntelligenceDocument::class);
     expect($session->fresh()->status)->toBe('processing_files');
     expect(IntelligentNewsDraft::count())->toBe(0);
+});
+
+test('explicit draft command bypasses conversational misclassification', function () {
+    $user = assistantOwner();
+    $session = assistantSession($user);
+    Http::fake(['*/news/generate' => Http::response(['guidance' => 'Need evidence.'])]);
+    app(NewsGenerationService::class)->generate($user->getKey(), ['mode' => 'auto', 'session_id' => $session->id, 'prompt' => 'Buat draf berita']);
+    Http::assertSent(fn ($request) => str_ends_with($request->url(), '/news/generate'));
+    Http::assertNotSent(fn ($request) => str_ends_with($request->url(), '/assistant/respond'));
+});
+
+test('empty conversation is not replaced with an invented user question', function () {
+    $user = assistantOwner();
+    $session = assistantSession($user);
+    Http::fake();
+    expect(fn () => app(NewsGenerationService::class)->generate($user->getKey(), ['mode' => 'auto', 'session_id' => $session->id, 'prompt' => '']))->toThrow(ValidationException::class);
+    Http::assertNothingSent();
+    expect($session->messages()->count())->toBe(0);
+});
+
+test('history hides old temporary chats and completed draft conversations but keeps active work', function () {
+    $user = assistantOwner();
+    $recent = assistantSession($user);
+    $old = assistantSession($user);
+    $old->forceFill(['updated_at' => now()->subDays(8)])->save();
+    $active = assistantSession($user);
+    $active->forceFill(['status' => 'processing_files', 'updated_at' => now()->subDays(8)])->save();
+    [$message, $draft] = assistantProposal($user);
+    $draftSession = $message->session;
+    $message->delete();
+    $draftSession->update(['draft_id' => $draft->id, 'status' => 'draft_generated']);
+    $this->actingAs($user)->get(route('admin.assistant.index'))->assertInertia(fn (AssertableInertia $page) => $page
+        ->where('newsSession', null)->has('sessions', 2)
+        ->where('sessions', fn ($items) => collect($items)->pluck('id')->sort()->values()->all() === collect([$recent->id, $active->id])->sort()->values()->all()));
+    expect(IntelligentNewsSession::find($old->id))->not->toBeNull();
+});
+
+test('published conversations are hidden and reject further messages', function () {
+    $user = assistantOwner();
+    [$message, $draft] = assistantProposal($user);
+    $session = $message->session;
+    $session->update(['draft_id' => $draft->id, 'status' => 'draft_generated']);
+    $draft->update(['status' => 'published']);
+    $this->actingAs($user)->get(route('admin.assistant.index', ['session' => $session->id]))->assertInertia(fn (AssertableInertia $page) => $page->has('sessions', 0)->where('conversationReadOnly', true));
+    Http::fake();
+    $this->post(route('admin.assistant.generate'), ['session_id' => $session->id, 'prompt' => 'Buat berita'])->assertStatus(409);
+    Http::assertNothingSent();
 });

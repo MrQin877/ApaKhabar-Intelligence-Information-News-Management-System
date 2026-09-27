@@ -110,6 +110,7 @@ export function DocIcon({ type }: { type: DocType }) {
             </svg>
         );
     }
+
     if (type === 'docx') {
         return (
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -118,6 +119,7 @@ export function DocIcon({ type }: { type: DocType }) {
             </svg>
         );
     }
+
     return (
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
             <rect x="3" y="4" width="18" height="16" rx="1.5" />

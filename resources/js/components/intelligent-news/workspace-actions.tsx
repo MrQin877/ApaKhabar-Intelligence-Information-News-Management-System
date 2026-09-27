@@ -1,4 +1,4 @@
-import { Archive, History, PanelRightOpen } from 'lucide-react';
+import { Archive, PanelRightOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 type WorkspaceActionsProps = {
@@ -11,7 +11,6 @@ type WorkspaceActionsProps = {
 export function WorkspaceActions({
     canOpenPreview,
     onOpenPreview,
-    onOpenHistory,
     onOpenDocuments,
 }: WorkspaceActionsProps) {
     return (
@@ -21,14 +20,6 @@ export function WorkspaceActions({
                     <PanelRightOpen /> Pratinjau
                 </Button>
             )}
-            <Button
-                variant="ghost"
-                size="sm"
-                onClick={onOpenHistory}
-                title="Riwayat percakapan dan draf"
-            >
-                <History /> Riwayat
-            </Button>
             <Button variant="ghost" size="sm" onClick={onOpenDocuments}>
                 <Archive /> Dokumen
             </Button>
