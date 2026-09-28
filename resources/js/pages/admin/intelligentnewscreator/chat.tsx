@@ -97,6 +97,7 @@ import {
 
 import { Textarea } from '@/components/ui/textarea';
 import AppLayout from '@/layouts/app-layout';
+import { csrfPost } from '@/lib/csrf-request';
 import type { BreadcrumbItem } from '@/types';
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -138,7 +139,7 @@ export default function NewsCreatorAgent({
         informationAttachments?: InformationItem[];
     } | null>(null);
     const [files, setFiles] = useState<File[]>([]);
-    const [manualFact, setManualFact] = useState(initialManualFact ?? '');
+    const [manualFact] = useState(initialManualFact ?? '');
     const [workflowMode, setWorkflowMode] = useState<
         'news' | 'extract' | 'search' | null
     >(null);
@@ -201,20 +202,9 @@ export default function NewsCreatorAgent({
             }
 
             try {
-                const response = await fetch(
+                const response = await csrfPost(
                     '/admin/ai-assistant/generate-async',
-                    {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            Accept: 'application/json',
-                            'X-CSRF-TOKEN':
-                                document.querySelector<HTMLMetaElement>(
-                                    'meta[name="csrf-token"]',
-                                )?.content ?? '',
-                        },
-                        body: JSON.stringify(payload),
-                    },
+                    payload,
                 );
                 const data = await response.json();
 
@@ -407,7 +397,7 @@ export default function NewsCreatorAgent({
         };
     }, [busy, activeRequestId, progressStorageKey]);
     const [picker, setPicker] = useState(false);
-    const [pickerTab, setPickerTab] = useState<
+    const [, setPickerTab] = useState<
         'information' | 'documents' | 'manual'
     >('information');
     const [recommendations, setRecommendations] = useState<Recommendation[]>(
@@ -830,26 +820,21 @@ export default function NewsCreatorAgent({
         setFindingRelated(true);
 
         try {
-            const token =
-                document.querySelector<HTMLMetaElement>(
-                    'meta[name="csrf-token"]',
-                )?.content ?? '';
-            const response = await fetch(
+            const response = await csrfPost(
                 '/admin/ai-assistant/recommendations',
-                {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        Accept: 'application/json',
-                        'X-CSRF-TOKEN': token,
-                    },
-                    body: JSON.stringify({ query: prompt.trim() }),
-                },
+                { query: prompt.trim() },
             );
             const data = (await response.json()) as {
                 recommendations?: Recommendation[];
             };
             setRecommendations(data.recommendations ?? []);
+        } catch (error) {
+            setGenerationErrors({
+                generation:
+                    error instanceof Error
+                        ? error.message
+                        : 'Pencarian sumber gagal.',
+            });
         } finally {
             setFindingRelated(false);
         }
@@ -1899,7 +1884,6 @@ export default function NewsCreatorAgent({
                                                 </DropdownMenu>
                                                 {picker && (
                                                     <SourcePicker
-                                                        tab={pickerTab}
                                                         information={
                                                             informationItems
                                                         }
@@ -1910,14 +1894,15 @@ export default function NewsCreatorAgent({
                                                         documentIds={
                                                             documentIds
                                                         }
-                                                        manualFact={manualFact}
+                                                        pendingInformation={
+                                                            pendingInformation
+                                                        }
                                                         onClose={() =>
                                                             setPicker(false)
                                                         }
                                                         onApply={(
                                                             info,
                                                             docs,
-                                                            fact,
                                                         ) => {
                                                             setInformationIds(
                                                                 info,
@@ -1925,7 +1910,6 @@ export default function NewsCreatorAgent({
                                                             setDocumentIds(
                                                                 docs,
                                                             );
-                                                            setManualFact(fact);
                                                             setPicker(false);
                                                         }}
                                                     />
