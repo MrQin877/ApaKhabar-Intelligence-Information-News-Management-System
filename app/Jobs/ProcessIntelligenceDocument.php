@@ -3,8 +3,9 @@
 namespace App\Jobs;
 
 use App\Models\IntelligenceDocument;
-use App\Models\IntelligenceInformation;
 use App\Models\IntelligenceExtractionRequest;
+use App\Models\IntelligenceInformation;
+use App\Models\IntelligentNewsMessage;
 use App\Models\IntelligentNewsSession;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -14,9 +15,11 @@ use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Throwable;
 
 class ProcessIntelligenceDocument implements ShouldBeUnique, ShouldQueue
@@ -25,9 +28,11 @@ class ProcessIntelligenceDocument implements ShouldBeUnique, ShouldQueue
 
     public int $tries = 5;
 
-    public int $timeout = 210;
+    public int $timeout = 1250;
 
-    public int $uniqueFor = 600;
+    public bool $failOnTimeout = true;
+
+    public int $uniqueFor = 1500;
 
     public function __construct(
         public int $documentId,
@@ -46,7 +51,7 @@ class ProcessIntelligenceDocument implements ShouldBeUnique, ShouldQueue
 
     public function middleware(): array
     {
-        return [(new WithoutOverlapping($this->uniqueId()))->releaseAfter(10)->expireAfter(300)];
+        return [(new WithoutOverlapping($this->uniqueId()))->releaseAfter(10)->expireAfter(1300)];
     }
 
     public function handle(): void
@@ -73,24 +78,29 @@ class ProcessIntelligenceDocument implements ShouldBeUnique, ShouldQueue
             'last_attempted_at' => now(),
         ]);
 
+        $progressId = (string) Str::uuid();
+        Cache::put('document-progress:'.$document->id, $progressId, now()->addDay());
         $request = $this->client()->attach(
-                'files',
-                Storage::disk($document->storage_disk)->get($document->storage_path),
-                $document->original_name,
-            );
+            'files',
+            Storage::disk($document->storage_disk)->get($document->storage_path),
+            $document->original_name,
+        );
         $result = $request->post(
-                rtrim(config('services.apakhabar_ai.url'), '/').'/documents/batch-extract',
-                [
-                    'extraction_mode' => $extractionRequest?->mode ?? 'general',
-                    'extraction_query' => $extractionRequest?->normalized_query,
-                    'keywords_json' => json_encode($extractionRequest?->keywords ?? []),
-                ],
-            )
+            rtrim(config('services.apakhabar_ai.url'), '/').'/documents/batch-extract',
+            [
+                'progress_id' => $progressId,
+                'extraction_mode' => $extractionRequest?->mode ?? 'general',
+                'extraction_query' => $extractionRequest?->normalized_query,
+                'keywords_json' => json_encode($extractionRequest?->keywords ?? []),
+            ],
+        )
             ->throw()
             ->json('results.0');
 
-        if (($result['status'] ?? null) !== 'ready' || empty($result['extraction']['information'])) {
-            throw new \RuntimeException($result['error'] ?? 'No information was extracted.');
+        if (($result['status'] ?? null) !== 'ready') {
+            $this->fail(new \RuntimeException($result['error'] ?? 'Document extraction failed.'));
+
+            return;
         }
 
         DB::transaction(function () use ($document, $extractionRequest, $result): void {
@@ -101,10 +111,13 @@ class ProcessIntelligenceDocument implements ShouldBeUnique, ShouldQueue
             }
             foreach ($result['extraction']['information'] as $index => $item) {
                 $quality = $this->extractionQuality($item);
-                IntelligenceInformation::create([
+                $information = IntelligenceInformation::withTrashed()->updateOrCreate([
                     'document_id' => $document->id,
                     'extraction_request_id' => $extractionRequest?->id,
                     'item_index' => $index,
+                ], [
+                    'reviewed_by' => null,
+                    'reviewed_at' => null,
                     'type' => $item['type'],
                     'title' => $item['title'],
                     'summary' => $item['summary'],
@@ -122,13 +135,16 @@ class ProcessIntelligenceDocument implements ShouldBeUnique, ShouldQueue
                         json_encode($item['fields'] ?? []),
                     ]),
                 ]);
+                if ($information->trashed()) {
+                    $information->restore();
+                }
             }
 
             $document->update([
                 'ai_document_id' => $result['document']['document_id'] ?? null,
                 'character_count' => $result['document']['character_count'] ?? null,
                 'status' => 'ready',
-                'embedding_status' => ($result['chunks_indexed'] ?? 0) > 0 ? 'ready' : 'failed',
+                'embedding_status' => ($result['chunks_indexed'] ?? 0) > 0 ? 'ready' : 'pending',
                 'error_message' => null,
                 'processed_at' => now(),
             ]);
@@ -156,13 +172,37 @@ class ProcessIntelligenceDocument implements ShouldBeUnique, ShouldQueue
                 'completed_at' => now(),
             ]);
         }
+        $document = IntelligenceDocument::find($this->documentId);
+        IntelligentNewsSession::where('status', 'processing_files')
+            ->get()
+            ->filter(fn (IntelligentNewsSession $session) => in_array(
+                $this->documentId,
+                array_map('intval', $session->selected_document_ids ?? []),
+                true,
+            ))
+            ->each(function (IntelligentNewsSession $session) use ($document): void {
+                $session->update(['status' => 'collecting_sources', 'last_message_at' => now()]);
+                IntelligentNewsMessage::create([
+                    'session_id' => $session->id,
+                    'role' => 'assistant',
+                    'intent' => 'document_processing_failed',
+                    'content' => 'Saya tidak dapat memproses '.($document?->original_name ?? 'dokumen tersebut').'. Periksa format file atau coba proses ulang dari pustaka dokumen.',
+                    'payload' => ['status' => 'failed', 'document_id' => $this->documentId],
+                ]);
+            });
     }
 
     private function client(): PendingRequest
     {
-        return Http::acceptJson()
+        $client = Http::acceptJson()
             ->connectTimeout(max(1, (int) config('services.apakhabar_ai.connect_timeout', 5)))
-            ->timeout(max(1, (int) config('services.apakhabar_ai.timeout', 180)));
+            ->timeout(min(1200, max(1, (int) config('services.apakhabar_ai.timeout', 1200))));
+
+        if ($token = config('services.apakhabar_ai.token')) {
+            $client->withHeaders(['X-ApaKhabar-Service-Token' => $token]);
+        }
+
+        return $client;
     }
 
     /**
@@ -208,7 +248,33 @@ class ProcessIntelligenceDocument implements ShouldBeUnique, ShouldQueue
                     ->pluck('status');
 
                 if ($statuses->isNotEmpty() && $statuses->every(fn (string $status) => $status === 'ready')) {
-                    $session->update(['status' => 'ready_to_generate']);
+                    $informationCount = IntelligenceInformation::whereIn(
+                        'document_id',
+                        $session->selected_document_ids ?? [],
+                    )->count();
+                    $isGeneration = $session->current_intent === 'generate_news';
+                    $session->update([
+                        'status' => $isGeneration ? 'ready_to_generate' : 'collecting_sources',
+                        'last_message_at' => now(),
+                    ]);
+                    IntelligentNewsMessage::create([
+                        'session_id' => $session->id,
+                        'role' => 'assistant',
+                        'intent' => 'document_processed',
+                        'content' => "Pemrosesan dokumen selesai. Saya menemukan {$informationCount} informasi dengan bukti sumber. Tinjau dan setujui informasi yang sesuai sebelum digunakan untuk membuat berita.",
+                        'payload' => [
+                            'status' => 'ready',
+                            'information_count' => $informationCount,
+                            'document_ids' => $session->selected_document_ids ?? [],
+                        ],
+                    ]);
+                    if (in_array($session->current_intent, ['question', 'analysis'], true) && filled($session->prompt)) {
+                        $requestId = (string) Str::uuid();
+                        Cache::put(GenerateIntelligentNews::cacheKey($session->created_by, $requestId), ['status' => 'queued', 'events' => []], now()->addDay());
+                        $session->messages()->create(['role' => 'system', 'intent' => 'queued_request', 'content' => 'Menganalisis hasil ekstraksi.', 'payload' => ['request_id' => $requestId]]);
+                        GenerateIntelligentNews::dispatch($session->created_by, ['request_id' => $requestId, 'session_id' => $session->id,
+                            'prompt' => $session->prompt, 'mode' => 'auto'])->onQueue('generation');
+                    }
                 }
             });
     }

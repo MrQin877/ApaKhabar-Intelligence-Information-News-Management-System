@@ -103,9 +103,7 @@ function ItemActions({ item }: { item: WorkspaceItem }) {
                 {item.can_publish && (
                     <DropdownMenuItem
                         onSelect={() =>
-                            router.post(
-                                `/admin/news/drafts/${item.id}/publish`,
-                            )
+                            router.post(`/admin/news/drafts/${item.id}/publish`)
                         }
                     >
                         <Send /> Publikasikan
@@ -193,69 +191,64 @@ export default function NewsWorkspace({ items, counts }: Props) {
                         </div>
                     </header>
 
-                    <Card className="gap-4 py-4">
-                        <CardContent className="flex flex-col gap-4 px-4 lg:flex-row lg:items-center lg:justify-between">
-                            <Tabs
-                                value={status}
-                                onValueChange={(value) =>
-                                    setStatus(value as Status)
-                                }
-                            >
-                                <TabsList>
-                                    {(Object.keys(statusNames) as Status[]).map(
-                                        (value) => (
-                                            <TabsTrigger
-                                                key={value}
-                                                value={value}
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                        <Tabs
+                            value={status}
+                            onValueChange={(value) =>
+                                setStatus(value as Status)
+                            }
+                        >
+                            <TabsList>
+                                {(Object.keys(statusNames) as Status[]).map(
+                                    (value) => (
+                                        <TabsTrigger key={value} value={value}>
+                                            {statusNames[value]}
+                                            <Badge
+                                                variant="secondary"
+                                                className="ml-1.5"
                                             >
-                                                {statusNames[value]}
-                                                <Badge
-                                                    variant="secondary"
-                                                    className="ml-1.5"
-                                                >
-                                                    {counts[value]}
-                                                </Badge>
-                                            </TabsTrigger>
-                                        ),
-                                    )}
-                                </TabsList>
-                            </Tabs>
-                            <div className="flex gap-2">
-                                <div className="relative min-w-0 flex-1 sm:w-72">
-                                    <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-                                    <Input
-                                        value={search}
-                                        onChange={(event) =>
-                                            setSearch(event.target.value)
-                                        }
-                                        placeholder="Cari berita…"
-                                        className="pl-9"
-                                    />
-                                </div>
-                                <ToggleGroup
-                                    type="single"
-                                    value={view}
-                                    onValueChange={(value) =>
-                                        value && setView(value as ViewMode)
+                                                {counts[value]}
+                                            </Badge>
+                                        </TabsTrigger>
+                                    ),
+                                )}
+                            </TabsList>
+                        </Tabs>
+                        <div className="flex gap-2">
+                            <div className="relative min-w-0 flex-1 sm:w-72">
+                                <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+                                <Input
+                                    value={search}
+                                    onChange={(event) =>
+                                        setSearch(event.target.value)
                                     }
-                                    variant="outline"
-                                >
-                                    <ToggleGroupItem
-                                        value="card"
-                                        aria-label="Tampilan kartu"
-                                    >
-                                        <Grid2X2 />
-                                    </ToggleGroupItem>
-                                    <ToggleGroupItem
-                                        value="list"
-                                        aria-label="Tampilan daftar"
-                                    >
-                                        <List />
-                                    </ToggleGroupItem>
-                                </ToggleGroup>
+                                    placeholder="Cari berita…"
+                                    className="pl-9"
+                                />
                             </div>
-                        </CardContent>
-                    </Card>
+                            <ToggleGroup
+                                type="single"
+                                value={view}
+                                onValueChange={(value) =>
+                                    value && setView(value as ViewMode)
+                                }
+                                variant="outline"
+                            >
+                                <ToggleGroupItem
+                                    value="card"
+                                    aria-label="Tampilan kartu"
+                                >
+                                    <Grid2X2 />
+                                </ToggleGroupItem>
+                                <ToggleGroupItem
+                                    value="list"
+                                    aria-label="Tampilan daftar"
+                                >
+                                    <List />
+                                </ToggleGroupItem>
+                            </ToggleGroup>
+                        </div>
+                    </div>
 
                     {filtered.length === 0 ? (
                         <Card className="border-dashed py-14 text-center">
@@ -313,7 +306,11 @@ export default function NewsWorkspace({ items, counts }: Props) {
                                                             : 'outline'
                                                     }
                                                 >
-                                                    Kualitas {item.quality_score.toFixed(1)}%
+                                                    Kualitas{' '}
+                                                    {item.quality_score.toFixed(
+                                                        1,
+                                                    )}
+                                                    %
                                                 </Badge>
                                             )}
                                         </div>

@@ -1,9 +1,9 @@
+import { Globe } from'lucide-react';
 import { createContext, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import type { WebsiteLanguage } from '@/lib/translation/dictionary';
 import { translateWebsite } from '@/lib/translation/website-translator';
-import { Globe } from'lucide-react';
 
 type TranslationState = 'working' | 'ready' | 'error';
 const LanguageContext = createContext<{
