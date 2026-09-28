@@ -23,6 +23,7 @@ class News extends Model
         'created_by',
         'view',
         'likes_count',
+        'show_on_homepage',
     ];
 
     protected $attributes = [
@@ -31,6 +32,7 @@ class News extends Model
     ];
 
     protected $casts = [
+        'show_on_homepage' => 'boolean',
     ];
 
     public function categoryRecord()
@@ -41,6 +43,11 @@ class News extends Model
     public function getCategoryAttribute(): ?string
     {
         return $this->categoryRecord?->name;
+    }
+
+    public function getImageAttribute(?string $value): ?string
+    {
+        return \App\Support\NewsImageUrl::resolve($value);
     }
 
     public function scopeCategory(Builder $query, string $category): Builder

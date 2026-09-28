@@ -21,6 +21,7 @@ class HandleInertiaRequests extends Middleware
         return [
             ...parent::share($request),
             'name' => config('app.name'),
+            'publishResult' => fn () => $request->session()->get('publishResult'),
             'auth' => [
                 'user' => $request->user(),
             ],

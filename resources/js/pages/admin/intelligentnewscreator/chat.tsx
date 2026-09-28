@@ -68,6 +68,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import AppLayout from '@/layouts/app-layout';
+import { apiFetch } from '@/lib/api';
 import type { BreadcrumbItem } from '@/types';
 
 interface InformationItem {
@@ -361,6 +362,7 @@ export default function NewsCreatorAgent({
             if (prompt.trim()) {
                 data.append('prompt', prompt.trim());
             }
+
             const generationIntent = /\b(generate|create|write|buat|bikin|tulis)\b.{0,30}\b(news|article|berita|artikel|laporan)\b/i.test(
                 prompt,
             );
@@ -377,6 +379,7 @@ export default function NewsCreatorAgent({
                 'extraction_mode',
                 generalExtraction ? 'general' : 'targeted',
             );
+
             if (!generalExtraction && prompt.trim()) {
                 data.append('extraction_query', prompt.trim());
             }
@@ -491,7 +494,7 @@ export default function NewsCreatorAgent({
                 document.querySelector<HTMLMetaElement>(
                     'meta[name="csrf-token"]',
                 )?.content ?? '';
-            const response = await fetch(
+            const response = await apiFetch(
                 '/admin/ai-assistant/recommendations',
                 {
                     method: 'POST',
