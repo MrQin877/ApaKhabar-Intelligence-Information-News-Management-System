@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\BroadcastController;
+use App\Http\Controllers\Admin\MetaConnectionController;
 use App\Http\Controllers\Admin\NewsCategoryController;
 use App\Http\Controllers\Admin\NewsCreatorController;
 use App\Http\Controllers\Admin\NewsWorkspaceController;
@@ -72,6 +73,16 @@ Route::prefix('admin')
     ->name('admin.')
     ->middleware(['auth', 'verified', 'role:admin,moderator'])
     ->group(function () {
+        Route::get('/social/connections', [MetaConnectionController::class, 'status'])->middleware('throttle:30,1')->name('social.status');
+        Route::get('/social/facebook/connect', [MetaConnectionController::class, 'facebookStart'])->middleware('throttle:10,1')->block(10, 10)->name('social.facebook.start');
+        Route::get('/social/facebook/callback', [MetaConnectionController::class, 'facebookCallback'])->block(10, 10)->name('social.facebook.callback');
+        Route::post('/social/facebook/cancel', [MetaConnectionController::class, 'cancelSelection'])->block(10, 10)->name('social.facebook.cancel');
+        Route::post('/social/{platform}/disconnect', [MetaConnectionController::class, 'disconnect'])->middleware('throttle:10,1')->block(10, 10)->name('social.disconnect');
+        Route::post('/social/facebook/page', [MetaConnectionController::class, 'chooseAccount'])->middleware('throttle:10,1')->block(10, 10)->name('social.facebook.page');
+        Route::post('/social/meta/account', [MetaConnectionController::class, 'chooseAccount'])->middleware('throttle:10,1')->block(10, 10)->name('social.meta.account');
+        Route::post('/social/meta/cancel', [MetaConnectionController::class, 'cancelSelection'])->block(10, 10)->name('social.meta.cancel');
+        Route::get('/social/instagram/connect', [MetaConnectionController::class, 'instagramStart'])->middleware('throttle:10,1')->block(10, 10)->name('social.instagram.start');
+        Route::get('/social/instagram/callback', [MetaConnectionController::class, 'instagramCallback'])->block(10, 10)->name('social.instagram.callback');
         Route::inertia('/dashboard', 'admin/dashboard')->name('dashboard');
 
         // Broadcasting — full CRUD + archive/restore

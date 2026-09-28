@@ -1,6 +1,21 @@
 <?php
 
 return [
+    'facebook' => [
+        'page_id' => env('FACEBOOK_PAGE_ID'),
+        'page_access_token' => env('FACEBOOK_PAGE_ACCESS_TOKEN'),
+        'graph_version' => env('FACEBOOK_GRAPH_VERSION', 'v26.0'),
+    ],
+    'cloudinary' => [
+        'cloud_name' => env('CLOUDINARY_CLOUD_NAME'),
+        'api_key' => env('CLOUDINARY_API_KEY'),
+        'api_secret' => env('CLOUDINARY_API_SECRET'),
+    ],
+    'instagram' => [
+        'user_id' => env('INSTAGRAM_USER_ID'),
+        'access_token' => env('INSTAGRAM_ACCESS_TOKEN'),
+        'graph_version' => env('META_GRAPH_VERSION', 'v25.0'),
+    ],
     'apakhabar_ai' => [
         'url' => rtrim(env('APAKHABAR_AI_URL', 'http://127.0.0.1:8001'), '/')
             .'/'.trim(env('APAKHABAR_AI_API_PREFIX', ''), '/'),

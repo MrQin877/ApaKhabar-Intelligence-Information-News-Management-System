@@ -10,13 +10,15 @@ class IntelligentNewsDraft extends Model
         'created_by', 'creation_method', 'category_id', 'image',
         'headline', 'subheadline', 'lead', 'body', 'summary',
         'labels', 'sources_used', 'warnings', 'user_prompt', 'status',
-        'published_news_id', 'version', 'reviewed_at',
+        'published_news_id', 'instagram_media_id', 'facebook_post_id', 'version', 'reviewed_at',
+        'show_on_homepage',
     ];
 
     protected $casts = [
         'body' => 'array', 'labels' => 'array', 'sources_used' => 'array',
         'warnings' => 'array',
         'reviewed_at' => 'datetime',
+        'show_on_homepage' => 'boolean',
     ];
 
     public function informationSources()

@@ -1,3 +1,4 @@
+import { apiFetch } from '@/lib/api';
 import { uiTranslation } from './dictionary';
 import type { WebsiteLanguage } from './dictionary';
 
@@ -177,7 +178,7 @@ export function translateWebsite(
                         size += item.length;
                     }
 
-                    const response = await fetch('/website/translate', {
+                    const response = await apiFetch('/website/translate', {
                         method: 'POST',
                         credentials: 'same-origin',
                         signal: abort.signal,

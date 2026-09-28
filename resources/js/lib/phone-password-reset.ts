@@ -1,3 +1,4 @@
+import { apiFetch } from '@/lib/api';
 export interface PhoneResetStatus {
     challenge: string;
     phone: string;
@@ -30,7 +31,7 @@ function csrfToken(): string | undefined {
 }
 
 async function refreshCsrfToken(signal: AbortSignal): Promise<void> {
-    const response = await fetch('/sanctum/csrf-cookie', {
+    const response = await apiFetch('/sanctum/csrf-cookie', {
         credentials: 'same-origin',
         headers: { Accept: 'application/json' },
         signal,
@@ -62,7 +63,7 @@ export async function phoneResetRequest(
         const send = () => {
             const token = csrfToken();
 
-            return fetch(
+            return apiFetch(
                 `/api/phone/password/${action}${action === 'status' ? `?${new URLSearchParams(payload)}` : ''}`,
                 {
                     method: mutating ? 'POST' : 'GET',
