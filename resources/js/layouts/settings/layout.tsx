@@ -26,7 +26,7 @@ const sidebarNavItems: NavItem[] = [
         href: editAppearance(),
         icon: null,
     },
-    { title: 'Integration', href: '/settings/integration', icon: null },
+    { title: 'Integrasi Media Sosial', href: '/settings/integration', icon: null },
 ];
 
 export default function SettingsLayout({ children }: PropsWithChildren) {

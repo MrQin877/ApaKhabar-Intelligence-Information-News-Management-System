@@ -138,7 +138,7 @@ class MetaConnectionController extends Controller
                 $meta->oauthDiagnostic('code_exchange', ['platform' => $platform, 'http_status' => $short->status(), 'has_token' => (bool) $short->json('access_token')]);
                 $stage = 'page_discovery';
                 if ($short->successful() && $short->json('access_token')) {
-                    $pages = $meta->facebookPages($short->json('access_token'), $platform, $request->user()->getKey());
+                    $pages = $meta->facebookPages($short->json('access_token'), $platform);
                     if ($pages) {
                         $stage = 'selection_cache_write';
                         $ticket = Str::random(48);
@@ -147,9 +147,7 @@ class MetaConnectionController extends Controller
                         $meta->oauthDiagnostic('selection_ready', ['platform' => $platform, 'accounts_count' => count($pages)]);
                         $message = $platform === 'instagram' ? 'Pilih akun Instagram untuk menyelesaikan koneksi.' : 'Pilih Halaman Facebook untuk menyelesaikan koneksi.';
                     } else {
-                        $message = $platform === 'instagram'
-                            ? 'Tidak ada Halaman dengan akun Instagram profesional tertaut dan izin menerbitkan. Koneksi sebelumnya tidak berubah.'
-                            : 'Tidak ada Halaman dengan izin menerbitkan. Koneksi sebelumnya tidak berubah.';
+                        $message = 'Tidak ada Halaman Facebook yang tersedia untuk akun ini. Koneksi sebelumnya tidak berubah.';
                     }
                 } else {
                     $meta->oauthDiagnostic('callback_rejected', ['platform' => $platform, 'reason' => $short->successful() ? 'code_exchange_missing_token' : 'code_exchange_http_rejected']);

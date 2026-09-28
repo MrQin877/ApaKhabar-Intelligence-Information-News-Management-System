@@ -94,13 +94,11 @@ Changes are in `MetaConnectionController`, `MetaConnections`, `MetaCredentials`,
 
 ## Verification
 
-### Empty Page-list fallback
+### OAuth discovery only
 
-`/me/accounts` remains the preferred discovery path. Only when the complete list returns zero Pages, the callback tries a direct Page query using the current user's saved Facebook `account_id`, or `FACEBOOK_PAGE_ID` if no numeric saved ID exists. The configured ID is an administrator-supplied discovery hint, not authorization; no legacy access token is used. There is no hardcoded Page ID or new Page-ID entry form.
+Connect, Reconnect and Switch Account use only the current OAuth user's `/me/accounts` results (including pagination). No saved Page ID or legacy environment account ID/token is used to discover or select accounts. An empty result stops the flow with a clear message and leaves saved connections unchanged. Instagram candidates come from linked professional accounts on those returned Pages. Explicit selection and Page-token validation are still required before saving.
 
-The direct query requests `id,name,access_token,instagram_business_account{id,username}` with the newly authorized user token and requires the returned ID to match. The task filter still applies to `/me/accounts` results; direct Page lookup does not request or require `tasks`, which that endpoint does not support. Instagram filters and explicit account selection still apply. At selection, the returned Page token is validated for the app and Page, and its actual expiry is saved (`0` becomes `NULL`). Facebook saves the Page; Instagram saves its linked professional account in a separate row with the Page token. Failed lookup or validation does not create empty rows or replace existing connections. A populated but filtered Page list does not trigger fallback.
-
-The temporary `meta.instagram.discovery.summary` diagnostics continue to report the original `/me/accounts` count, which can remain zero even when direct discovery succeeds. Directly discovered Pages pass through the existing safe per-Page diagnostics.
+Legacy environment credentials remain available through `MetaCredentials::forPlatform()` only when no saved row exists. This unchanged resolver serves publishing and availability/status; it does not provide OAuth account choices. Existing disconnected rows continue to suppress legacy publishing fallback. Diagnostic redaction may read legacy tokens solely to remove them from diagnostic text.
 
 Tests mock Meta APIs and cover both permission sets, shared callback state, configuration IDs, linked-account filtering, encrypted token storage, cross-platform isolation, failure/cancellation, expired tickets, disconnect, API host routing, migration preservation, and existing Facebook/Instagram publishing behavior. Real Meta consent and app/dashboard permission access must still be verified against the configured app; automated tests do not publish to real accounts.
 

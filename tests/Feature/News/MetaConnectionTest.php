@@ -46,38 +46,6 @@ test('callback diagnostics allowlist error names and never expose callback secre
     Http::assertNothingSent();
 });
 
-test('direct Page errors report safe metadata for the exchanged token without saving rows', function () {
-    config(['meta.instagram_discovery_diagnostics' => true, 'services.facebook.page_id' => '456']);
-    $records = [];
-    Log::shouldReceive('channel')->with('single')->andReturnSelf();
-    Log::shouldReceive('info')->andReturnUsing(function ($event, $context) use (&$records) {
-        $records[$event] = $context;
-    });
-    Http::fake([
-        '*debug_token*' => Http::response(['data' => [
-            'is_valid' => true, 'app_id' => 'test-app', 'type' => 'USER',
-            'scopes' => ['pages_show_list', 'pages_read_engagement', 'pages_manage_posts'],
-            'granular_scopes' => [['scope' => 'pages_show_list', 'target_ids' => ['456']]],
-        ]]),
-        '*oauth/access_token*' => Http::response(['access_token' => 'exchanged-private-token']),
-        '*me/accounts*' => Http::response(['data' => []]),
-        '*/456*' => Http::response(['error' => [
-            'type' => 'OAuthException', 'code' => 100, 'error_subcode' => 33,
-            'message' => 'Tried accessing nonexisting field (tasks) on node type (Page) exchanged-private-token test-secret',
-        ]], 400),
-    ]);
-    $query = startMetaFlow($this, 'facebook');
-    $this->get('/admin/social/facebook/callback?'.http_build_query(['state' => $query['state'], 'code' => 'private-code']))->assertRedirect();
-    expect($records['meta.oauth.direct_page_error'])->toBe([
-        'platform' => 'facebook', 'error_type' => 'OAuthException', 'error_code' => 100, 'error_subcode' => 33,
-        'sanitized_message' => 'Requested field is not supported: tasks', 'oauth_token_type' => 'USER',
-        'app_id_matches' => true, 'page_in_granular_scopes' => true,
-    ]);
-    expect(json_encode($records))->not->toContain('exchanged-private-token', 'test-secret', 'private-code', $query['state']);
-    Http::assertSent(fn ($request) => str_contains($request->url(), '/debug_token') && $request['input_token'] === 'exchanged-private-token');
-    expect(SocialConnection::count())->toBe(0);
-});
-
 test('page expiry comes from the selected page token metadata', function ($lifetime) {
     $expiry = $lifetime === 0 ? 0 : now()->addSeconds($lifetime)->timestamp;
     Http::fake(['*debug_token*' => Http::response(['data' => [
@@ -194,54 +162,29 @@ function linkedInstagramPage(): array
         'tasks' => ['CREATE_CONTENT'], 'instagram_business_account' => ['id' => '789', 'username' => 'desa']];
 }
 
-test('empty discovery uses the saved or configured Page and saves only the selected platform', function ($platform, $source) {
-    $facebook = $source === 'saved' ? existingMetaConnection('facebook') : null;
-    if ($facebook) {
-        $facebook->update(['account_id' => '456']);
+test('empty OAuth discovery ignores all legacy credentials and saved accounts', function ($platform, $existing) {
+    config(['services.facebook.page_id' => '456', 'services.facebook.page_access_token' => 'legacy-fb',
+        'services.instagram.user_id' => '789', 'services.instagram.access_token' => 'legacy-ig']);
+    if ($existing) {
+        existingMetaConnection('facebook');
+        existingMetaConnection('instagram');
     }
-    $before = $facebook?->fresh()->getRawOriginal();
-    config(['services.facebook.page_id' => $source === 'saved' ? '999' : '456']);
+    $before = SocialConnection::all()->map(fn ($row) => $row->getRawOriginal())->all();
     Http::fake([
-        '*debug_token*' => Http::response(['data' => [
-            'is_valid' => true, 'app_id' => 'test-app', 'type' => 'PAGE', 'profile_id' => '456', 'expires_at' => 0,
-            'scopes' => ['pages_show_list', 'pages_read_engagement', 'pages_manage_posts', 'instagram_basic', 'instagram_content_publish'],
-        ]]),
-        '*oauth/access_token*' => Http::response(['access_token' => 'fresh-user-token']),
+        '*debug_token*' => Http::response(['data' => ['is_valid' => true, 'app_id' => 'test-app',
+            'scopes' => ['pages_show_list', 'pages_read_engagement', 'pages_manage_posts', 'instagram_basic', 'instagram_content_publish']]]),
+        '*oauth/access_token*' => Http::response(['access_token' => 'current-user-token']),
         '*me/accounts*' => Http::response(['data' => []]),
-        '*/456*' => Http::response(collect(linkedInstagramPage())->except('tasks')->all()),
     ]);
     $query = startMetaFlow($this, $platform);
-    $this->get('/admin/social/facebook/callback?'.http_build_query(['state' => $query['state'], 'code' => 'code']))->assertRedirect();
-    expect(SocialConnection::where('platform', $platform)->count())->toBe($platform === 'facebook' && $facebook ? 1 : 0);
-    $this->postJson('/admin/social/meta/account', ['ticket' => session('meta_selection'), 'page_id' => '456'])->assertOk();
-    $saved = SocialConnection::where('user_id', auth()->id())->where('platform', $platform)->sole();
-    expect($saved->account_id)->toBe($platform === 'instagram' ? '789' : '456')
-        ->and($saved->account_name)->toBe($platform === 'instagram' ? '@desa' : 'Linked Page')
-        ->and($saved->access_token)->toBe('instagram-page-secret')->and($saved->expires_at)->toBeNull();
-    Http::assertSent(fn ($request) => str_contains($request->url(), '/debug_token') && $request['input_token'] === 'instagram-page-secret');
-    expect(SocialConnection::where('account_id', '')->orWhere('account_name', '')->count())->toBe(0);
-    if ($platform === 'instagram' && $facebook) {
-        expect($facebook->fresh()->getRawOriginal())->toBe($before);
-    }
-    Http::assertSent(fn ($request) => str_contains($request->url(), '/456?')
-        && $request->hasHeader('Authorization', 'Bearer fresh-user-token')
-        && $request['fields'] === 'id,name,access_token,instagram_business_account{id,username}');
-})->with(['facebook', 'instagram'])->with(['saved', 'configured']);
-
-test('failed direct discovery never creates a connection', function ($body, $status) {
-    config(['services.facebook.page_id' => '456']);
-    fakeInstagramMetaPages([]);
-    Http::fake(['*/456*' => Http::response($body, $status)]);
-    $query = startMetaFlow($this, 'instagram');
-    $this->get('/admin/social/facebook/callback?'.http_build_query(['state' => $query['state'], 'code' => 'code']))->assertRedirect();
-    expect(SocialConnection::count())->toBe(0)->and(session('meta_selection'))->toBeNull();
-    Http::assertSent(fn ($request) => str_contains($request->url(), '/456?'));
-})->with([
-    'denied' => [['error' => ['code' => 190]], 400],
-    'wrong page' => [array_replace(linkedInstagramPage(), ['id' => '999']), 200],
-    'no token' => [array_replace(linkedInstagramPage(), ['access_token' => '']), 200],
-    'no instagram' => [array_replace(linkedInstagramPage(), ['instagram_business_account' => null]), 200],
-]);
+    $this->get('/admin/social/facebook/callback?'.http_build_query(['state' => $query['state'], 'code' => 'code']))
+        ->assertRedirect()->assertSessionHas('connection_message', 'Tidak ada Halaman Facebook yang tersedia untuk akun ini. Koneksi sebelumnya tidak berubah.');
+    expect(session('meta_selection'))->toBeNull()
+        ->and(SocialConnection::all()->map(fn ($row) => $row->getRawOriginal())->all())->toBe($before);
+    Http::assertSentCount(4);
+    Http::assertNotSent(fn ($request) => str_contains($request->url(), '/456') || str_contains($request->url(), '/123')
+        || str_contains(json_encode($request->data()), 'legacy-'));
+})->with(['facebook', 'instagram'])->with([false, true]);
 
 test('normal discovery does not query the fallback page', function () {
     config(['services.facebook.page_id' => '999']);

@@ -1,5 +1,5 @@
 import { Head } from '@inertiajs/react';
-import { Facebook, Instagram, LoaderCircle } from 'lucide-react';
+import { LoaderCircle } from 'lucide-react';
 import { useState } from 'react';
 import Heading from '@/components/heading';
 import type { PublishPlatform } from '@/components/publish-news-dialog';
@@ -81,16 +81,16 @@ export default function Integration({
 
     return (
         <SettingsWrapper
-            title="Integration"
+            title="Integrasi Media Sosial"
             breadcrumbs={[
-                { title: 'Integration', href: '/settings/integration' },
+                { title: 'Integrasi Media Sosial', href: '/settings/integration' },
             ]}
         >
-            <Head title="Integration" />
+            <Head title="Integrasi Media Sosial" />
             <div className="space-y-6">
                 <Heading
                     variant="small"
-                    title="Integration"
+                    title="Integrasi Media Sosial"
                     description="Kelola akun Facebook dan Instagram untuk penerbitan berita."
                 />
                 <p className="text-sm text-muted-foreground">
@@ -112,8 +112,6 @@ export default function Integration({
                 )}
                 {platforms.map((platform) => {
                     const connected = platform.status === 'connected';
-                    const Icon =
-                        platform.id === 'facebook' ? Facebook : Instagram;
 
                     return (
                         <section
@@ -123,8 +121,16 @@ export default function Integration({
                         >
                             <div className="flex items-center justify-between gap-3">
                                 <h2 className="flex items-center gap-3 font-semibold">
-                                    <Icon
-                                        className="size-5"
+                                    <img
+                                        src={
+                                            platform.id === 'facebook'
+                                                ? '/images/integrations/facebook.png'
+                                                : '/images/integrations/instagram.svg'
+                                        }
+                                        alt=""
+                                        width={24}
+                                        height={24}
+                                        className="size-6 shrink-0 object-contain"
                                         aria-hidden="true"
                                     />
                                     {platform.name}
