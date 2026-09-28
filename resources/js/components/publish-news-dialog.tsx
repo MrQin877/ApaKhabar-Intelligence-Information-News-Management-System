@@ -25,6 +25,8 @@ export interface PublishPlatform {
     account: string | null;
     status: 'connected' | 'disconnected' | 'expired';
     connect_url: string | null;
+    updated_at?: string | null;
+    publishable?: boolean;
 }
 
 const names = {
@@ -79,24 +81,51 @@ export function PublishNewsDialog({
         }
 
         let disposed = false;
-        void metaRequest<{ platforms: PublishPlatform[] }>(
-            '/admin/social/connections',
-        )
-            .then((result) => {
-                if (!disposed) {
-                    setLivePlatforms(result.platforms);
-                }
-            })
-            .catch(() => {
-                /* Keep the last server-provided state on temporary network failures. */
-            });
+        const refresh = () => {
+            void metaRequest<{ platforms: PublishPlatform[] }>(
+                '/admin/social/connections',
+            )
+                .then((result) => {
+                    if (!disposed) {
+                        setLivePlatforms(result.platforms);
+                    }
+                })
+                .catch(() => {
+                    /* Keep the last server-provided state on temporary network failures. */
+                });
+        };
+        refresh();
+        window.addEventListener('focus', refresh);
 
         return () => {
+            window.removeEventListener('focus', refresh);
             disposed = true;
         };
     }, [open]);
+    useEffect(() => {
+        if (!open || !livePlatforms) {
+            return;
+        }
+
+        const next = selected.filter((id) =>
+            livePlatforms.some(
+                (p) =>
+                    p.id === id &&
+                    p.status === 'connected' &&
+                    p.publishable !== false,
+            ),
+        );
+
+        if (next.length !== selected.length) {
+            onSelectionChange(next);
+        }
+    }, [open, livePlatforms, selected, onSelectionChange]);
     const available = platforms
-        .filter((platform) => platform.status === 'connected')
+        .filter(
+            (platform) =>
+                platform.status === 'connected' &&
+                platform.publishable !== false,
+        )
         .map((platform) => platform.id);
     const selection = selected.filter((id) => available.includes(id));
     const allSelected =
@@ -287,7 +316,11 @@ export function PublishNewsDialog({
                                                 id={`publish-${platform.id}`}
                                                 className="mt-1"
                                                 checked={checked}
-                                                disabled={processing}
+                                                disabled={
+                                                    processing ||
+                                                    platform.publishable ===
+                                                        false
+                                                }
                                                 onCheckedChange={(value) =>
                                                     onSelectionChange(
                                                         value === true
@@ -305,6 +338,13 @@ export function PublishNewsDialog({
                                             />
                                         )}
                                     </div>
+                                    {connected &&
+                                        platform.publishable === false && (
+                                            <p className="mt-2 text-xs text-destructive">
+                                                Konfigurasi media belum
+                                                tersedia. Hubungi administrator.
+                                            </p>
+                                        )}
                                     {!connected &&
                                         platform.id !== 'website' && (
                                             <div className="mt-2.5 sm:ml-14">

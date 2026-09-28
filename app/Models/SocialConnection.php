@@ -16,8 +16,18 @@ class SocialConnection extends Model
         'invalidated_at' => 'datetime',
     ];
 
+    public function authSource(): string
+    {
+        return $this->auth_source ?? ($this->platform === 'instagram' ? 'instagram_login' : 'facebook_login');
+    }
+
+    public function graphHost(): string
+    {
+        return $this->authSource() === 'facebook_login' ? 'graph.facebook.com' : 'graph.instagram.com';
+    }
+
     public function isConnected(): bool
     {
-        return $this->invalidated_at === null && ($this->expires_at === null || $this->expires_at->isFuture());
+        return (bool) $this->access_token && $this->invalidated_at === null && ($this->expires_at === null || $this->expires_at->isFuture());
     }
 }

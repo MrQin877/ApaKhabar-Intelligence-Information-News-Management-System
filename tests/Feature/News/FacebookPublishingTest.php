@@ -73,7 +73,7 @@ test('Facebook timeout is not retried and returns uncertain status', function ()
 });
 
 test('successful Facebook publication is not duplicated when another platform is retried', function () {
-    config(['services.instagram.user_id' => null]);
+    config(['services.instagram.user_id' => '123', 'services.instagram.access_token' => 'ig-test-token']);
     Http::fake(['graph.facebook.com/*' => Http::response(['id' => '12345_67890'])]);
     $payload = [...$this->article, 'platforms' => ['facebook', 'instagram']];
     $this->postJson('/admin/news/manual', $payload)->assertJsonPath('results.facebook.success', true)->assertJsonPath('success', false);
@@ -139,7 +139,7 @@ test('Facebook diagnostics record Meta details only in the file log', function (
     Log::shouldHaveReceived('log')->withArgs(fn ($level, $message, $context) => $level === 'error' && $message === 'manual_publish.facebook.'.$step.'.failure'
         && $context['http_status'] === 400 && $context['error_code'] === 190
         && $context['error_subcode'] === 463 && $context['error_type'] === 'OAuthException'
-        && $context['error_message'] === 'Session expired: [REDACTED]'
+        && $context['error_message'] === 'Meta rejected the publishing request'
         && $context['fbtrace_id'] === 'trace-for-debugging'
         && $context['step'] === $step && $context['endpoint'] === 'https://graph.facebook.com/v26.0/12345/'.$step
         && ! str_contains(json_encode($context), 'unexpected-token'));

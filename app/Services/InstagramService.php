@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Services\News\MetaCredentials;
 use App\Support\PublishLog;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
@@ -13,8 +14,8 @@ class InstagramService
 {
     public function configured(): bool
     {
-        return (bool) (preg_match('/^\d+$/', (string) config('services.instagram.user_id'))
-            && trim((string) config('services.instagram.access_token')) !== ''
+        return (bool) (preg_match('/^\d+$/', (string) app(MetaCredentials::class)->forPlatform('instagram')['id'])
+            && trim((string) app(MetaCredentials::class)->forPlatform('instagram')['token']) !== ''
             && app(CloudinaryService::class)->configured());
     }
 
@@ -40,6 +41,7 @@ class InstagramService
             Log::warning('Instagram publishing configuration is missing or invalid.');
             throw ValidationException::withMessages(['platforms' => 'Akun Instagram belum dikonfigurasi. Hubungi administrator.']);
         }
+        $credentials = app(MetaCredentials::class)->forPlatform('instagram');
         $extension = strtolower(pathinfo(parse_url($imageUrl, PHP_URL_PATH) ?: '', PATHINFO_EXTENSION));
         if ($extension === 'png') {
             $imageUrl = app(InstagramImageService::class)->convertPngToJpeg($imageUrl);
@@ -82,15 +84,15 @@ class InstagramService
         app(InstagramImageService::class)->probeCloudinary($imageUrl, $context);
         PublishLog::write('instagram.image_url', [...$context, 'image_url' => $imageUrl]);
 
-        $creationId = $this->send('media', ['image_url' => $imageUrl, 'caption' => $caption], $context);
+        $creationId = $this->send('media', ['image_url' => $imageUrl, 'caption' => $caption], $context, $credentials);
 
-        return $this->send('media_publish', ['creation_id' => $creationId], $context);
+        return $this->send('media_publish', ['creation_id' => $creationId], $context, $credentials);
     }
 
-    private function send(string $step, array $payload, array $context): string
+    private function send(string $step, array $payload, array $context, array $credentials): string
     {
-        $url = 'https://graph.instagram.com/'.config('services.instagram.graph_version')
-            .'/'.config('services.instagram.user_id').'/'.$step;
+        $url = 'https://'.$credentials['graph_host'].'/'.config('services.instagram.graph_version')
+            .'/'.$credentials['id'].'/'.$step;
         PublishLog::write('instagram.'.$step.'.started', $context);
         if ($step === 'media') {
             PublishLog::write('instagram.media.request', [...$context,
@@ -100,17 +102,17 @@ class InstagramService
         try {
             // Never automatically retry publishing: a timed-out request may have succeeded.
             $response = Http::asForm()->connectTimeout(5)->timeout(25)->post($url, [
-                ...$payload, 'access_token' => config('services.instagram.access_token'),
+                ...$payload, 'access_token' => $credentials['token'],
             ]);
         } catch (ConnectionException $exception) {
-            PublishLog::write('instagram.'.$step.'.failure', [...$context, 'exception' => $exception::class, 'exception_message' => $exception->getMessage()], 'error');
+            PublishLog::write('instagram.'.$step.'.failure', [...$context, 'exception' => $exception::class, 'reason' => 'connection_failed'], 'error');
             throw ValidationException::withMessages(['platforms' => $step === 'media_publish'
                 ? 'Status penerbitan Instagram belum dapat dipastikan. Periksa akun Instagram sebelum mencoba lagi.'
                 : 'Instagram tidak dapat dihubungi. Silakan coba lagi nanti.']);
         }
 
         $id = $response->json('id');
-        $responseContext = [...$context, 'http_status' => $response->status(), 'response_body' => $response->json() ?? $response->body()];
+        $responseContext = [...$context, 'http_status' => $response->status(), 'error_code' => (int) $response->json('error.code', 0)];
         if (! $response->successful() || ! is_scalar($id) || ! preg_match('/^\d+$/', (string) $id)) {
             PublishLog::write('instagram.'.$step.'.failure', $responseContext, 'error');
             $message = match ((int) $response->json('error.code', 0)) {

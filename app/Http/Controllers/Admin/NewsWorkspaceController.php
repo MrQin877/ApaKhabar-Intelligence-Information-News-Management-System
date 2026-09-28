@@ -404,6 +404,11 @@ class NewsWorkspaceController extends Controller
             'platforms' => ['required', 'array', 'min:1', 'max:3'],
             'platforms.*' => ['required', 'string', 'distinct', Rule::in(['website', 'facebook', 'instagram'])],
         ]);
+        foreach (app(MetaConnections::class)->platforms($request->user()->getKey()) as $platform) {
+            if (in_array($platform['id'], $data['platforms'], true) && $platform['status'] !== 'connected') {
+                throw ValidationException::withMessages(['platforms' => $platform['name'].' belum terhubung. Buka Settings > Integration.']);
+            }
+        }
         if (in_array('facebook', $data['platforms'], true) && ! app(FacebookPublishingService::class)->configured()) {
             throw ValidationException::withMessages(['platforms' => 'Halaman Facebook belum dikonfigurasi. Hubungi administrator.']);
         }

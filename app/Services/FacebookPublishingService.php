@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Services\News\MetaCredentials;
 use App\Support\PublishLog;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
@@ -12,8 +13,8 @@ class FacebookPublishingService
 {
     public function configured(): bool
     {
-        return (bool) (preg_match('/^\d+$/', (string) config('services.facebook.page_id'))
-            && trim((string) config('services.facebook.page_access_token')) !== ''
+        return (bool) (preg_match('/^\d+$/', (string) app(MetaCredentials::class)->forPlatform('facebook')['id'])
+            && trim((string) app(MetaCredentials::class)->forPlatform('facebook')['token']) !== ''
             && preg_match('/^v\d+\.\d+$/', (string) config('services.facebook.graph_version')));
     }
 
@@ -26,17 +27,18 @@ class FacebookPublishingService
             throw ValidationException::withMessages(['platforms' => 'Teks Facebook tidak boleh kosong.']);
         }
 
+        $credentials = app(MetaCredentials::class)->forPlatform('facebook');
         $step = $imageUrl ? 'photos' : 'feed';
         $payload = $imageUrl
             ? ['url' => $this->imageUrl($imageUrl, $context), 'caption' => $message]
             : ['message' => $message];
         $url = 'https://graph.facebook.com/'.config('services.facebook.graph_version')
-            .'/'.config('services.facebook.page_id').'/'.$step;
+            .'/'.$credentials['id'].'/'.$step;
         PublishLog::write('facebook.'.$step.'.started', $context);
         try {
             // Do not retry: a timed-out publish may already have succeeded.
             $response = Http::asForm()->connectTimeout(5)->timeout(25)->post($url, [
-                ...$payload, 'access_token' => config('services.facebook.page_access_token'),
+                ...$payload, 'access_token' => $credentials['token'],
             ]);
         } catch (ConnectionException) {
             PublishLog::write('facebook.'.$step.'.failure', [...$context, 'reason' => 'connection_failed',
@@ -51,7 +53,7 @@ class FacebookPublishingService
             PublishLog::write('facebook.'.$step.'.failure', [...$context,
                 'http_status' => $response->status(), 'error_code' => $code,
                 'endpoint' => $url, 'step' => $step,
-                'error_message' => $response->json('error.message'),
+                'error_message' => 'Meta rejected the publishing request',
                 'error_type' => $response->json('error.type'),
                 'error_subcode' => $response->json('error.error_subcode'),
                 'fbtrace_id' => $response->json('error.fbtrace_id'),

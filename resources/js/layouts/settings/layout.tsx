@@ -26,6 +26,7 @@ const sidebarNavItems: NavItem[] = [
         href: editAppearance(),
         icon: null,
     },
+    { title: 'Integration', href: '/settings/integration', icon: null },
 ];
 
 export default function SettingsLayout({ children }: PropsWithChildren) {
@@ -53,22 +54,22 @@ export default function SettingsLayout({ children }: PropsWithChildren) {
                             const href = item.href ?? '#';
 
                             return (
-                            <Button
-                                key={`${toUrl(href)}-${index}`}
-                                size="sm"
-                                variant="ghost"
-                                asChild
-                                className={cn('w-full justify-start', {
-                                    'bg-muted': isCurrentOrParentUrl(href),
-                                })}
-                            >
-                                <Link href={href}>
-                                    {item.icon && (
-                                        <item.icon className="h-4 w-4" />
-                                    )}
-                                    {item.title}
-                                </Link>
-                            </Button>
+                                <Button
+                                    key={`${toUrl(href)}-${index}`}
+                                    size="sm"
+                                    variant="ghost"
+                                    asChild
+                                    className={cn('w-full justify-start', {
+                                        'bg-muted': isCurrentOrParentUrl(href),
+                                    })}
+                                >
+                                    <Link href={href}>
+                                        {item.icon && (
+                                            <item.icon className="h-4 w-4" />
+                                        )}
+                                        {item.title}
+                                    </Link>
+                                </Button>
                             );
                         })}
                     </nav>

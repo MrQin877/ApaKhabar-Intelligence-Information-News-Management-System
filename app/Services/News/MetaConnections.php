@@ -3,40 +3,29 @@
 namespace App\Services\News;
 
 use App\Models\SocialConnection;
-use App\Services\FacebookPublishingService;
-use App\Services\InstagramService;
+use App\Services\CloudinaryService;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
 class MetaConnections
 {
     public function configured(string $platform): bool
     {
-        return (bool) (config("meta.{$platform}.app_id") && config("meta.{$platform}.app_secret")
-            && ($platform !== 'instagram' || config('meta.instagram.redirect_uri')));
+        return in_array($platform, ['facebook', 'instagram'], true)
+            && (bool) (config('meta.facebook.app_id') && config('meta.facebook.app_secret'));
     }
 
     public function platforms(int $userId): array
     {
-        $connections = SocialConnection::where('user_id', $userId)->get()->keyBy('platform');
         $platforms = [['id' => 'website', 'name' => 'Website ApaKhabar', 'account' => parse_url(config('app.url'), PHP_URL_HOST), 'status' => 'connected', 'connect_url' => null]];
         foreach (['facebook' => 'Facebook', 'instagram' => 'Instagram'] as $id => $name) {
-            if ($id === 'instagram') {
-                $ready = app(InstagramService::class)->configured();
-                $platforms[] = ['id' => $id, 'name' => $name, 'account' => $ready ? 'ApaKhabar' : null, 'status' => $ready ? 'connected' : 'disconnected', 'connect_url' => $this->configured($id) ? route('admin.social.instagram.start') : null];
-
-                continue;
-            }
-            if ($id === 'facebook' && app(FacebookPublishingService::class)->configured()) {
-                $platforms[] = ['id' => $id, 'name' => $name, 'account' => 'ApaKhabar', 'status' => 'connected', 'connect_url' => null];
-
-                continue;
-            }
-            $connection = $connections->get($id);
+            $credentials = app(MetaCredentials::class)->forPlatform($id, $userId);
             $platforms[] = [
-                'id' => $id, 'name' => $name, 'account' => $connection?->account_name,
-                'status' => $connection ? ($connection->isConnected() ? 'connected' : 'expired') : 'disconnected',
-                'connect_url' => $id === 'instagram' && $this->configured($id) ? route('admin.social.instagram.start') : null,
+                'id' => $id, 'name' => $name, 'account' => $credentials['name'],
+                'status' => $credentials['status'], 'updated_at' => $credentials['updated_at'],
+                'publishable' => $credentials['status'] === 'connected' && ($id !== 'instagram' || app(CloudinaryService::class)->configured()),
+                'connect_url' => $this->configured($id) ? route("admin.social.{$id}.start") : null,
             ];
         }
 
@@ -52,74 +41,305 @@ class MetaConnections
         ];
     }
 
-    public function facebookPages(string $token): array
+    public function permissions(string $platform): array
     {
-        $base = 'https://graph.facebook.com/'.config('meta.graph_version');
-        $debug = Http::timeout(15)->get($base.'/debug_token', [
-            'input_token' => $token,
-            'access_token' => config('meta.facebook.app_id').'|'.config('meta.facebook.app_secret'),
-        ])->json('data');
-        if (! is_array($debug) || ! ($debug['is_valid'] ?? false)
-            || (string) ($debug['app_id'] ?? '') !== (string) config('meta.facebook.app_id')
-            || array_diff(['pages_show_list', 'pages_read_engagement', 'pages_manage_posts'], $debug['scopes'] ?? [])) {
-            throw ValidationException::withMessages(['connection' => 'Izin Facebook belum lengkap atau sudah kedaluwarsa. Silakan hubungkan kembali.']);
-        }
-        $exchange = Http::timeout(15)->get($base.'/oauth/access_token', [
-            'grant_type' => 'fb_exchange_token', 'client_id' => config('meta.facebook.app_id'),
-            'client_secret' => config('meta.facebook.app_secret'), 'fb_exchange_token' => $token,
-        ]);
-        if (! $exchange->successful() || ! $exchange->json('access_token')) {
-            throw ValidationException::withMessages(['connection' => 'Token Facebook tidak dapat diperbarui.']);
-        }
-        $response = Http::timeout(15)->withToken($exchange->json('access_token'))->get($base.'/me/accounts', [
-            'fields' => 'id,name,access_token,tasks', 'limit' => 100,
-        ]);
-        if (! $response->successful()) {
-            throw ValidationException::withMessages(['connection' => 'Daftar Halaman Facebook tidak dapat dimuat.']);
-        }
-        // Page tokens stay on the server. Ask the author to choose explicitly.
-        $pages = array_values(array_filter($response->json('data', []), fn ($page) => ! empty($page['access_token']) && array_intersect(['CREATE_CONTENT', 'MANAGE'], $page['tasks'] ?? [])
-        ));
-        $expiry = now()->addSeconds((int) $exchange->json('expires_in', 3600))->timestamp;
-        if (($debug['data_access_expires_at'] ?? 0) > 0) {
-            $expiry = min($expiry, (int) $debug['data_access_expires_at']);
-        }
-
-        return array_map(fn ($page) => [...$page, 'expires_at' => date('Y-m-d H:i:s', $expiry)], $pages);
+        return $platform === 'instagram'
+            ? ['pages_show_list', 'pages_read_engagement', 'instagram_basic', 'instagram_content_publish']
+            : ['pages_show_list', 'pages_read_engagement', 'pages_manage_posts'];
     }
 
-    public function saveInstagram(int $userId, string $code): void
+    public function facebookPages(string $token, string $platform = 'facebook', ?int $userId = null): array
     {
-        $short = Http::asForm()->timeout(15)->post('https://api.instagram.com/oauth/access_token', [
-            'client_id' => config('meta.instagram.app_id'), 'client_secret' => config('meta.instagram.app_secret'),
-            'grant_type' => 'authorization_code', 'redirect_uri' => config('meta.instagram.redirect_uri'), 'code' => $code,
-        ]);
-        if (! $short->successful() || ! $short->json('access_token')) {
-            throw ValidationException::withMessages(['connection' => 'Otorisasi Instagram tidak berhasil.']);
+        $stage = 'user_token_validation';
+        try {
+            $base = 'https://graph.facebook.com/'.config('meta.graph_version');
+            $debug = Http::timeout(15)->get($base.'/debug_token', [
+                'input_token' => $token,
+                'access_token' => config('meta.facebook.app_id').'|'.config('meta.facebook.app_secret'),
+            ])->json('data');
+            if (! is_array($debug) || ! ($debug['is_valid'] ?? false)
+                || (string) ($debug['app_id'] ?? '') !== (string) config('meta.facebook.app_id')
+                || array_diff($this->permissions($platform), $debug['scopes'] ?? [])) {
+                throw ValidationException::withMessages(['connection' => 'Izin Facebook belum lengkap atau sudah kedaluwarsa. Silakan hubungkan kembali.']);
+            }
+            $stage = 'user_token_exchange';
+            $exchange = Http::timeout(15)->get($base.'/oauth/access_token', [
+                'grant_type' => 'fb_exchange_token', 'client_id' => config('meta.facebook.app_id'),
+                'client_secret' => config('meta.facebook.app_secret'), 'fb_exchange_token' => $token,
+            ]);
+            if (! $exchange->successful() || ! $exchange->json('access_token')) {
+                throw ValidationException::withMessages(['connection' => 'Token Facebook tidak dapat diperbarui.']);
+            }
+            $diagnostics = $platform === 'instagram' && config('meta.instagram_discovery_diagnostics');
+            if ($diagnostics) {
+                $this->identityDiagnostics($base, $exchange->json('access_token'), $token);
+            }
+            $returnedPages = 0;
+            $hasPageIds = false;
+            $pages = [];
+            $after = null;
+            $seenCursors = [];
+            do {
+                $stage = 'accounts_request';
+                $this->oauthDiagnostic('discovery', ['platform' => $platform, 'stage' => $stage]);
+                $response = Http::timeout(15)->withToken($exchange->json('access_token'))->get($base.'/me/accounts', [
+                    'fields' => 'id,name,access_token,tasks'.($platform === 'instagram' ? ',instagram_business_account{id,username}' : ''), 'limit' => 100,
+                    ...($after ? ['after' => $after] : []),
+                ]);
+                $this->oauthDiagnostic('accounts', ['platform' => $platform, 'http_status' => $response->status(), 'accounts_count' => is_array($response->json('data')) ? count($response->json('data')) : 0]);
+                $stage = 'accounts_http_rejected';
+                if (! $response->successful()) {
+                    throw ValidationException::withMessages(['connection' => 'Daftar Halaman Facebook tidak dapat dimuat.']);
+                }
+                $returnedPages += count($response->json('data', []));
+                foreach ($response->json('data', []) as $diagnosticPage) {
+                    $hasPageIds = $hasPageIds || ! empty($diagnosticPage['id']);
+                }
+                $stage = 'accounts_response_processing';
+                $this->oauthDiagnostic('fallback', ['platform' => $platform, 'triggered' => $returnedPages === 0 && ! $response->json('paging.next')]);
+                $directFallback = false;
+                $discoveredPages = $response->json('data', []);
+                if ($returnedPages === 0 && ! $response->json('paging.next')) {
+                    // This ID is only a discovery hint; the current OAuth token must authorize it.
+                    $savedId = $userId ? SocialConnection::where('user_id', $userId)
+                        ->where('platform', 'facebook')->value('account_id') : null;
+                    $pageId = preg_match('/^\d+$/', (string) $savedId)
+                        ? (string) $savedId : (string) config('services.facebook.page_id');
+                    $this->oauthDiagnostic('fallback_source', ['platform' => $platform, 'source' => preg_match('/^\d+$/', (string) $savedId) ? 'saved_facebook_connection' : (preg_match('/^\d+$/', $pageId) ? 'FACEBOOK_PAGE_ID' : 'none')]);
+                    if (preg_match('/^\d+$/', $pageId)) {
+                        $stage = 'direct_page_request';
+                        $direct = Http::withoutRedirecting()->timeout(15)
+                            ->withToken($exchange->json('access_token'))->get($base.'/'.$pageId, [
+                                'fields' => 'id,name,access_token,instagram_business_account{id,username}',
+                            ]);
+                        $this->oauthDiagnostic('direct_page', ['platform' => $platform, 'http_status' => $direct->status(), 'page_id_matches' => (string) $direct->json('id') === $pageId, 'has_instagram_business_account' => ! empty($direct->json('instagram_business_account'))]);
+                        if (! $direct->successful() && config('meta.instagram_discovery_diagnostics')) {
+                            $this->directPageErrorDiagnostics($direct->json('error'), $exchange->json('access_token'), $pageId, $platform);
+                        }
+                        $stage = ! $direct->successful() ? 'direct_page_http_rejected' : 'direct_page_id_mismatch';
+                        if (! $direct->successful() || (string) $direct->json('id') !== $pageId) {
+                            throw ValidationException::withMessages(['connection' => 'Halaman Facebook tidak dapat divalidasi.']);
+                        }
+                        $directFallback = true;
+                        $discoveredPages = [$direct->json()];
+                    }
+                }
+                if ($diagnostics) {
+                    $secrets = array_filter([
+                        $token, $exchange->json('access_token'), config('meta.facebook.app_secret'),
+                        config('services.facebook.page_access_token'), config('services.instagram.access_token'),
+                        ...array_column($discoveredPages, 'access_token'),
+                    ], fn ($value) => is_string($value) && $value !== '');
+                    foreach ($discoveredPages as $page) {
+                        $instagram = is_array($page['instagram_business_account'] ?? null) ? $page['instagram_business_account'] : [];
+                        $tasks = is_array($page['tasks'] ?? null) ? $page['tasks'] : [];
+                        $clean = fn ($value) => is_scalar($value)
+                            ? str_replace($secrets, '[REDACTED]', (string) $value) : null;
+                        $this->discoveryLog('page', [
+                            'page_id' => $clean($page['id'] ?? null),
+                            'page_name' => $clean($page['name'] ?? null),
+                            'tasks' => array_values(array_map($clean, array_filter($tasks, 'is_string'))),
+                            'has_page_token' => ! empty($page['access_token']),
+                            'has_instagram_business_account' => ! empty($page['instagram_business_account']),
+                            'instagram_business_account_id' => $clean($instagram['id'] ?? null),
+                            'instagram_username' => $clean($instagram['username'] ?? null),
+                            'passes_task_filter' => $directFallback || (bool) array_intersect(['CREATE_CONTENT', 'MANAGE'], array_filter($tasks, 'is_string')),
+                            'passes_instagram_filter' => (bool) preg_match('/^\d+$/', (string) ($instagram['id'] ?? '')) && ! empty($instagram['username']),
+                        ]);
+                    }
+                }
+                $stage = 'page_filtering';
+                foreach ($discoveredPages as $page) {
+                    $reason = empty($page['access_token']) ? 'missing_page_token' : (! preg_match('/^\d+$/', (string) ($page['id'] ?? '')) ? 'invalid_page_id' : (! $directFallback && ! array_intersect(['CREATE_CONTENT', 'MANAGE'], $page['tasks'] ?? []) ? 'task_filter_rejected' : null));
+                    if ($reason) {
+                        $this->oauthDiagnostic('rejection', ['platform' => $platform, 'reason' => $reason]);
+                    }
+                    if (! empty($page['access_token']) && preg_match('/^\d+$/', (string) ($page['id'] ?? ''))
+                        && ($directFallback || array_intersect(['CREATE_CONTENT', 'MANAGE'], $page['tasks'] ?? []))) {
+                        if ($platform === 'instagram') {
+                            $instagram = $page['instagram_business_account'] ?? [];
+                            if (! preg_match('/^\d+$/', (string) ($instagram['id'] ?? '')) || empty($instagram['username'])) {
+                                $this->oauthDiagnostic('rejection', ['platform' => $platform, 'reason' => ! preg_match('/^\d+$/', (string) ($instagram['id'] ?? '')) ? 'missing_or_invalid_instagram_id' : 'missing_instagram_username']);
+
+                                continue;
+                            }
+                            $page['account_id'] = (string) $instagram['id'];
+                            $page['account_name'] = '@'.$instagram['username'];
+                        } else {
+                            $page['account_id'] = (string) $page['id'];
+                            $page['account_name'] = $page['name'];
+                        }
+                        $pages[(string) $page['id']] = $page;
+                    }
+                }
+                $stage = 'pagination_rejected';
+                $next = $response->json('paging.next') ? $response->json('paging.cursors.after') : null;
+                if ($next && (isset($seenCursors[$next]) || count($seenCursors) >= 100)) {
+                    throw ValidationException::withMessages(['connection' => 'Daftar Halaman tidak dapat diselesaikan.']);
+                }
+                // Never follow provider URLs containing tokens; only reuse a cursor on our fixed endpoint.
+                if ($next) {
+                    $seenCursors[$next] = true;
+                }
+                $after = $next;
+            } while ($after);
+            if ($diagnostics) {
+                $this->discoveryLog('summary', ['zero_pages' => $returnedPages === 0, 'accounts_count' => $returnedPages, 'has_page_ids' => $hasPageIds]);
+            }
+
+            $this->oauthDiagnostic('discovery_complete', ['platform' => $platform, 'eligible_count' => count($pages)]);
+
+            return array_values($pages);
+        } catch (\Throwable $exception) {
+            $this->oauthDiagnostic('rejection', ['platform' => $platform, 'reason' => $stage]);
+            throw $exception;
         }
-        $permissions = $short->json('permissions', []);
-        $permissions = is_array($permissions) ? $permissions : explode(',', $permissions);
-        if (array_diff(['instagram_business_basic', 'instagram_business_content_publish'], $permissions)) {
-            throw ValidationException::withMessages(['connection' => 'Izin akun dan penerbitan Instagram belum lengkap.']);
+    }
+
+    /** Validate the selected Page credential, never infer its expiry from a user token. */
+    public function pageTokenExpiry(string $token, string $pageId): ?string
+    {
+        try {
+            $response = Http::withoutRedirecting()->timeout(15)
+                ->withToken(config('meta.facebook.app_id').'|'.config('meta.facebook.app_secret'))
+                ->get('https://graph.facebook.com/'.config('meta.graph_version').'/debug_token', ['input_token' => $token]);
+            $data = $response->json('data');
+            $this->oauthDiagnostic('selected_token', ['http_status' => $response->status(), 'valid' => is_array($data) && ($data['is_valid'] ?? false) === true]);
+            if ($response->successful() && is_array($data)
+                && ($data['is_valid'] ?? false) === true
+                && (string) ($data['app_id'] ?? '') === (string) config('meta.facebook.app_id')
+                && ($data['type'] ?? null) === 'PAGE'
+                && (string) ($data['profile_id'] ?? '') === $pageId
+                && isset($data['expires_at']) && is_int($data['expires_at'])
+                && ($data['expires_at'] === 0 || $data['expires_at'] > now()->timestamp)) {
+                return $data['expires_at'] === 0 ? null : date('Y-m-d H:i:s', $data['expires_at']);
+            }
+        } catch (\Throwable) {
+            // Provider exceptions may include credential-bearing request URLs.
         }
-        $long = Http::timeout(15)->get('https://graph.instagram.com/access_token', [
-            'grant_type' => 'ig_exchange_token', 'client_secret' => config('meta.instagram.app_secret'),
-            'access_token' => $short->json('access_token'),
-        ]);
-        $token = $long->json('access_token');
-        if (! $long->successful() || ! $token) {
-            throw ValidationException::withMessages(['connection' => 'Token Instagram tidak dapat diperbarui.']);
+
+        $this->oauthDiagnostic('rejection', ['reason' => 'selected_page_token_validation_failed']);
+        throw ValidationException::withMessages(['connection' => 'Token Halaman tidak dapat divalidasi. Silakan hubungkan kembali.']);
+    }
+
+    private function identityDiagnostics(string $base, string $token, string $shortToken): void
+    {
+        $secrets = array_filter([$token, $shortToken, config('meta.facebook.app_secret'),
+            config('services.facebook.page_access_token'), config('services.instagram.access_token')],
+            fn ($value) => is_string($value) && $value !== '');
+        $clean = fn ($value) => is_scalar($value) ? str_replace($secrets, '[REDACTED]', (string) $value) : null;
+        try {
+            $profile = Http::withoutRedirecting()->connectTimeout(3)->timeout(8)->withToken($token)
+                ->get($base.'/me', ['fields' => 'id,name']);
+            $this->discoveryLog('user', [
+                'available' => $profile->successful(),
+                'id' => $profile->successful() ? $clean($profile->json('id')) : null,
+                'name' => $profile->successful() ? $clean($profile->json('name')) : null,
+            ]);
+        } catch (\Throwable) {
+            $this->discoveryLog('user', ['available' => false, 'id' => null, 'name' => null]);
         }
-        $profile = Http::timeout(15)->withToken($token)->get('https://graph.instagram.com/'.config('meta.graph_version').'/me', [
-            'fields' => 'user_id,username',
-        ]);
-        if (! $profile->successful() || ! $profile->json('user_id') || ! $profile->json('username')) {
-            throw ValidationException::withMessages(['connection' => 'Akun profesional Instagram tidak dapat diverifikasi.']);
+
+        $permissions = [];
+        $complete = false;
+        try {
+            $after = null;
+            $seen = [];
+            do {
+                $response = Http::withoutRedirecting()->connectTimeout(3)->timeout(8)->withToken($token)
+                    ->get($base.'/me/permissions', ['limit' => 100, ...($after ? ['after' => $after] : [])]);
+                if (! $response->successful() || ! is_array($response->json('data'))) {
+                    break;
+                }
+                foreach ($response->json('data') as $permission) {
+                    $permissions[] = ['permission' => $clean($permission['permission'] ?? null), 'status' => $clean($permission['status'] ?? null)];
+                }
+                if (! $response->json('paging.next')) {
+                    $complete = true;
+                    break;
+                }
+                $after = $response->json('paging.cursors.after');
+                if (! is_string($after) || $after === '' || isset($seen[$after]) || count($seen) >= 10) {
+                    break;
+                }
+                $seen[$after] = true;
+            } while ($after);
+        } catch (\Throwable) {
+            // Report unavailable/partial diagnostics without logging transport or provider errors.
         }
-        SocialConnection::updateOrCreate(['user_id' => $userId, 'platform' => 'instagram'], [
-            'account_id' => $profile->json('user_id'), 'account_name' => '@'.$profile->json('username'),
-            'access_token' => $token, 'expires_at' => now()->addSeconds((int) $long->json('expires_in', 3600)),
-            'invalidated_at' => null,
+        $granted = [];
+        foreach ($this->permissions('instagram') as $name) {
+            $granted[$name] = $complete ? collect($permissions)->contains(fn ($item) => $item['permission'] === $name && $item['status'] === 'granted') : null;
+        }
+        $this->discoveryLog('permissions', ['complete' => $complete, 'permissions' => $permissions, 'granted' => $granted]);
+    }
+
+    private function directPageErrorDiagnostics(mixed $error, string $token, string $pageId, string $platform): void
+    {
+        // Render known provider errors as fixed safe text. Unknown messages are never copied.
+        $error = is_array($error) ? $error : [];
+        $message = is_string($error['message'] ?? null) ? $error['message'] : '';
+        $safeMessage = 'Unrecognized provider message withheld';
+        foreach (['id', 'name', 'access_token', 'tasks', 'instagram_business_account', 'username'] as $field) {
+            if (str_contains($message, 'nonexisting field ('.$field.')')) {
+                $safeMessage = 'Requested field is not supported: '.$field;
+                break;
+            }
+        }
+        if (str_contains($message, 'Unsupported get request')) {
+            $safeMessage = 'Unsupported get request: object unavailable, inaccessible, or operation unsupported';
+        } elseif (str_contains($message, 'Error validating access token')) {
+            $safeMessage = 'Error validating access token';
+        }
+        $metadata = null;
+        try {
+            // Inspect the exchanged token actually used for the failed request, not the short token.
+            $probe = Http::withoutRedirecting()->timeout(8)
+                ->withToken(config('meta.facebook.app_id').'|'.config('meta.facebook.app_secret'))
+                ->get('https://graph.facebook.com/'.config('meta.graph_version').'/debug_token', ['input_token' => $token]);
+            if ($probe->successful() && is_array($probe->json('data'))) {
+                $metadata = $probe->json('data');
+            }
+        } catch (\Throwable) {
+            // Diagnostic failure must not affect connection behavior or reveal request URLs.
+        }
+        $targets = [];
+        foreach (($metadata['granular_scopes'] ?? []) as $scope) {
+            foreach (($scope['target_ids'] ?? []) as $id) {
+                $targets[] = (string) $id;
+            }
+        }
+        $this->oauthDiagnostic('direct_page_error', [
+            'platform' => $platform,
+            'error_type' => in_array($error['type'] ?? null, ['OAuthException', 'GraphMethodException', 'FacebookApiException'], true) ? $error['type'] : 'other',
+            'error_code' => is_int($error['code'] ?? null) ? $error['code'] : null,
+            'error_subcode' => is_int($error['error_subcode'] ?? null) ? $error['error_subcode'] : null,
+            'sanitized_message' => $safeMessage,
+            'oauth_token_type' => in_array($metadata['type'] ?? null, ['USER', 'PAGE', 'SYSTEM_USER', 'APP'], true) ? $metadata['type'] : 'unknown',
+            'app_id_matches' => $metadata !== null ? (string) ($metadata['app_id'] ?? '') === (string) config('meta.facebook.app_id') : null,
+            'page_in_granular_scopes' => isset($metadata['granular_scopes']) ? in_array($pageId, $targets, true) : null,
         ]);
+    }
+
+    /** Only pass fixed enums, booleans and counts; never provider payloads or exceptions. */
+    public function oauthDiagnostic(string $event, array $safeContext): void
+    {
+        if (! config('meta.instagram_discovery_diagnostics')) {
+            return;
+        }
+        try {
+            Log::channel('single')->info('meta.oauth.'.$event, $safeContext);
+        } catch (\Throwable) {
+            // Diagnostics must not affect OAuth decisions.
+        }
+    }
+
+    private function discoveryLog(string $event, array $safeContext): void
+    {
+        try {
+            Log::channel('single')->info('meta.instagram.discovery.'.$event, $safeContext);
+        } catch (\Throwable) {
+            // Temporary diagnostics must never prevent connection discovery.
+        }
     }
 }

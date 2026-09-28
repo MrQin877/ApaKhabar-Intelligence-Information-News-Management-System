@@ -2,6 +2,7 @@
 
 use App\Models\IntelligentNewsDraft;
 use App\Models\News;
+use App\Models\SocialConnection;
 use App\Models\User;
 use App\Models\UserRole;
 use App\Services\CloudinaryService;
@@ -158,7 +159,8 @@ test('missing Cloudinary configuration prevents readiness and publishing', funct
     config(['services.cloudinary.cloud_name' => $base]);
     Http::fake();
     expect(app(InstagramService::class)->configured())->toBeFalse();
-    expect(app(MetaConnections::class)->platforms(auth()->id())[2]['status'])->toBe('disconnected');
+    expect(app(MetaConnections::class)->platforms(auth()->id())[2]['status'])->toBe('connected');
+    expect(app(MetaConnections::class)->platforms(auth()->id())[2]['publishable'])->toBeFalse();
     $this->post('/admin/news/manual', $this->article)->assertSessionHas('publishResult.results.instagram.success', false);
     Http::assertNothingSent();
 })->with([null, '', 'http://localhost:8000', 'http://192.168.1.10:8000']);
@@ -355,5 +357,29 @@ test('invalid delivery prevents Instagram media creation', function () {
     ]);
     expect(fn () => app(InstagramService::class)->publish($this->article['image'], 'Caption'))
         ->toThrow(ValidationException::class);
+    Http::assertNotSent(fn ($r) => str_contains($r->url(), 'graph.instagram.com'));
+});
+
+test('Instagram publishing uses the saved professional account instead of environment credentials', function () {
+    SocialConnection::create(['user_id' => auth()->id(), 'platform' => 'instagram',
+        'account_id' => '888', 'account_name' => '@selected', 'access_token' => 'saved-instagram-secret']);
+    instagramSequence()->push(['id' => '111'])->push(['id' => '222']);
+    $this->post('/admin/news/manual', $this->article)->assertSessionHas('publishResult.results.instagram.success', true);
+    Http::assertSent(fn ($r) => str_ends_with($r->url(), '/888/media') && $r['access_token'] === 'saved-instagram-secret');
+    Http::assertSent(fn ($r) => str_ends_with($r->url(), '/888/media_publish') && $r['access_token'] === 'saved-instagram-secret');
+});
+
+test('Facebook-authorized Instagram publishes through Facebook Graph while preserving media preparation', function () {
+    SocialConnection::create(['user_id' => auth()->id(), 'platform' => 'instagram', 'auth_source' => 'facebook_login',
+        'account_id' => '888', 'account_name' => '@selected', 'access_token' => 'facebook-instagram-secret']);
+    Http::fake([
+        'api.cloudinary.com/*' => Http::response(['resource_type' => 'image', 'format' => 'jpg', 'secure_url' => 'https://res.cloudinary.com/demo/image/upload/news.jpg']),
+        'https://res.cloudinary.com/*' => Http::response(instagramJpeg(1080, 1080), 200, ['Content-Type' => 'image/jpeg']),
+        'https://graph.facebook.com/*' => Http::sequence()->push(['id' => '111'])->push(['id' => '222']),
+    ]);
+    $this->post('/admin/news/manual', $this->article)->assertSessionHas('publishResult.results.instagram.success', true);
+    Http::assertSent(fn ($r) => str_contains($r->url(), 'graph.facebook.com/') && str_ends_with($r->url(), '/888/media')
+        && $r['access_token'] === 'facebook-instagram-secret' && $r['image_url'] === 'https://res.cloudinary.com/demo/image/upload/news.jpg');
+    Http::assertSent(fn ($r) => str_contains($r->url(), 'graph.facebook.com/') && str_ends_with($r->url(), '/888/media_publish') && $r['creation_id'] === '111');
     Http::assertNotSent(fn ($r) => str_contains($r->url(), 'graph.instagram.com'));
 });

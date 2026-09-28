@@ -1,8 +1,9 @@
 <?php
 
+use App\Http\Controllers\Admin\MetaConnectionController;
+use App\Http\Controllers\Settings\PhoneVerificationController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
-use App\Http\Controllers\Settings\PhoneVerificationController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth'])->group(function () {
@@ -10,7 +11,7 @@ Route::middleware(['auth'])->group(function () {
 
     Route::get('settings/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('settings/profile', [ProfileController::class, 'update'])->name('profile.update');
-    Route::post('/settings/phone',        [PhoneVerificationController::class, 'store'])->name('phone.store');
+    Route::post('/settings/phone', [PhoneVerificationController::class, 'store'])->name('phone.store');
     Route::post('/settings/phone/verify', [PhoneVerificationController::class, 'verify'])->name('phone.verify');
     Route::post('/settings/phone/resend', [PhoneVerificationController::class, 'resend'])->name('phone.resend');
 });
@@ -26,3 +27,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::inertia('settings/appearance', 'settings/appearance')->name('appearance.edit');
 });
+
+Route::get('settings/integration', [MetaConnectionController::class, 'integration'])
+    ->middleware(['auth', 'verified', 'role:admin,moderator'])->name('integration.edit');
