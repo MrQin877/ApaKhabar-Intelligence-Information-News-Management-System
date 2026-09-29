@@ -1,10 +1,6 @@
 import { Head, router, usePage } from '@inertiajs/react';
 import {
-    AlignCenter,
-    AlignLeft,
-    AlignRight,
     ArrowUp,
-    Bold,
     ChevronDown,
     ChevronRight,
     Clock3,
@@ -12,20 +8,14 @@ import {
     FileText,
     FolderSearch,
     ImagePlus,
-    Italic,
-    List,
-    ListOrdered,
     LoaderCircle,
     Maximize2,
     Minimize2,
     Paperclip,
     PanelRightClose,
     Plus,
-    Redo2,
     Save,
     Sparkles,
-    Underline,
-    Undo2,
     X,
 } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -420,9 +410,6 @@ export default function NewsCreatorAgent({
         };
     }, [busy, activeRequestId, progressStorageKey]);
     const [picker, setPicker] = useState(false);
-    const [, setPickerTab] = useState<'information' | 'documents' | 'manual'>(
-        'information',
-    );
     const [recommendations, setRecommendations] = useState<Recommendation[]>(
         [],
     );
@@ -438,6 +425,24 @@ export default function NewsCreatorAgent({
     const [editedArticle, setEditedArticle] = useState<Article | null>(
         generatedArticle ?? null,
     );
+    const articleContent = editedArticle
+        ? [editedArticle.lead, ...editedArticle.body]
+              .filter(Boolean)
+              .join('\n\n')
+        : '';
+    const wordCount = articleContent
+        .trim()
+        .split(/\s+/u)
+        .filter(Boolean).length;
+    const draftDirty = Boolean(
+        editedArticle &&
+        generatedArticle &&
+        (editedArticle.headline !== generatedArticle.headline ||
+            editedArticle.subheadline !== generatedArticle.subheadline ||
+            editedArticle.lead !== generatedArticle.lead ||
+            JSON.stringify(editedArticle.body) !==
+                JSON.stringify(generatedArticle.body)),
+    );
     const [previewOpen, setPreviewOpen] = useState(Boolean(generatedArticle));
     const [previewWidth, setPreviewWidth] = useState(720);
     const [resizingPreview, setResizingPreview] = useState(false);
@@ -445,6 +450,7 @@ export default function NewsCreatorAgent({
     const [composerOverflowing, setComposerOverflowing] = useState(false);
     const [composerMultiline, setComposerMultiline] = useState(false);
     const [sourcesOpen, setSourcesOpen] = useState(false);
+    const [attachmentsOpen, setAttachmentsOpen] = useState(false);
     const questions = newsSession?.pending_questions ?? [];
     const allQuestionsAnswered =
         questions.length > 0 &&
@@ -807,26 +813,10 @@ export default function NewsCreatorAgent({
         router.put(
             `/admin/ai-assistant/drafts/${editedArticle.draft_id}`,
             {
-                headline: editedArticle.headline,
-                subheadline: editedArticle.subheadline,
-                lead: editedArticle.lead,
-                body: editedArticle.body,
+                title: editedArticle.headline,
+                content: articleContent,
             },
             { onSuccess: () => setEditMode(false) },
-        );
-    }
-
-    function editorCommand(command: string, value?: string) {
-        document.execCommand(command, false, value);
-    }
-
-    function markReviewed() {
-        if (!editedArticle) {
-            return;
-        }
-
-        router.post(
-            `/admin/ai-assistant/drafts/${editedArticle.draft_id}/review`,
         );
     }
 
@@ -834,8 +824,9 @@ export default function NewsCreatorAgent({
         if (
             conversationReadOnly ||
             editMode ||
+            draftDirty ||
             publishing ||
-            !editedArticle?.reviewed_at ||
+            !editedArticle ||
             editedArticle.quality?.publish_blocked
         ) {
             return;
@@ -848,8 +839,9 @@ export default function NewsCreatorAgent({
         if (
             conversationReadOnly ||
             editMode ||
+            draftDirty ||
             publishing ||
-            !editedArticle?.reviewed_at ||
+            !editedArticle ||
             editedArticle.quality?.publish_blocked ||
             !selectedPlatforms.length
         ) {
@@ -861,6 +853,7 @@ export default function NewsCreatorAgent({
             {
                 platforms: selectedPlatforms,
                 version: editedArticle.version,
+                confirm_review: true,
             },
             {
                 preserveScroll: true,
@@ -1040,14 +1033,17 @@ export default function NewsCreatorAgent({
                 selected={selectedPlatforms}
                 onSelectionChange={setSelectedPlatforms}
                 processing={publishing}
-                contentReady={!editMode && Boolean(editedArticle?.reviewed_at)}
+                contentReady={
+                    !editMode && !draftDirty && Boolean(editedArticle)
+                }
+                requireReviewConfirmation
                 error={publishError}
                 onPublish={confirmPublish}
             />
             <Head title="Asisten AI" />
             <div
                 ref={workspace}
-                className="relative -mt-16 flex h-screen min-h-[640px] flex-col overflow-hidden bg-background text-foreground lg:flex-row"
+                className="relative -mt-16 flex h-dvh min-h-0 flex-col overflow-hidden bg-background text-foreground lg:flex-row"
             >
                 <SessionPanel sessions={sessions} current={newsSession?.id} />
                 <section
@@ -1693,43 +1689,33 @@ export default function NewsCreatorAgent({
                                                         <Button
                                                             size="sm"
                                                             variant="outline"
-                                                            onClick={() =>
+                                                            onClick={() => {
                                                                 setEditMode(
                                                                     false,
-                                                                )
-                                                            }
+                                                                );
+                                                                setPreviewOpen(
+                                                                    true,
+                                                                );
+                                                            }}
                                                         >
                                                             Pratinjau
                                                         </Button>
                                                         <Button
                                                             size="sm"
                                                             variant="outline"
-                                                            onClick={() =>
+                                                            disabled={
+                                                                conversationReadOnly
+                                                            }
+                                                            onClick={() => {
                                                                 setEditMode(
                                                                     true,
-                                                                )
-                                                            }
+                                                                );
+                                                                setPreviewOpen(
+                                                                    true,
+                                                                );
+                                                            }}
                                                         >
                                                             <Edit3 /> Edit
-                                                        </Button>
-                                                        <Button
-                                                            size="sm"
-                                                            disabled={
-                                                                conversationReadOnly ||
-                                                                editMode ||
-                                                                publishing ||
-                                                                !editedArticle?.reviewed_at ||
-                                                                Boolean(
-                                                                    generatedArticle
-                                                                        .quality
-                                                                        ?.publish_blocked,
-                                                                )
-                                                            }
-                                                            onClick={
-                                                                publishDraft
-                                                            }
-                                                        >
-                                                            Publikasikan
                                                         </Button>
                                                     </div>
                                                 </CardContent>
@@ -1806,126 +1792,164 @@ export default function NewsCreatorAgent({
                                     {(workflowMode ||
                                         files.length > 0 ||
                                         hasSources) && (
-                                        <div className="flex flex-wrap gap-2">
-                                            {workflowMode && (
-                                                <Badge
-                                                    variant="outline"
-                                                    className="gap-1.5 border-primary/30 bg-primary/5 py-1.5 text-primary"
+                                        <Collapsible
+                                            open={attachmentsOpen}
+                                            onOpenChange={setAttachmentsOpen}
+                                        >
+                                            <CollapsibleTrigger asChild>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="max-w-full"
                                                 >
-                                                    {workflowMode === 'news'
-                                                        ? 'Buat berita'
-                                                        : workflowMode ===
-                                                            'extract'
-                                                          ? 'Ekstrak informasi'
-                                                          : 'Cari sumber'}
-                                                    <button
-                                                        type="button"
-                                                        aria-label="Hapus mode"
-                                                        onClick={() =>
-                                                            setWorkflowMode(
-                                                                null,
-                                                            )
-                                                        }
-                                                    >
-                                                        <X className="size-3" />
-                                                    </button>
-                                                </Badge>
-                                            )}
-                                            {files.map((file, index) => (
-                                                <Badge
-                                                    key={`${file.name}-${index}`}
-                                                    variant="secondary"
-                                                    className="gap-1 py-1.5"
-                                                >
-                                                    <Paperclip className="size-3" />
-                                                    {file.name}
-                                                    <button
-                                                        type="button"
-                                                        onClick={() =>
-                                                            setFiles(
-                                                                (current) =>
-                                                                    current.filter(
-                                                                        (
-                                                                            _,
-                                                                            position,
-                                                                        ) =>
-                                                                            position !==
-                                                                            index,
-                                                                    ),
-                                                            )
-                                                        }
-                                                    >
-                                                        <X className="size-3" />
-                                                    </button>
-                                                </Badge>
-                                            ))}
-                                            {informationIds.map((id) => {
-                                                const information =
-                                                    informationItems.find(
-                                                        (item) =>
-                                                            item.id === id,
-                                                    );
-
-                                                return (
-                                                    <Badge
-                                                        key={`information-${id}`}
-                                                        variant="secondary"
-                                                        className="gap-1 py-1.5"
-                                                    >
-                                                        <FolderSearch className="size-3" />
-                                                        <span className="max-w-48 truncate">
-                                                            {information?.title ??
-                                                                `Informasi #${id}`}
-                                                        </span>
-                                                        <button
-                                                            type="button"
-                                                            aria-label="Hapus informasi"
-                                                            onClick={() =>
-                                                                toggle(
-                                                                    informationIds,
-                                                                    id,
-                                                                    setInformationIds,
-                                                                )
-                                                            }
+                                                    <Paperclip className="size-4" />
+                                                    {files.length +
+                                                        informationIds.length +
+                                                        documentIds.length}{' '}
+                                                    sumber terlampir{' '}
+                                                    {attachmentsOpen ? (
+                                                        <ChevronDown className="size-4" />
+                                                    ) : (
+                                                        <ChevronRight className="size-4" />
+                                                    )}
+                                                </Button>
+                                            </CollapsibleTrigger>
+                                            <CollapsibleContent className="max-h-40 overflow-y-auto">
+                                                <div className="flex flex-wrap gap-2 py-2">
+                                                    {workflowMode && (
+                                                        <Badge
+                                                            variant="outline"
+                                                            className="gap-1.5 border-primary/30 bg-primary/5 py-1.5 text-primary"
                                                         >
-                                                            <X className="size-3" />
-                                                        </button>
-                                                    </Badge>
-                                                );
-                                            })}
-                                            {documentIds.map((id) => {
-                                                const document = documents.find(
-                                                    (item) => item.id === id,
-                                                );
+                                                            {workflowMode ===
+                                                            'news'
+                                                                ? 'Buat berita'
+                                                                : workflowMode ===
+                                                                    'extract'
+                                                                  ? 'Ekstrak informasi'
+                                                                  : 'Cari sumber'}
+                                                            <button
+                                                                type="button"
+                                                                aria-label="Hapus mode"
+                                                                onClick={() =>
+                                                                    setWorkflowMode(
+                                                                        null,
+                                                                    )
+                                                                }
+                                                            >
+                                                                <X className="size-3" />
+                                                            </button>
+                                                        </Badge>
+                                                    )}
+                                                    {files.map(
+                                                        (file, index) => (
+                                                            <Badge
+                                                                key={`${file.name}-${index}`}
+                                                                variant="secondary"
+                                                                className="gap-1 py-1.5"
+                                                            >
+                                                                <Paperclip className="size-3" />
+                                                                <span className="max-w-40 truncate">
+                                                                    {file.name}
+                                                                </span>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() =>
+                                                                        setFiles(
+                                                                            (
+                                                                                current,
+                                                                            ) =>
+                                                                                current.filter(
+                                                                                    (
+                                                                                        _,
+                                                                                        position,
+                                                                                    ) =>
+                                                                                        position !==
+                                                                                        index,
+                                                                                ),
+                                                                        )
+                                                                    }
+                                                                >
+                                                                    <X className="size-3" />
+                                                                </button>
+                                                            </Badge>
+                                                        ),
+                                                    )}
+                                                    {informationIds.map(
+                                                        (id) => {
+                                                            const information =
+                                                                informationItems.find(
+                                                                    (item) =>
+                                                                        item.id ===
+                                                                        id,
+                                                                );
 
-                                                return (
-                                                    <Badge
-                                                        key={`document-${id}`}
-                                                        variant="secondary"
-                                                        className="gap-1 py-1.5"
-                                                    >
-                                                        <FileText className="size-3" />
-                                                        <span className="max-w-48 truncate">
-                                                            {document?.original_name ??
-                                                                `Dokumen #${id}`}
-                                                        </span>
-                                                        <button
-                                                            type="button"
-                                                            aria-label="Hapus dokumen"
-                                                            onClick={() =>
-                                                                toggle(
-                                                                    documentIds,
+                                                            return (
+                                                                <Badge
+                                                                    key={`information-${id}`}
+                                                                    variant="secondary"
+                                                                    className="gap-1 py-1.5"
+                                                                >
+                                                                    <FolderSearch className="size-3" />
+                                                                    <span className="max-w-48 truncate">
+                                                                        {information?.title ??
+                                                                            `Informasi #${id}`}
+                                                                    </span>
+                                                                    <button
+                                                                        type="button"
+                                                                        aria-label="Hapus informasi"
+                                                                        onClick={() =>
+                                                                            toggle(
+                                                                                informationIds,
+                                                                                id,
+                                                                                setInformationIds,
+                                                                            )
+                                                                        }
+                                                                    >
+                                                                        <X className="size-3" />
+                                                                    </button>
+                                                                </Badge>
+                                                            );
+                                                        },
+                                                    )}
+                                                    {documentIds.map((id) => {
+                                                        const document =
+                                                            documents.find(
+                                                                (item) =>
+                                                                    item.id ===
                                                                     id,
-                                                                    setDocumentIds,
-                                                                )
-                                                            }
-                                                        >
-                                                            <X className="size-3" />
-                                                        </button>
-                                                    </Badge>
-                                                );
-                                            })}
-                                        </div>
+                                                            );
+
+                                                        return (
+                                                            <Badge
+                                                                key={`document-${id}`}
+                                                                variant="secondary"
+                                                                className="gap-1 py-1.5"
+                                                            >
+                                                                <FileText className="size-3" />
+                                                                <span className="max-w-48 truncate">
+                                                                    {document?.original_name ??
+                                                                        `Dokumen #${id}`}
+                                                                </span>
+                                                                <button
+                                                                    type="button"
+                                                                    aria-label="Hapus dokumen"
+                                                                    onClick={() =>
+                                                                        toggle(
+                                                                            documentIds,
+                                                                            id,
+                                                                            setDocumentIds,
+                                                                        )
+                                                                    }
+                                                                >
+                                                                    <X className="size-3" />
+                                                                </button>
+                                                            </Badge>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </CollapsibleContent>
+                                        </Collapsible>
                                     )}
                                     <div
                                         className={`grid items-center gap-1 rounded-2xl border bg-card p-1.5 shadow-lg focus-within:ring-2 focus-within:ring-ring/30 ${composerMultiline ? 'grid-cols-[1fr_auto]' : 'grid-cols-[auto_1fr_auto]'}`}
@@ -1992,37 +2016,12 @@ export default function NewsCreatorAgent({
                                                             file
                                                         </DropdownMenuItem>
                                                         <DropdownMenuItem
-                                                            onSelect={() => {
-                                                                setPickerTab(
-                                                                    'information',
-                                                                );
-                                                                setPicker(true);
-                                                            }}
+                                                            onSelect={() =>
+                                                                setPicker(true)
+                                                            }
                                                         >
                                                             <FolderSearch />{' '}
-                                                            Pilih informasi
-                                                        </DropdownMenuItem>
-                                                        <DropdownMenuItem
-                                                            onSelect={() => {
-                                                                setPickerTab(
-                                                                    'documents',
-                                                                );
-                                                                setPicker(true);
-                                                            }}
-                                                        >
-                                                            <FileText /> Pilih
-                                                            dokumen
-                                                        </DropdownMenuItem>
-                                                        <DropdownMenuItem
-                                                            onSelect={() => {
-                                                                setPickerTab(
-                                                                    'manual',
-                                                                );
-                                                                setPicker(true);
-                                                            }}
-                                                        >
-                                                            <Edit3 /> Tambahkan
-                                                            fakta manual
+                                                            Pilih sumber
                                                         </DropdownMenuItem>
                                                     </DropdownMenuContent>
                                                 </DropdownMenu>
@@ -2132,6 +2131,7 @@ export default function NewsCreatorAgent({
                 </section>
                 {editedArticle && previewOpen && (
                     <PreviewFrame
+                        onClose={() => setPreviewOpen(false)}
                         width={previewWidth}
                         onResizeStart={(event) => {
                             event.preventDefault();
@@ -2140,7 +2140,7 @@ export default function NewsCreatorAgent({
                     >
                         <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border/50 bg-card/80 px-5 py-4 backdrop-blur-xl">
                             <div>
-                                <div className="flex items-center gap-2">
+                                <div className="flex flex-wrap items-center gap-2">
                                     <h2 className="font-semibold">
                                         Pratinjau berita
                                     </h2>
@@ -2165,7 +2165,7 @@ export default function NewsCreatorAgent({
                                 </div>
                             </div>
                             <div className="flex gap-2">
-                                {editMode ? (
+                                {editMode || draftDirty ? (
                                     <>
                                         <Button
                                             variant="outline"
@@ -2191,20 +2191,10 @@ export default function NewsCreatorAgent({
                                         >
                                             <Edit3 /> Edit
                                         </Button>
-                                        {!conversationReadOnly &&
-                                            !editedArticle.reviewed_at && (
-                                                <Button
-                                                    variant="secondary"
-                                                    onClick={markReviewed}
-                                                >
-                                                    Tandai sudah ditinjau
-                                                </Button>
-                                            )}
                                         <Button
                                             disabled={
                                                 conversationReadOnly ||
                                                 publishing ||
-                                                !editedArticle.reviewed_at ||
                                                 Boolean(
                                                     editedArticle.quality
                                                         ?.publish_blocked,
@@ -2227,46 +2217,6 @@ export default function NewsCreatorAgent({
                                 </Button>
                             </div>
                         </header>
-                        {editMode && (
-                            <div className="flex flex-wrap items-center gap-1 border-b bg-card px-5 py-2">
-                                {[
-                                    ['bold', Bold],
-                                    ['italic', Italic],
-                                    ['underline', Underline],
-                                    ['justifyLeft', AlignLeft],
-                                    ['justifyCenter', AlignCenter],
-                                    ['justifyRight', AlignRight],
-                                    ['insertUnorderedList', List],
-                                    ['insertOrderedList', ListOrdered],
-                                    ['undo', Undo2],
-                                    ['redo', Redo2],
-                                ].map(([command, Icon]) => (
-                                    <Button
-                                        key={command as string}
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon-sm"
-                                        onMouseDown={(event) =>
-                                            event.preventDefault()
-                                        }
-                                        onClick={() =>
-                                            editorCommand(command as string)
-                                        }
-                                    >
-                                        <Icon className="size-4" />
-                                    </Button>
-                                ))}
-                                <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    disabled
-                                    title="Penyisipan gambar akan menggunakan pustaka media"
-                                >
-                                    <ImagePlus /> Gambar
-                                </Button>
-                            </div>
-                        )}
                         <div className="min-h-0 flex-1 overflow-y-auto bg-muted/25 p-5 lg:p-8">
                             <article className="mx-auto max-w-3xl rounded-2xl bg-background p-6 shadow-lg ring-1 ring-border/50 md:p-10">
                                 <input
@@ -2341,67 +2291,30 @@ export default function NewsCreatorAgent({
                                     {editedArticle.version ?? 1}
                                 </p>
                                 <div className="my-6 h-px bg-border" />
-                                <div className="space-y-5 leading-8">
-                                    {[
-                                        editedArticle.lead,
-                                        ...editedArticle.body,
-                                    ].map((paragraph, index) =>
-                                        editMode ? (
-                                            <div
-                                                key={index}
-                                                contentEditable
-                                                suppressContentEditableWarning
-                                                className={`${index === 0 ? 'text-lg font-medium' : ''} rounded-md outline-none focus:ring-2 focus:ring-ring/30`}
-                                                onBlur={(event) => {
-                                                    const value =
-                                                        event.currentTarget
-                                                            .textContent ?? '';
-
-                                                    if (index === 0) {
-                                                        setEditedArticle({
-                                                            ...editedArticle,
-                                                            lead: value,
-                                                        });
-                                                    } else {
-                                                        const body = [
-                                                            ...editedArticle.body,
-                                                        ];
-                                                        body[index - 1] = value;
-                                                        setEditedArticle({
-                                                            ...editedArticle,
-                                                            body,
-                                                        });
-                                                    }
-                                                }}
-                                            >
-                                                {paragraph}
-                                            </div>
-                                        ) : (
-                                            <p
-                                                key={index}
-                                                className={
-                                                    index === 0
-                                                        ? 'text-lg font-medium'
-                                                        : ''
-                                                }
-                                            >
-                                                {paragraph}
-                                                {editedArticle.selected_sources
-                                                    .length > 0 && (
-                                                    <sup className="ml-1 text-primary">
-                                                        [
-                                                        {(index %
-                                                            editedArticle
-                                                                .selected_sources
-                                                                .length) +
-                                                            1}
-                                                        ]
-                                                    </sup>
-                                                )}
-                                            </p>
-                                        ),
-                                    )}
-                                </div>
+                                <p
+                                    className="mb-3 text-xs text-muted-foreground"
+                                    aria-live="polite"
+                                >
+                                    {wordCount} kata · Isi berita
+                                </p>
+                                {editMode ? (
+                                    <Textarea
+                                        aria-label="Isi berita"
+                                        value={articleContent}
+                                        onChange={(event) =>
+                                            setEditedArticle({
+                                                ...editedArticle,
+                                                lead: '',
+                                                body: [event.target.value],
+                                            })
+                                        }
+                                        className="min-h-[50dvh] resize-y border-0 px-0 text-base leading-8 shadow-none"
+                                    />
+                                ) : (
+                                    <div className="leading-8 break-words whitespace-pre-wrap">
+                                        {articleContent}
+                                    </div>
+                                )}
                                 <Collapsible
                                     open={sourcesOpen}
                                     onOpenChange={setSourcesOpen}

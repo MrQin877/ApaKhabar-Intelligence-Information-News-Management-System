@@ -555,13 +555,22 @@ class NewsCreatorController extends Controller
         abort_unless($draft->created_by === $request->user()->getKey(), 403);
         abort_unless($draft->status === 'draft', 422, 'Only draft content can be edited.');
 
-        $validated = $request->validate([
-            'headline' => ['required', 'string', 'max:255'],
-            'subheadline' => ['nullable', 'string', 'max:255'],
-            'lead' => ['required', 'string'],
-            'body' => ['required', 'array', 'min:1'],
-            'body.*' => ['required', 'string'],
-        ]);
+        if ($request->has('content') || $request->has('title')) {
+            $data = $request->validate([
+                'title' => ['required', 'string', 'max:255'],
+                'content' => ['required', 'string'],
+            ]);
+            $validated = ['title' => $data['title'], 'content' => trim($data['content'])];
+        } else {
+            $validated = $request->validate([
+                'headline' => ['required', 'string', 'max:255'],
+                'subheadline' => ['nullable', 'string', 'max:255'],
+                'lead' => ['required', 'string'],
+                'body' => ['required', 'array', 'min:1'],
+                'body.*' => ['required', 'string'],
+            ]);
+
+        }
 
         $draft->update([
             ...$validated,
@@ -672,7 +681,7 @@ class NewsCreatorController extends Controller
                 'revision_instruction' => $revisionInstruction,
                 'created_by' => $userId,
                 'snapshot' => $draft->only([
-                    'headline', 'subheadline', 'lead', 'body', 'summary', 'labels',
+                    'title', 'content', 'excerpt', 'labels',
                     'sources_used', 'warnings', 'category_id', 'image', 'user_prompt',
                 ]),
             ],

@@ -34,9 +34,15 @@ export function QualityScoreBadge({
         return <Badge variant="outline">Skor AI belum tersedia</Badge>;
     }
 
+    if (quality.quality_label === 'evaluation_unavailable') {
+        return <Badge variant="destructive">Evaluasi belum tersedia</Badge>;
+    }
     return (
         <Badge variant={quality.publish_blocked ? 'destructive' : 'outline'}>
-            Skor AI {quality.overall_score.toFixed(1)}%
+            {quality.evaluation_version === 'separate-judge-v1'
+                ? 'Skor evaluator'
+                : 'Skor evaluasi mandiri'}{' '}
+            {quality.overall_score.toFixed(1)}/100
         </Badge>
     );
 }
@@ -59,28 +65,44 @@ export function QualityScoreBreakdown({
                 </Button>
             </CollapsibleTrigger>
             <CollapsibleContent className="mt-3 grid gap-3 border-t pt-3 sm:grid-cols-2">
-                {Object.entries(quality.dimensions).map(([key, dimension]) => {
-                    const score = scoreOf(dimension);
+                <p className="text-xs text-muted-foreground sm:col-span-2">
+                    Penilai: {quality.evaluator_model ?? 'Tidak tercatat'}. Skor
+                    merupakan penilaian otomatis, bukan persentase akurasi
+                    terukur.
+                </p>
+                {quality.warnings?.map((warning, index) => (
+                    <p
+                        key={index}
+                        className="text-xs text-destructive sm:col-span-2"
+                    >
+                        {warning}
+                    </p>
+                ))}
+                {quality.quality_label !== 'evaluation_unavailable' &&
+                    Object.entries(quality.dimensions).map(
+                        ([key, dimension]) => {
+                            const score = scoreOf(dimension);
 
-                    return (
-                        <div key={key} className="space-y-1">
-                            <div className="flex justify-between text-xs">
-                                <span>{labels[key] ?? key}</span>
-                                <span className="font-medium">
-                                    {score.toFixed(0)}%
-                                </span>
-                            </div>
-                            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                                <div
-                                    className="h-full rounded-full bg-primary"
-                                    style={{
-                                        width: `${Math.max(0, Math.min(100, score))}%`,
-                                    }}
-                                />
-                            </div>
-                        </div>
-                    );
-                })}
+                            return (
+                                <div key={key} className="space-y-1">
+                                    <div className="flex justify-between text-xs">
+                                        <span>{labels[key] ?? key}</span>
+                                        <span className="font-medium">
+                                            {score.toFixed(0)}/100
+                                        </span>
+                                    </div>
+                                    <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                                        <div
+                                            className="h-full rounded-full bg-primary"
+                                            style={{
+                                                width: `${Math.max(0, Math.min(100, score))}%`,
+                                            }}
+                                        />
+                                    </div>
+                                </div>
+                            );
+                        },
+                    )}
             </CollapsibleContent>
         </Collapsible>
     );

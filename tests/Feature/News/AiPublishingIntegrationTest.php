@@ -113,3 +113,34 @@ test('complete social failure retains the reviewed AI draft', function () {
     expect($this->draft->fresh()->reviewed_at)->not->toBeNull();
     expect(News::count())->toBe(0);
 });
+
+test('AI publish confirmation approves the current saved draft without separate review', function () {
+    $this->postJson('/admin/news/drafts/'.$this->draft->id.'/publish', [
+        'platforms' => ['website'], 'version' => 1, 'confirm_review' => true,
+    ])->assertOk()->assertJsonPath('success', true);
+    expect($this->draft->fresh()->reviewed_at)->not->toBeNull();
+    expect(News::count())->toBe(1);
+});
+
+test('AI confirmation cannot approve a stale draft version', function () {
+    $this->draft->update(['version' => 2]);
+    $this->postJson('/admin/news/drafts/'.$this->draft->id.'/publish', [
+        'platforms' => ['website'], 'version' => 1, 'confirm_review' => true,
+    ])->assertUnprocessable()->assertJsonValidationErrors('version');
+    expect($this->draft->fresh()->reviewed_at)->toBeNull();
+    expect(News::count())->toBe(0);
+});
+
+test('unified title and content editor preserves paragraphs through publication', function (string $content) {
+    $this->put('/admin/ai-assistant/drafts/'.$this->draft->id, [
+        'title' => 'Judul hasil tinjauan', 'content' => $content,
+    ])->assertRedirect();
+    $this->draft->refresh();
+    expect($this->draft->subheadline)->toBeNull();
+    expect($this->draft->reviewed_at)->toBeNull();
+    $this->postJson('/admin/news/drafts/'.$this->draft->id.'/publish', [
+        'platforms' => ['website'], 'version' => $this->draft->version, 'confirm_review' => true,
+    ])->assertOk();
+    expect(News::sole()->title)->toBe('Judul hasil tinjauan');
+    expect(News::sole()->content)->toBe($content);
+})->with(['Satu paragraf lengkap.', "Pembukaan berita.\n\nKegiatan peserta.\n\nHasil kegiatan."]);
