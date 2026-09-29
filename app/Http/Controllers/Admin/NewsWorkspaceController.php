@@ -209,8 +209,8 @@ class NewsWorkspaceController extends Controller
         $platforms = $request->input('platforms', ['website']);
         $request->merge(['platforms' => $platforms]);
         $this->validatePlatforms($request);
-        if (in_array('instagram', $platforms, true) && $draft->creation_method !== 'manual') {
-            throw ValidationException::withMessages(['platforms' => 'Penerbitan Instagram hanya tersedia untuk berita manual.']);
+        if ($draft->creation_method === 'ai') {
+            $request->validate(['version' => ['sometimes', 'required', 'integer', Rule::in([$draft->version])]]);
         }
 
         $context = $this->publishContext($request, $draft->id);
@@ -230,8 +230,8 @@ class NewsWorkspaceController extends Controller
                         }
                         $news = News::create([
                             'title' => $draft->headline,
-                            'content' => collect($draft->body)->join("\n\n"),
-                            'excerpt' => $draft->summary,
+                            'content' => $this->publicationContent($draft),
+                            'excerpt' => $draft->creation_method === 'ai' ? $draft->lead : $draft->summary,
                             'image' => $draft->image,
                             'category_id' => $draft->category_id,
                             'status' => 'active',
@@ -247,7 +247,7 @@ class NewsWorkspaceController extends Controller
                         if ($draft->facebook_post_id) {
                             return $draft->facebook_post_id;
                         }
-                        $message = trim(html_entity_decode(strip_tags($draft->headline."\n\n".$draft->summary), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+                        $message = trim(html_entity_decode(strip_tags($draft->headline."\n\n".($draft->creation_method === 'ai' ? $this->publicationContent($draft) : $draft->summary)), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
                         $id = app(FacebookPublishingService::class)->publish(NewsImageUrl::resolve($draft->image), $message, $context);
                         $draft->update(['facebook_post_id' => $id]);
 
@@ -256,7 +256,7 @@ class NewsWorkspaceController extends Controller
                     if ($draft->instagram_media_id) {
                         return $draft->instagram_media_id;
                     }
-                    $caption = trim(html_entity_decode(strip_tags($draft->headline."\n\n".$draft->summary), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+                    $caption = trim(html_entity_decode(strip_tags($draft->headline."\n\n".($draft->creation_method === 'ai' ? $this->publicationContent($draft) : $draft->summary)), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
                     $id = app(InstagramService::class)->publish(
                         NewsImageUrl::resolve($draft->image) ?? '', $caption, $context,
                     );
@@ -284,15 +284,21 @@ class NewsWorkspaceController extends Controller
             $draft->update(['status' => 'published']);
         }
         $result = ['success' => $success, 'results' => $results, 'draft_id' => $draft->id,
-            'attempt_id' => $context['attempt_id'], 'retry_url' => route('admin.news-workspace.manual.edit', $draft),
+            'attempt_id' => $context['attempt_id'], 'retry_url' => $draft->creation_method === 'ai' ? route('admin.assistant.index', ['draft' => $draft->id]) : route('admin.news-workspace.manual.edit', $draft),
             'completion_url' => route('admin.news-workspace.index')];
         PublishLog::write('final_result', [...$context, 'news_id' => $draft->published_news_id, ...$result]);
         if ($request->expectsJson() && ! $request->header('X-Inertia')) {
             return response()->json($result);
         }
 
-        return redirect()->route('admin.news-workspace.manual.edit', $draft)
-            ->with('publishResult', $result);
+        return redirect($result['retry_url'])->with('publishResult', $result);
+    }
+
+    private function publicationContent(IntelligentNewsDraft $draft): string
+    {
+        // AI drafts store the lead separately; manual drafts already include it in body.
+        return collect($draft->creation_method === 'ai' ? [$draft->lead, ...$draft->body] : $draft->body)
+            ->filter(fn ($paragraph) => trim((string) $paragraph) !== '')->join("\n\n");
     }
 
     private function publishContext(Request $request, ?int $draftId = null): array

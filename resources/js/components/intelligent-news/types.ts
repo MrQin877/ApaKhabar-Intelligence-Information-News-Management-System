@@ -157,6 +157,8 @@ export interface Recommendation {
 }
 
 export interface AssistantPageProps {
+    publishPlatforms: import('@/components/publish-news-dialog').PublishPlatform[];
+    metaAuth: import('@/lib/meta-auth').MetaAuthConfig;
     conversationReadOnly?: boolean;
     sessions?: import('./session-panel').AssistantSessionSummary[];
     categories?: { categoryID: number; name: string }[];

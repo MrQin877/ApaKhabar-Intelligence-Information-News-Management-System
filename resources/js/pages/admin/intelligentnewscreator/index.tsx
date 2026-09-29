@@ -103,7 +103,11 @@ function ItemActions({ item }: { item: WorkspaceItem }) {
                 {item.can_publish && (
                     <DropdownMenuItem
                         onSelect={() =>
-                            router.post(`/admin/news/drafts/${item.id}/publish`)
+                            item.creation_method === 'ai'
+                                ? router.visit(item.resume_url)
+                                : router.post(
+                                      `/admin/news/drafts/${item.id}/publish`,
+                                  )
                         }
                     >
                         <Send /> Publikasikan

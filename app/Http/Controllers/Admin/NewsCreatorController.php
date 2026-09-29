@@ -25,6 +25,7 @@ use App\Models\IntelligentNewsRun;
 use App\Models\IntelligentNewsRunEvent;
 use App\Models\IntelligentNewsSession;
 use App\Models\NewsCategory;
+use App\Services\News\MetaConnections;
 use App\Services\NewsGenerationService;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\JsonResponse;
@@ -185,6 +186,8 @@ class NewsCreatorController extends Controller
                 || (! $session['has_draft'] && $session['recent']))->values();
 
         return inertia('admin/intelligentnewscreator/chat', [
+            'publishPlatforms' => app(MetaConnections::class)->platforms($request->user()->getKey()),
+            'metaAuth' => app(MetaConnections::class)->publicConfig(),
             'sessions' => $sessions,
             'categories' => NewsCategory::active()->orderBy('name')->get(['categoryID', 'name']),
             'informationItems' => $information,
@@ -195,7 +198,7 @@ class NewsCreatorController extends Controller
             'initialPrompt' => $request->query('prompt'),
             'initialManualFact' => $request->query('fact'),
             'autoGenerate' => $request->boolean('generate'),
-            'conversationReadOnly' => $newsSession?->draft?->status === 'published',
+            'conversationReadOnly' => (isset($draft) && $draft->status !== 'draft') || $newsSession?->draft?->status === 'published',
             'newsSession' => $newsSession,
             'pendingInformation' => $pendingInformation,
         ]);
