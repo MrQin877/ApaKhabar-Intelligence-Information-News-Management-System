@@ -11,6 +11,7 @@ use App\Services\FacebookPublishingService;
 use App\Services\InstagramService;
 use App\Services\News\ArticleHtml;
 use App\Services\News\MetaConnections;
+use App\Support\ArticleText;
 use App\Support\NewsImageUrl;
 use App\Support\PublishLog;
 use Illuminate\Http\JsonResponse;
@@ -33,7 +34,8 @@ class NewsWorkspaceController extends Controller
         $drafts = IntelligentNewsDraft::query()
             ->with(['category:categoryID,name', 'session:id,draft_id', 'qualityEvaluations'])
             ->where('created_by', $userId)
-            ->whereIn('status', ['draft', 'archived'])
+            ->whereIn('status', ['draft', 'archived', 'published'])
+            ->whereNull('published_news_id')
             ->latest('updated_at')
             ->get()
             ->map(function (IntelligentNewsDraft $draft) {
@@ -44,8 +46,9 @@ class NewsWorkspaceController extends Controller
                     'id' => $draft->id,
                     'record_type' => 'draft',
                     'title' => $draft->headline,
-                    'summary' => $draft->summary,
-                    'status' => $draft->status,
+                    'preview' => ArticleText::preview(collect($draft->body)->join("\n\n")),
+                    'status' => $draft->status === 'archived' ? 'archived' : ($draft->publicationResults() ? 'active' : 'draft'),
+                    ...$this->publicationCard($draft),
                     'creation_method' => $draft->creation_method,
                     'category' => $draft->category?->name,
                     'updated_at' => $draft->updated_at?->toISOString(),
@@ -55,7 +58,7 @@ class NewsWorkspaceController extends Controller
                             'draft' => $draft->id,
                         ]))
                         : route('admin.news-workspace.manual.edit', $draft),
-                    'can_publish' => $draft->status === 'draft' && ! $quality?->publish_blocked,
+                    'can_publish' => $draft->status === 'draft' && ! $draft->publicationResults() && ! $quality?->publish_blocked,
                     'quality_score' => $quality?->overall_score,
                     'quality_label' => $quality?->quality_label,
                     'publish_blocked' => $quality?->publish_blocked ?? false,
@@ -72,7 +75,7 @@ class NewsWorkspaceController extends Controller
                 'id' => $session->id,
                 'record_type' => 'session',
                 'title' => $session->prompt ?: 'Percakapan AI tanpa judul',
-                'summary' => count($session->pending_questions ?? []).' informasi masih diperlukan',
+                'preview' => count($session->pending_questions ?? []).' informasi masih diperlukan',
                 'status' => $session->archived_at ? 'archived' : 'draft',
                 'creation_method' => 'ai',
                 'category' => null,
@@ -84,6 +87,7 @@ class NewsWorkspaceController extends Controller
                 'publish_blocked' => false,
             ]);
 
+        $publicationDrafts = IntelligentNewsDraft::whereNotNull('published_news_id')->get()->keyBy('published_news_id');
         $published = News::query()
             ->with('categoryRecord:categoryID,name')
             ->latest('updated_at')
@@ -92,8 +96,9 @@ class NewsWorkspaceController extends Controller
                 'key' => "news-{$news->getKey()}",
                 'id' => $news->getKey(),
                 'record_type' => 'news',
+                ...$this->publicationCard($publicationDrafts->get($news->getKey()), $news),
                 'title' => $news->title,
-                'summary' => $news->excerpt ?: str($news->content)->stripTags()->limit(180)->toString(),
+                'preview' => ArticleText::preview($news->content),
                 'status' => $news->status,
                 'creation_method' => $news->creation_method,
                 'category' => $news->category,
@@ -106,6 +111,7 @@ class NewsWorkspaceController extends Controller
             ]);
 
         return Inertia::render('admin/intelligentnewscreator/index', [
+            'publishPlatforms' => $this->publishPlatforms(),
             'items' => $drafts->concat($sessions)->concat($published)
                 ->sortByDesc('updated_at')->values(),
             'counts' => [
@@ -149,14 +155,12 @@ class NewsWorkspaceController extends Controller
             'draft' => [
                 'id' => $draft->id,
                 'headline' => $draft->headline,
-                'subheadline' => $draft->subheadline,
                 'content' => collect($draft->body)->join("\n\n"),
                 'content_html' => app(ArticleHtml::class)->sanitize(
                     preg_match('/<(p|div|br|strong|b|em|i|u|ul|ol|li|blockquote)\b/i', collect($draft->body)->join("\n\n"))
                         ? collect($draft->body)->join("\n\n")
                         : nl2br(e(collect($draft->body)->join("\n\n")))
                 ),
-                'summary' => $draft->summary,
                 'category_id' => $draft->category_id,
                 'image' => $draft->image,
                 'status' => $draft->status,
@@ -208,6 +212,7 @@ class NewsWorkspaceController extends Controller
         PublishLog::write('request_received', $context);
         PublishLog::write('selected_platforms', $context);
         PublishLog::write('validation_passed', $context);
+        $draft->update(['publication_started_at' => $draft->publication_started_at ?? now()]);
         $results = [];
         foreach ($platforms as $platform) {
             $key = $platform === 'website' ? 'application' : $platform;
@@ -222,7 +227,6 @@ class NewsWorkspaceController extends Controller
                         $news = News::create([
                             'title' => $draft->headline,
                             'content' => collect($draft->body)->join("\n\n"),
-                            'excerpt' => $draft->summary,
                             'image' => $draft->image,
                             'category_id' => $draft->category_id,
                             'status' => 'active',
@@ -238,7 +242,7 @@ class NewsWorkspaceController extends Controller
                         if ($draft->facebook_post_id) {
                             return $draft->facebook_post_id;
                         }
-                        $message = trim(html_entity_decode(strip_tags($draft->headline."\n\n".$draft->summary), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+                        $message = ArticleText::post($draft->headline, collect($draft->body)->join("\n\n"));
                         $id = app(FacebookPublishingService::class)->publish(NewsImageUrl::resolve($draft->image), $message, $context);
                         $draft->update(['facebook_post_id' => $id]);
 
@@ -247,7 +251,7 @@ class NewsWorkspaceController extends Controller
                     if ($draft->instagram_media_id) {
                         return $draft->instagram_media_id;
                     }
-                    $caption = trim(html_entity_decode(strip_tags($draft->headline."\n\n".$draft->summary), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+                    $caption = ArticleText::post($draft->headline, collect($draft->body)->join("\n\n"));
                     $id = app(InstagramService::class)->publish(
                         NewsImageUrl::resolve($draft->image) ?? '', $caption, $context,
                     );
@@ -269,9 +273,21 @@ class NewsWorkspaceController extends Controller
                 PublishLog::write($key.'.failure', [...$context, 'exception' => $exception::class, 'exception_message' => $exception->getMessage()], 'error');
             }
         }
-        $success = collect($results)->every(fn ($result) => $result['success']);
+        DB::transaction(function () use ($draft, $results) {
+            $locked = IntelligentNewsDraft::whereKey($draft->id)->lockForUpdate()->firstOrFail();
+            $merged = array_replace($locked->publication_results ?? [], $results);
+            foreach (['application' => $locked->published_news_id, 'facebook' => $locked->facebook_post_id, 'instagram' => $locked->instagram_media_id] as $key => $id) {
+                if ($id) {
+                    $merged[$key] = ['success' => true];
+                }
+            }
+            $locked->update(['publication_results' => $merged]);
+        });
+        $allSuccessful = collect($draft->fresh()->publicationResults())->every(fn ($result) => $result['success']);
+        $success = $request->attributes->get('failed_platform_retry')
+            ? $allSuccessful : collect($results)->every(fn ($result) => $result['success']);
         $draft->refresh();
-        if ($success) {
+        if ($allSuccessful) {
             $draft->update(['status' => 'published']);
         }
         $result = ['success' => $success, 'results' => $results, 'draft_id' => $draft->id,
@@ -284,6 +300,46 @@ class NewsWorkspaceController extends Controller
 
         return redirect()->route('admin.news-workspace.manual.edit', $draft)
             ->with('publishResult', $result);
+    }
+
+    private function publicationCard(?IntelligentNewsDraft $draft, ?News $news = null): array
+    {
+        $results = $draft?->publicationResults() ?? ['application' => ['success' => true]];
+        $failed = collect($results)->filter(fn ($result) => ($result['success'] ?? null) === false)->keys();
+        $canRetry = $draft && (int) $draft->created_by === (int) auth()->id()
+            && $draft->status === 'draft' && $news?->status !== 'archived' && $failed->isNotEmpty();
+
+        return [
+            'publication_results' => $results,
+            'published_at' => ($news?->created_at ?? $draft?->publication_started_at)?->toISOString(),
+            'view_url' => $news ? route('news.show', $news->getKey()) : null,
+            'retry_url' => $canRetry ? route('admin.news-workspace.drafts.retry', $draft) : null,
+        ];
+    }
+
+    public function retry(Request $request, IntelligentNewsDraft $draft): JsonResponse
+    {
+        $this->authorizeDraft($request, $draft);
+        $this->validatePlatforms($request);
+
+        return DB::transaction(function () use ($request, $draft) {
+            $draft = IntelligentNewsDraft::whereKey($draft->id)->lockForUpdate()->firstOrFail();
+            abort_unless($draft->status === 'draft', 422, 'Berita ini tidak tersedia untuk penerbitan ulang.');
+            abort_if($draft->published_news_id && News::whereKey($draft->published_news_id)->where('status', 'archived')->exists(), 422);
+            $results = $draft->publicationResults();
+            foreach ($request->input('platforms') as $platform) {
+                $key = $platform === 'website' ? 'application' : $platform;
+                if (($results[$key]['success'] ?? null) !== false) {
+                    throw ValidationException::withMessages(['platforms' => 'Hanya platform yang gagal dapat diulangi.']);
+                }
+            }
+            // Reuse publishing and its saved-ID deduplication without editing or cloning content.
+            $request->headers->set('Accept', 'application/json');
+            $request->headers->remove('X-Inertia');
+            $request->attributes->set('failed_platform_retry', true);
+
+            return $this->publish($request, $draft);
+        });
     }
 
     private function publishContext(Request $request, ?int $draftId = null): array
@@ -348,7 +404,15 @@ class NewsWorkspaceController extends Controller
                 }
             }
             $result = ['success' => false, 'results' => $results, 'attempt_id' => $context['attempt_id']];
-            $request->session()->flash('publishResult', $result);
+            if ($request->expectsJson() && ! $request->header('X-Inertia')) {
+                $exception->response = response()->json([
+                    ...$result,
+                    'message' => $exception->getMessage(),
+                    'errors' => $exception->errors(),
+                ], 422);
+            } else {
+                $request->session()->flash('publishResult', $result);
+            }
             PublishLog::write('final_result', [...$context, ...$result]);
             throw $exception;
         }
@@ -358,9 +422,7 @@ class NewsWorkspaceController extends Controller
     {
         $data = $request->validate([
             'headline' => ['required', 'string', 'max:255'],
-            'subheadline' => ['nullable', 'string', 'max:255'],
             'content' => ['required', 'string', 'min:20', 'max:100000'],
-            'summary' => ['required', 'string', 'max:1000'],
             'category_id' => ['nullable', 'integer', Rule::exists('news_categories', 'categoryID')],
             'image' => ['nullable', 'url', 'max:2048'],
             'cover_photo' => ['nullable', 'image', 'mimes:jpg,jpeg,png', 'max:5120'],
@@ -426,10 +488,8 @@ class NewsWorkspaceController extends Controller
             'category_id' => $data['category_id'] ?? null,
             'image' => $data['image'] ?? null,
             'headline' => $data['headline'],
-            'subheadline' => $data['subheadline'] ?? null,
             'lead' => $paragraphs[0],
             'body' => $paragraphs,
-            'summary' => $data['summary'],
             'labels' => [],
             'sources_used' => [],
             'warnings' => [],

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\NewsImageUrl;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -15,7 +16,6 @@ class News extends Model
     protected $fillable = [
         'title',
         'content',
-        'excerpt',
         'image',
         'category_id',
         'status',
@@ -47,7 +47,7 @@ class News extends Model
 
     public function getImageAttribute(?string $value): ?string
     {
-        return \App\Support\NewsImageUrl::resolve($value);
+        return NewsImageUrl::resolve($value);
     }
 
     public function scopeCategory(Builder $query, string $category): Builder

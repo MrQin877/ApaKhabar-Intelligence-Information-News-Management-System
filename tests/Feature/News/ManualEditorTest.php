@@ -19,8 +19,7 @@ function manualArticle(array $overrides = []): array
 {
     return array_replace([
         'headline' => 'Berita kegiatan warga',
-        'subheadline' => 'Kegiatan bersama',
-        'summary' => 'Ringkasan berita untuk warga.',
+
         'content' => '<p>Warga berkumpul untuk kegiatan bersama hari ini.</p>',
         'content_format' => 'html',
         'show_on_homepage' => false,
@@ -33,6 +32,21 @@ beforeEach(function () {
     config(['services.facebook.page_id' => null, 'services.facebook.page_access_token' => null]);
     config(['services.instagram.user_id' => null, 'services.instagram.access_token' => null, 'services.instagram.public_base_url' => null]);
     $this->actingAs(User::factory()->create(['roleID' => UserRole::firstOrCreate(['name' => 'admin'])->getKey()]));
+});
+
+test('news previews are generated from full content and website details keep the full article', function () {
+    $content = '<p>Kalimat pertama yang bermakna.</p><p>Kalimat kedua tetap tersedia di halaman berita.</p>';
+    $this->postJson('/admin/news/manual', manualArticle(['intent' => 'publish', 'content' => $content]))->assertOk();
+    $news = News::sole();
+    $this->get('/admin/news')->assertInertia(fn (Assert $page) => $page
+        ->where('items.0.preview', 'Kalimat pertama yang bermakna.'));
+    $this->get('/news/'.$news->getKey())->assertInertia(fn (Assert $page) => $page
+        ->where('news.content', $content));
+    $this->get('/news')->assertInertia(fn (Assert $page) => $page
+        ->where('newsList.0.preview', 'Kalimat pertama yang bermakna.'));
+    $news->update(['content' => '<p>Isi baru langsung mengubah pratinjau.</p>']);
+    $this->get('/admin/news')->assertInertia(fn (Assert $page) => $page
+        ->where('items.0.preview', 'Isi baru langsung mengubah pratinjau.'));
 });
 
 test('manual editor saves formatting and cover without publishing', function () {
@@ -81,6 +95,26 @@ test('multipart updates persist a replacement cover and invalidate prior review'
     expect($draft->fresh()->headline)->toBe('Judul diperbarui')
         ->and($draft->fresh()->show_on_homepage)->toBeTrue()
         ->and($draft->fresh()->reviewed_at)->toBeNull();
+});
+
+test('manual multipart publishing returns final JSON without a redirect or flashed dialog', function () {
+    $this->withHeader('Accept', 'application/json')
+        ->post('/admin/news/manual', manualArticle(['intent' => 'publish']))
+        ->assertOk()
+        ->assertJsonPath('success', true)
+        ->assertJsonPath('results.application.success', true)
+        ->assertJsonPath('completion_url', route('admin.news-workspace.index'))
+        ->assertSessionMissing('publishResult');
+    expect(News::count())->toBe(1);
+});
+
+test('manual JSON validation returns failed platform results without a stale flashed dialog', function () {
+    $this->postJson('/admin/news/manual', manualArticle(['intent' => 'publish', 'headline' => '']))
+        ->assertUnprocessable()
+        ->assertJsonPath('results.application.success', false)
+        ->assertJsonValidationErrors('headline')
+        ->assertSessionMissing('publishResult');
+    expect(News::count())->toBe(0);
 });
 
 test('manual editor rejects unsupported and oversized covers', function () {

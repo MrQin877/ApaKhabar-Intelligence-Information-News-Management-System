@@ -5,7 +5,7 @@ export interface MetaAuthConfig {
 }
 export async function metaRequest<T>(
     path: string,
-    payload?: Record<string, string>,
+    payload?: Record<string, unknown>,
 ): Promise<T> {
     const csrf = document.querySelector<HTMLMetaElement>(
         'meta[name="csrf-token"]',

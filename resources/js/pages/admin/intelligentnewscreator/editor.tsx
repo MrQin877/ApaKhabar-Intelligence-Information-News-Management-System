@@ -18,6 +18,7 @@ import type {
     PublishPlatform,
     PublishPlatformId,
 } from '@/components/publish-news-dialog';
+import { PublishResultDialog } from '@/components/publish-result-dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -30,19 +31,18 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
 import AppLayout from '@/layouts/app-layout';
+import { publishManual } from '@/lib/manual-publish';
+import type { PublishResult } from '@/lib/manual-publish';
 import type { MetaAuthConfig } from '@/lib/meta-auth';
 import type { BreadcrumbItem } from '@/types';
 
 interface Draft {
     id: number;
     headline: string;
-    subheadline: string | null;
     content: string;
     content_html: string;
     show_on_homepage: boolean;
-    summary: string;
     category_id: number | null;
     image: string | null;
     status: string;
@@ -78,21 +78,23 @@ export default function ManualEditor({
     metaAuth,
 }: Props) {
     const [confirmPublish, setConfirmPublish] = useState(false);
+    const [publishing, setPublishing] = useState(false);
+    const [publishResult, setPublishResult] = useState<PublishResult>();
+    const publishStarted = useRef(false);
     const [dragging, setDragging] = useState(false);
     const [preview, setPreview] = useState('');
     const fileInput = useRef<HTMLInputElement>(null);
     const form = useForm({
         headline: draft?.headline ?? '',
-        subheadline: draft?.subheadline ?? '',
         content: draft?.content_html ?? '',
         content_format: 'html',
         show_on_homepage: draft?.show_on_homepage ?? true,
         cover_photo: null as File | null,
-        summary: draft?.summary ?? '',
         category_id: draft?.category_id ? String(draft.category_id) : '',
         image: draft?.image ?? '',
         platforms: [] as PublishPlatformId[],
     });
+    const busy = form.processing || publishing || Boolean(publishResult);
     const contentText = useMemo(() => {
         if (typeof DOMParser === 'undefined') {
             return '';
@@ -110,10 +112,9 @@ export default function ManualEditor({
             .replace(/[\u200B-\u200D\uFEFF]/g, '')
             .trim();
     }, [form.data.content]);
+    const characterCount = Array.from(contentText).length;
     const hasRequiredContent = Boolean(
-        form.data.headline.trim() &&
-        form.data.summary.trim() &&
-        Array.from(contentText).length >= 20,
+        form.data.headline.trim() && characterCount >= 20,
     );
 
     useEffect(() => {
@@ -125,7 +126,7 @@ export default function ManualEditor({
     }, [preview]);
 
     function selectCover(file?: File) {
-        if (!file || form.processing) {
+        if (!file || busy) {
             return;
         }
 
@@ -147,7 +148,7 @@ export default function ManualEditor({
     }
 
     function save(intent: 'draft' | 'publish') {
-        if (form.processing) {
+        if (busy || publishStarted.current) {
             return;
         }
 
@@ -157,6 +158,53 @@ export default function ManualEditor({
 
         if (intent === 'publish' && !form.data.platforms.length) {
             form.setError('platforms', 'Pilih setidaknya satu platform.');
+
+            return;
+        }
+
+        if (intent === 'publish') {
+            // A ref closes the gap before React renders the disabled buttons.
+            // Keep it locked through completion, including an uncertain network outcome.
+            publishStarted.current = true;
+            setPublishing(true);
+            form.clearErrors();
+            const body = new FormData();
+
+            for (const [key, value] of Object.entries(form.data)) {
+                if (key === 'platforms') {
+                    form.data.platforms.forEach((platform) =>
+                        body.append('platforms[]', platform),
+                    );
+                } else if (value instanceof File) {
+                    body.append(key, value);
+                } else if (value !== null) {
+                    body.append(
+                        key,
+                        typeof value === 'boolean'
+                            ? value
+                                ? '1'
+                                : '0'
+                            : String(value),
+                    );
+                }
+            }
+
+            body.append('intent', 'publish');
+
+            if (draft) {
+                body.append('_method', 'put');
+            }
+
+            void publishManual(
+                draft ? `/admin/news/manual/${draft.id}` : '/admin/news/manual',
+                body,
+                [...form.data.platforms],
+            )
+                .then((result) => {
+                    setConfirmPublish(false);
+                    setPublishResult(result);
+                })
+                .finally(() => setPublishing(false));
 
             return;
         }
@@ -262,7 +310,7 @@ export default function ManualEditor({
                                         onDragOver={(event) => {
                                             event.preventDefault();
 
-                                            if (!form.processing) {
+                                            if (!busy) {
                                                 setDragging(true);
                                             }
                                         }}
@@ -281,7 +329,7 @@ export default function ManualEditor({
                                             type="file"
                                             accept="image/jpeg,image/png"
                                             className="sr-only"
-                                            disabled={form.processing}
+                                            disabled={busy}
                                             onChange={(event) => {
                                                 selectCover(
                                                     event.target.files?.[0],
@@ -295,7 +343,7 @@ export default function ManualEditor({
                                             onClick={() =>
                                                 fileInput.current?.click()
                                             }
-                                            disabled={form.processing}
+                                            disabled={busy}
                                             className="flex min-h-48 w-full flex-col items-center justify-center gap-3 rounded-xl p-5 text-center outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                         >
                                             {preview || form.data.image ? (
@@ -331,7 +379,7 @@ export default function ManualEditor({
                                                 size="icon-sm"
                                                 className="absolute top-3 right-3 rounded-full shadow-sm"
                                                 aria-label="Hapus foto sampul"
-                                                disabled={form.processing}
+                                                disabled={busy}
                                                 onClick={() => {
                                                     setPreview('');
                                                     setConfirmPublish(false);
@@ -358,7 +406,7 @@ export default function ManualEditor({
                                             type="url"
                                             value={form.data.image}
                                             disabled={
-                                                form.processing ||
+                                                busy ||
                                                 Boolean(form.data.cover_photo)
                                             }
                                             onChange={(event) =>
@@ -397,66 +445,17 @@ export default function ManualEditor({
                                     />
                                 </div>
                                 <div className="space-y-2">
-                                    <Label htmlFor="subheadline">
-                                        Subjudul
-                                    </Label>
-                                    <Input
-                                        id="subheadline"
-                                        value={form.data.subheadline}
-                                        onChange={(event) =>
-                                            form.setData(
-                                                'subheadline',
-                                                event.target.value,
-                                            )
-                                        }
-                                        placeholder="Keterangan tambahan untuk judul"
-                                        maxLength={255}
-                                        aria-invalid={Boolean(
-                                            form.errors.subheadline,
-                                        )}
-                                    />
-                                    <FieldError
-                                        message={form.errors.subheadline}
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="summary">Ringkasan *</Label>
-                                    <Textarea
-                                        id="summary"
-                                        value={form.data.summary}
-                                        onChange={(event) =>
-                                            form.setData(
-                                                'summary',
-                                                event.target.value,
-                                            )
-                                        }
-                                        placeholder="Ringkasan singkat untuk daftar berita"
-                                        className="min-h-28 resize-y rounded-lg bg-background leading-6"
-                                        maxLength={1000}
-                                        aria-invalid={Boolean(
-                                            form.errors.summary,
-                                        )}
-                                    />
-                                    <div className="flex justify-between gap-3">
-                                        <FieldError
-                                            message={form.errors.summary}
-                                        />
-                                        <span className="ml-auto text-xs text-muted-foreground">
-                                            {form.data.summary.length}/1000
-                                        </span>
-                                    </div>
-                                </div>
-                                <div className="space-y-2">
                                     <Label htmlFor="content">
                                         Isi berita *
                                     </Label>
                                     <NewsRichEditor
+                                        characterCount={characterCount}
                                         value={form.data.content}
                                         onChange={(html) =>
                                             form.setData('content', html)
                                         }
                                         invalid={Boolean(form.errors.content)}
-                                        disabled={form.processing}
+                                        disabled={busy}
                                     />
                                     <div id="content-error" role="alert">
                                         <FieldError
@@ -540,7 +539,7 @@ export default function ManualEditor({
                                                     checked,
                                                 )
                                             }
-                                            disabled={form.processing}
+                                            disabled={busy}
                                         />
                                     </div>
                                     <FieldError
@@ -566,7 +565,7 @@ export default function ManualEditor({
                             <Button
                                 type="submit"
                                 variant="outline"
-                                disabled={form.processing}
+                                disabled={busy}
                                 className="h-10 flex-1 rounded-lg bg-card sm:flex-none sm:px-5"
                             >
                                 <Save />{' '}
@@ -576,9 +575,7 @@ export default function ManualEditor({
                             </Button>
                             <Button
                                 type="button"
-                                disabled={
-                                    form.processing || !hasRequiredContent
-                                }
+                                disabled={busy || !hasRequiredContent}
                                 aria-describedby={
                                     !hasRequiredContent
                                         ? 'publish-content-hint'
@@ -588,7 +585,7 @@ export default function ManualEditor({
                                 className="h-10 flex-1 rounded-lg bg-brand-600 text-white hover:bg-brand-700 sm:flex-none sm:px-5"
                                 title="Simpan dan tinjau draf sebelum menerbitkan"
                             >
-                                {form.processing ? (
+                                {publishing || form.processing ? (
                                     <LoaderCircle className="animate-spin" />
                                 ) : (
                                     <Send />
@@ -618,10 +615,11 @@ export default function ManualEditor({
                     form.clearErrors('platforms');
                     form.setData('platforms', selected);
                 }}
-                processing={form.processing}
+                processing={publishing || form.processing}
                 error={form.errors.platforms}
                 onPublish={() => save('publish')}
             />
+            {publishResult && <PublishResultDialog result={publishResult} />}
         </>
     );
 }

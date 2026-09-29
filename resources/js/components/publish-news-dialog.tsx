@@ -1,5 +1,6 @@
-import { Facebook, LoaderCircle, Send } from 'lucide-react';
+import { LoaderCircle, Send } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import AppLogoIcon from '@/components/app-logo-icon';
 import {
     FacebookLoginControl,
     InstagramLoginControl,
@@ -103,12 +104,12 @@ export function PublishNewsDialog({
         };
     }, [open]);
     useEffect(() => {
-        if (!open || !livePlatforms) {
+        if (!open) {
             return;
         }
 
         const next = selected.filter((id) =>
-            livePlatforms.some(
+            platforms.some(
                 (p) =>
                     p.id === id &&
                     p.status === 'connected' &&
@@ -116,10 +117,17 @@ export function PublishNewsDialog({
             ),
         );
 
-        if (next.length !== selected.length) {
+        if (!next.includes('website')) {
+            next.unshift('website');
+        }
+
+        if (
+            next.length !== selected.length ||
+            next.some((id, index) => id !== selected[index])
+        ) {
             onSelectionChange(next);
         }
-    }, [open, livePlatforms, selected, onSelectionChange]);
+    }, [open, platforms, selected, onSelectionChange]);
     const available = platforms
         .filter(
             (platform) =>
@@ -187,7 +195,9 @@ export function PublishNewsDialog({
                                 disabled={processing || !available.length}
                                 onCheckedChange={(checked) =>
                                     onSelectionChange(
-                                        checked === true ? available : [],
+                                        checked === true
+                                            ? available
+                                            : ['website'],
                                     )
                                 }
                             />
@@ -205,6 +215,25 @@ export function PublishNewsDialog({
                             const connected = platform.status === 'connected';
                             const expired = platform.status === 'expired';
                             const checked = selection.includes(platform.id);
+                            const locked = platform.id === 'website';
+                            const selectable =
+                                !locked &&
+                                connected &&
+                                platform.publishable !== false &&
+                                !processing;
+                            const toggleSelection = (value: boolean) => {
+                                if (!selectable) {
+                                    return;
+                                }
+
+                                onSelectionChange(
+                                    value
+                                        ? [...selection, platform.id]
+                                        : selection.filter(
+                                              (id) => id !== platform.id,
+                                          ),
+                                );
+                            };
                             const title =
                                 platform.id === 'website'
                                     ? 'Aplikasi'
@@ -218,56 +247,47 @@ export function PublishNewsDialog({
                                 <section
                                     key={platform.id}
                                     aria-label={title}
-                                    className={`rounded-xl border p-4 transition-colors ${checked ? 'border-primary/50 bg-primary/5' : 'border-border bg-card'}`}
+                                    className={`rounded-xl border p-4 transition-colors ${selectable ? 'cursor-pointer' : ''} ${checked ? 'border-primary/50 bg-primary/5' : 'border-border bg-card'}`}
+                                    onClick={(event) => {
+                                        if (
+                                            (
+                                                event.target as HTMLElement
+                                            ).closest('button, label, a, input')
+                                        ) {
+                                            return;
+                                        }
+
+                                        toggleSelection(!checked);
+                                    }}
                                 >
                                     <div className="flex items-start gap-3">
                                         <div className="min-w-0 flex-1">
                                             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                                                 {platform.id === 'website' && (
-                                                    <>
-                                                        <img
-                                                            src="/images/brands/aplikasi-black.svg"
-                                                            alt=""
-                                                            className="size-7 shrink-0 text-black dark:hidden"
-                                                            style={{
-                                                                filter: 'drop-shadow(0.1px 0 0 currentColor) drop-shadow(-0.1px 0 0 currentColor) drop-shadow(0 0.1px 0 currentColor) drop-shadow(0 -0.1px 0 currentColor)',
-                                                            }}
-                                                        />
-                                                        <img
-                                                            src="/images/brands/aplikasi-white.svg"
-                                                            alt=""
-                                                            className="hidden size-7 shrink-0 text-white dark:block"
-                                                            style={{
-                                                                filter: 'drop-shadow(0.1px 0 0 currentColor) drop-shadow(-0.1px 0 0 currentColor) drop-shadow(0 0.1px 0 currentColor) drop-shadow(0 -0.1px 0 currentColor)',
-                                                            }}
-                                                        />
-                                                    </>
+                                                    <AppLogoIcon
+                                                        aria-hidden="true"
+                                                        className="size-7 shrink-0"
+                                                    />
                                                 )}
                                                 {platform.id === 'facebook' && (
-                                                    <Facebook
-                                                        aria-hidden="true"
-                                                        className="size-5 shrink-0 text-black dark:text-white"
+                                                    <img
+                                                        src="/images/integrations/facebook.png"
+                                                        alt=""
+                                                        className="size-5 shrink-0 object-contain"
                                                     />
                                                 )}
                                                 {platform.id ===
                                                     'instagram' && (
-                                                    <>
-                                                        <img
-                                                            src="/images/brands/instagram-black.svg"
-                                                            alt=""
-                                                            className="size-5 shrink-0 dark:hidden"
-                                                        />
-                                                        <img
-                                                            src="/images/brands/instagram-white.svg"
-                                                            alt=""
-                                                            className="hidden size-5 shrink-0 dark:block"
-                                                        />
-                                                    </>
+                                                    <img
+                                                        src="/images/integrations/instagram.svg"
+                                                        alt=""
+                                                        className="size-5 shrink-0 object-contain"
+                                                    />
                                                 )}
                                                 {connected ? (
                                                     <Label
                                                         htmlFor={`publish-${platform.id}`}
-                                                        className="cursor-pointer leading-6"
+                                                        className={`${selectable ? 'cursor-pointer' : ''} leading-6`}
                                                     >
                                                         {title}
                                                     </Label>
@@ -317,22 +337,14 @@ export function PublishNewsDialog({
                                                 className="mt-1"
                                                 checked={checked}
                                                 disabled={
+                                                    locked ||
                                                     processing ||
                                                     platform.publishable ===
                                                         false
                                                 }
                                                 onCheckedChange={(value) =>
-                                                    onSelectionChange(
-                                                        value === true
-                                                            ? [
-                                                                  ...selection,
-                                                                  platform.id,
-                                                              ]
-                                                            : selection.filter(
-                                                                  (id) =>
-                                                                      id !==
-                                                                      platform.id,
-                                                              ),
+                                                    toggleSelection(
+                                                        value === true,
                                                     )
                                                 }
                                             />

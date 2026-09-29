@@ -140,7 +140,6 @@ interface Evidence {
 interface Article {
     draft_id: number;
     headline: string;
-    subheadline: string | null;
     lead: string;
     body: string[];
     labels: string[];
@@ -297,10 +296,7 @@ export default function NewsCreatorAgent({
             return;
         }
 
-        if (
-            action === 'Unggah dokumen' ||
-            action.includes('dari file')
-        ) {
+        if (action === 'Unggah dokumen' || action.includes('dari file')) {
             setPrompt(action);
             fileInput.current?.click();
 
@@ -363,9 +359,10 @@ export default function NewsCreatorAgent({
                 data.append('prompt', prompt.trim());
             }
 
-            const generationIntent = /\b(generate|create|write|buat|bikin|tulis)\b.{0,30}\b(news|article|berita|artikel|laporan)\b/i.test(
-                prompt,
-            );
+            const generationIntent =
+                /\b(generate|create|write|buat|bikin|tulis)\b.{0,30}\b(news|article|berita|artikel|laporan)\b/i.test(
+                    prompt,
+                );
             const generalExtraction =
                 !prompt.trim() ||
                 /\b(all|everything|semua|seluruh|tidak tahu|don't know)\b/i.test(
@@ -437,7 +434,6 @@ export default function NewsCreatorAgent({
             `/admin/ai-assistant/drafts/${editedArticle.draft_id}`,
             {
                 headline: editedArticle.headline,
-                subheadline: editedArticle.subheadline,
                 lead: editedArticle.lead,
                 body: editedArticle.body,
             },
@@ -464,9 +460,7 @@ export default function NewsCreatorAgent({
             return;
         }
 
-        router.post(
-            `/admin/news/drafts/${editedArticle.draft_id}/publish`,
-        );
+        router.post(`/admin/news/drafts/${editedArticle.draft_id}/publish`);
     }
 
     function uploadNewsImage(file: File | undefined) {
@@ -600,9 +594,7 @@ export default function NewsCreatorAgent({
                             <Button
                                 variant="ghost"
                                 size="icon-sm"
-                                onClick={() =>
-                                    router.visit('/admin/news')
-                                }
+                                onClick={() => router.visit('/admin/news')}
                                 title="Kembali ke daftar berita"
                             >
                                 <ArrowLeft />
@@ -610,9 +602,7 @@ export default function NewsCreatorAgent({
                             <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() =>
-                                    router.visit('/admin/documents')
-                                }
+                                onClick={() => router.visit('/admin/documents')}
                             >
                                 <Archive /> Dokumen
                             </Button>

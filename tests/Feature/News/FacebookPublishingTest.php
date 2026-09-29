@@ -15,7 +15,7 @@ beforeEach(function () {
     config(['services.facebook.page_id' => '12345', 'services.facebook.page_access_token' => 'facebook-private-token', 'services.facebook.graph_version' => 'v26.0']);
     Http::preventStrayRequests();
     $this->actingAs(User::factory()->create(['roleID' => UserRole::firstOrCreate(['name' => 'admin'])->getKey()]));
-    $this->article = ['headline' => 'Berita warga', 'summary' => 'Ringkasan kegiatan.', 'content' => '<p>Kegiatan warga berlangsung dengan lancar hari ini.</p>',
+    $this->article = ['headline' => 'Berita warga', 'content' => '<p>Kegiatan warga berlangsung dengan lancar hari ini.</p>',
         'content_format' => 'html', 'intent' => 'publish', 'platforms' => ['facebook']];
 });
 
@@ -26,7 +26,7 @@ test('Facebook text publication uses feed and saves its ID', function () {
     expect(News::count())->toBe(0);
     Http::assertSentCount(1);
     Http::assertSent(fn ($r) => $r->url() === 'https://graph.facebook.com/v26.0/12345/feed'
-        && $r['message'] === "Berita warga\n\nRingkasan kegiatan." && $r['access_token'] === 'facebook-private-token');
+        && $r['message'] === "Berita warga\n\nKegiatan warga berlangsung dengan lancar hari ini." && $r['access_token'] === 'facebook-private-token');
 });
 
 test('Facebook photo publication uses URL and caption and keeps website image', function () {
@@ -38,7 +38,7 @@ test('Facebook photo publication uses URL and caption and keeps website image', 
     expect(IntelligentNewsDraft::sole()->facebook_post_id)->toBe('12345_67890');
     Http::assertSentCount(1);
     Http::assertSent(fn ($r) => $r->url() === 'https://graph.facebook.com/v26.0/12345/photos'
-        && $r['url'] === $image && $r['caption'] === "Berita warga\n\nRingkasan kegiatan.");
+        && $r['url'] === $image && $r['caption'] === "Berita warga\n\nKegiatan warga berlangsung dengan lancar hari ini.");
 });
 
 test('website-only publishing never calls Facebook', function () {

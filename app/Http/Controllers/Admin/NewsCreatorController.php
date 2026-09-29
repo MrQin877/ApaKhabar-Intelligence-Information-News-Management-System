@@ -20,8 +20,8 @@ use App\Models\IntelligenceExtractionRequest;
 use App\Models\IntelligenceInformation;
 use App\Models\IntelligentNewsDraft;
 use App\Models\IntelligentNewsDraftVersion;
-use App\Models\IntelligentNewsSession;
 use App\Models\IntelligentNewsMessage;
+use App\Models\IntelligentNewsSession;
 use App\Models\NewsCategory;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\JsonResponse;
@@ -63,10 +63,8 @@ class NewsCreatorController extends Controller
                 $generatedArticle = [
                     'draft_id' => $draft->id,
                     'headline' => $draft->headline,
-                    'subheadline' => $draft->subheadline,
                     'lead' => $draft->lead,
                     'body' => $draft->body,
-                    'summary' => $draft->summary,
                     'labels' => $draft->labels,
                     'category' => $draft->category?->name,
                     'sources_used' => $draft->sources_used,
@@ -432,6 +430,7 @@ class NewsCreatorController extends Controller
         }
 
         $article = $result['article'];
+        unset($article['subheadline'], $article['summary']);
         $categoryId = $this->resolveCategoryId($article);
         [$draft, $draftVersion] = DB::transaction(function () use ($request, $validated, $article, $items, $session, $categoryId, $result) {
             $draft = isset($validated['draft_id'])
@@ -446,10 +445,8 @@ class NewsCreatorController extends Controller
                 'creation_method' => 'ai',
                 'category_id' => $categoryId,
                 'headline' => $article['headline'],
-                'subheadline' => $article['subheadline'] ?? null,
                 'lead' => $article['lead'],
                 'body' => $article['body'],
-                'summary' => $article['summary'],
                 'labels' => $article['labels'] ?? [],
                 'sources_used' => $article['sources_used'] ?? [],
                 'warnings' => $article['warnings'] ?? [],
@@ -567,7 +564,6 @@ class NewsCreatorController extends Controller
 
         $validated = $request->validate([
             'headline' => ['required', 'string', 'max:255'],
-            'subheadline' => ['nullable', 'string', 'max:255'],
             'lead' => ['required', 'string'],
             'body' => ['required', 'array', 'min:1'],
             'body.*' => ['required', 'string'],
@@ -657,7 +653,7 @@ class NewsCreatorController extends Controller
         }
 
         $text = mb_strtolower(implode(' ', [
-            $article['headline'] ?? '', $article['summary'] ?? '', ...($article['labels'] ?? []),
+            $article['headline'] ?? '', implode(' ', $article['body'] ?? []), ...($article['labels'] ?? []),
         ]));
         $preferred = str_contains($text, 'lingkungan') || str_contains($text, 'banjir') || str_contains($text, 'sampah')
             ? 'Lingkungan'
@@ -676,8 +672,7 @@ class NewsCreatorController extends Controller
         string $changeType,
         string $revisionSource = 'manual',
         ?string $revisionInstruction = null,
-    ): IntelligentNewsDraftVersion
-    {
+    ): IntelligentNewsDraftVersion {
         return IntelligentNewsDraftVersion::updateOrCreate(
             ['draft_id' => $draft->id, 'version' => $draft->version],
             [
@@ -686,7 +681,7 @@ class NewsCreatorController extends Controller
                 'revision_instruction' => $revisionInstruction,
                 'created_by' => $userId,
                 'snapshot' => $draft->only([
-                    'headline', 'subheadline', 'lead', 'body', 'summary', 'labels',
+                    'headline', 'lead', 'body', 'labels',
                     'sources_used', 'warnings', 'category_id', 'image', 'user_prompt',
                 ]),
             ],
@@ -724,7 +719,7 @@ class NewsCreatorController extends Controller
                         'source' => $information->document->original_name,
                         'owner_id' => (string) $request->user()->getKey(),
                     ]],
-                ])->throw();
+                    ])->throw();
                 $information->update(['information_embedding_status' => 'ready']);
             } catch (\Throwable $exception) {
                 report($exception);

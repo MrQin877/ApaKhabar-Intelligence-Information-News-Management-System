@@ -8,10 +8,10 @@ class IntelligentNewsDraft extends Model
 {
     protected $fillable = [
         'created_by', 'creation_method', 'category_id', 'image',
-        'headline', 'subheadline', 'lead', 'body', 'summary',
+        'headline', 'lead', 'body',
         'labels', 'sources_used', 'warnings', 'user_prompt', 'status',
         'published_news_id', 'instagram_media_id', 'facebook_post_id', 'version', 'reviewed_at',
-        'show_on_homepage',
+        'show_on_homepage', 'publication_results', 'publication_started_at',
     ];
 
     protected $casts = [
@@ -19,7 +19,21 @@ class IntelligentNewsDraft extends Model
         'warnings' => 'array',
         'reviewed_at' => 'datetime',
         'show_on_homepage' => 'boolean',
+        'publication_results' => 'array',
+        'publication_started_at' => 'datetime',
     ];
+
+    public function publicationResults(): array
+    {
+        $results = $this->publication_results ?? [];
+        foreach (['application' => $this->published_news_id, 'facebook' => $this->facebook_post_id, 'instagram' => $this->instagram_media_id] as $platform => $id) {
+            if ($id) {
+                $results[$platform] = ['success' => true];
+            }
+        }
+
+        return $results;
+    }
 
     public function informationSources()
     {
