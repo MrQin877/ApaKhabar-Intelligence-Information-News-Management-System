@@ -11,6 +11,7 @@ use App\Services\FacebookPublishingService;
 use App\Services\InstagramService;
 use App\Services\News\ArticleHtml;
 use App\Services\News\MetaConnections;
+use App\Services\NewsImageCropService;
 use App\Support\ArticleText;
 use App\Support\NewsImageUrl;
 use App\Support\PublishLog;
@@ -163,6 +164,7 @@ class NewsWorkspaceController extends Controller
                 ),
                 'category_id' => $draft->category_id,
                 'image' => $draft->image,
+                'image_crops' => $draft->image_crops,
                 'status' => $draft->status,
                 'show_on_homepage' => $draft->show_on_homepage,
             ],
@@ -227,7 +229,7 @@ class NewsWorkspaceController extends Controller
                         $news = News::create([
                             'title' => $draft->headline,
                             'content' => collect($draft->body)->join("\n\n"),
-                            'image' => $draft->image,
+                            'image' => $draft->image_variants['website'] ?? $draft->image,
                             'category_id' => $draft->category_id,
                             'status' => 'active',
                             'creation_method' => $draft->creation_method,
@@ -243,7 +245,7 @@ class NewsWorkspaceController extends Controller
                             return $draft->facebook_post_id;
                         }
                         $message = ArticleText::post($draft->headline, collect($draft->body)->join("\n\n"));
-                        $id = app(FacebookPublishingService::class)->publish(NewsImageUrl::resolve($draft->image), $message, $context);
+                        $id = app(FacebookPublishingService::class)->publish(NewsImageUrl::resolve($draft->image_variants['facebook'] ?? $draft->image), $message, $context);
                         $draft->update(['facebook_post_id' => $id]);
 
                         return $id;
@@ -253,7 +255,8 @@ class NewsWorkspaceController extends Controller
                     }
                     $caption = ArticleText::post($draft->headline, collect($draft->body)->join("\n\n"));
                     $id = app(InstagramService::class)->publish(
-                        NewsImageUrl::resolve($draft->image) ?? '', $caption, $context,
+                        NewsImageUrl::resolve($draft->image_variants['instagram'] ?? $draft->image) ?? '', $caption, $context,
+                        isset($draft->image_variants['instagram']),
                     );
                     $draft->update(['instagram_media_id' => $id]);
 
@@ -420,7 +423,20 @@ class NewsWorkspaceController extends Controller
 
     private function validateDraftData(Request $request): array
     {
+        if (is_string($request->input('image_crops'))) {
+            $request->merge(['image_crops' => json_decode($request->input('image_crops'), true) ?? 'invalid']);
+        }
         $data = $request->validate([
+            'image_crops' => ['nullable', 'array:sync,website,instagram,facebook'],
+            'image_crops.sync' => ['required_with:image_crops', 'boolean'],
+            'image_crops.website' => ['required_with:image_crops', 'array:x,y,zoom'],
+            'image_crops.instagram' => ['required_with:image_crops', 'array:x,y,zoom'],
+            'image_crops.facebook' => ['required_with:image_crops', 'array:x,y,zoom'],
+            ...collect(['website', 'instagram', 'facebook'])->flatMap(fn ($platform) => [
+                "image_crops.$platform.x" => ['required_with:image_crops', 'numeric', 'between:0,1'],
+                "image_crops.$platform.y" => ['required_with:image_crops', 'numeric', 'between:0,1'],
+                "image_crops.$platform.zoom" => ['required_with:image_crops', 'numeric', 'between:1,4'],
+            ])->all(),
             'headline' => ['required', 'string', 'max:255'],
             'content' => ['required', 'string', 'min:20', 'max:100000'],
             'category_id' => ['nullable', 'integer', Rule::exists('news_categories', 'categoryID')],
@@ -456,6 +472,8 @@ class NewsWorkspaceController extends Controller
         }
 
         $data['image'] = NewsImageUrl::resolve($data['image'] ?? null);
+        $data['image_variants'] = ! empty($data['image_crops'])
+            ? app(NewsImageCropService::class)->generate($data['image'] ?? '', $data['image_crops']) : null;
 
         return $data;
     }
@@ -487,6 +505,8 @@ class NewsWorkspaceController extends Controller
             'creation_method' => 'manual',
             'category_id' => $data['category_id'] ?? null,
             'image' => $data['image'] ?? null,
+            'image_crops' => $data['image_crops'] ?? null,
+            'image_variants' => $data['image_variants'] ?? null,
             'headline' => $data['headline'],
             'lead' => $paragraphs[0],
             'body' => $paragraphs,

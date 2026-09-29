@@ -7,11 +7,12 @@ import {
     Save,
     Send,
     Settings2,
-    X,
     LoaderCircle,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
+import { flushSync } from 'react-dom';
+import { NewsImageCropDialog } from '@/components/news-image-crop-dialog';
 import { NewsRichEditor } from '@/components/news-rich-editor';
 import { PublishNewsDialog } from '@/components/publish-news-dialog';
 import type {
@@ -32,6 +33,8 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import AppLayout from '@/layouts/app-layout';
+import { defaultCrops } from '@/lib/image-crops';
+import type { ImageCrops } from '@/lib/image-crops';
 import { publishManual } from '@/lib/manual-publish';
 import type { PublishResult } from '@/lib/manual-publish';
 import type { MetaAuthConfig } from '@/lib/meta-auth';
@@ -45,6 +48,7 @@ interface Draft {
     show_on_homepage: boolean;
     category_id: number | null;
     image: string | null;
+    image_crops: ImageCrops | null;
     status: string;
 }
 
@@ -83,6 +87,7 @@ export default function ManualEditor({
     const publishStarted = useRef(false);
     const [dragging, setDragging] = useState(false);
     const [preview, setPreview] = useState('');
+    const [cropOpen, setCropOpen] = useState(false);
     const fileInput = useRef<HTMLInputElement>(null);
     const form = useForm({
         headline: draft?.headline ?? '',
@@ -92,6 +97,7 @@ export default function ManualEditor({
         cover_photo: null as File | null,
         category_id: draft?.category_id ? String(draft.category_id) : '',
         image: draft?.image ?? '',
+        image_crops: draft?.image_crops ?? (null as ImageCrops | null),
         platforms: [] as PublishPlatformId[],
     });
     const busy = form.processing || publishing || Boolean(publishResult);
@@ -144,6 +150,7 @@ export default function ManualEditor({
 
         form.clearErrors('cover_photo');
         form.setData('cover_photo', file);
+        form.setData('image_crops', defaultCrops());
         setPreview(URL.createObjectURL(file));
     }
 
@@ -175,6 +182,8 @@ export default function ManualEditor({
                     form.data.platforms.forEach((platform) =>
                         body.append('platforms[]', platform),
                     );
+                } else if (key === 'image_crops' && value) {
+                    body.append(key, JSON.stringify(value));
                 } else if (value instanceof File) {
                     body.append(key, value);
                 } else if (value !== null) {
@@ -241,6 +250,7 @@ export default function ManualEditor({
                         ...data,
                         cover_photo: null,
                         image: saved?.image ?? data.image,
+                        image_crops: saved?.image_crops ?? data.image_crops,
                         content: saved?.content_html ?? data.content,
                     }));
 
@@ -373,29 +383,33 @@ export default function ManualEditor({
                                             </span>
                                         </button>
                                         {(preview || form.data.image) && (
-                                            <Button
-                                                type="button"
-                                                variant="secondary"
-                                                size="icon-sm"
-                                                className="absolute top-3 right-3 rounded-full shadow-sm"
-                                                aria-label="Hapus foto sampul"
-                                                disabled={busy}
-                                                onClick={() => {
-                                                    setPreview('');
-                                                    setConfirmPublish(false);
-                                                    form.setData((data) => ({
-                                                        ...data,
-                                                        image: '',
-                                                        cover_photo: null,
-                                                    }));
-                                                }}
-                                            >
-                                                <X />
-                                            </Button>
+                                            <div className="absolute top-3 right-3 flex items-center gap-2">
+                                                {(preview ||
+                                                    form.data.image.includes(
+                                                        '/news-images/',
+                                                    )) && (
+                                                    <Button
+                                                        type="button"
+                                                        variant="secondary"
+                                                        size="sm"
+                                                        className="h-8 rounded-full shadow-sm"
+                                                        disabled={busy}
+                                                        onClick={() =>
+                                                            setCropOpen(true)
+                                                        }
+                                                    >
+                                                        <FilePenLine />
+                                                        Edit
+                                                    </Button>
+                                                )}
+                                            </div>
                                         )}
                                     </div>
                                     <FieldError
                                         message={form.errors.cover_photo}
+                                    />
+                                    <FieldError
+                                        message={form.errors.image_crops}
                                     />
                                     <details className="text-xs text-muted-foreground">
                                         <summary className="cursor-pointer py-1">
@@ -410,10 +424,11 @@ export default function ManualEditor({
                                                 Boolean(form.data.cover_photo)
                                             }
                                             onChange={(event) =>
-                                                form.setData(
-                                                    'image',
-                                                    event.target.value,
-                                                )
+                                                form.setData((data) => ({
+                                                    ...data,
+                                                    image: event.target.value,
+                                                    image_crops: null,
+                                                }))
                                             }
                                             placeholder="https://..."
                                             className="mt-2 bg-background"
@@ -620,6 +635,21 @@ export default function ManualEditor({
                 onPublish={() => save('publish')}
             />
             {publishResult && <PublishResultDialog result={publishResult} />}
+            {cropOpen && (
+                <NewsImageCropDialog
+                    src={preview || form.data.image}
+                    initial={form.data.image_crops}
+                    onClose={() => setCropOpen(false)}
+                    onReplace={() => {
+                        flushSync(() => setCropOpen(false));
+                        fileInput.current?.click();
+                    }}
+                    onSave={(crops) => {
+                        form.setData('image_crops', crops);
+                        setCropOpen(false);
+                    }}
+                />
+            )}
         </>
     );
 }

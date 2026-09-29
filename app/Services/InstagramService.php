@@ -35,7 +35,7 @@ class InstagramService
     }
 
     /** Returns the published Instagram media ID; credentials never leave the backend. */
-    public function publish(string $imageUrl, string $caption, array $context = []): string
+    public function publish(string $imageUrl, string $caption, array $context = [], bool $cropped = false): string
     {
         if (! $this->configured()) {
             Log::warning('Instagram publishing configuration is missing or invalid.');
@@ -75,7 +75,9 @@ class InstagramService
             }
             $jpeg = $response->body();
         }
-        $jpeg = app(InstagramImageService::class)->normalizeJpeg($jpeg, $context);
+        if (! $cropped) {
+            $jpeg = app(InstagramImageService::class)->normalizeJpeg($jpeg, $context);
+        }
         PublishLog::write('instagram.jpeg_verified', [...$context,
             ...app(InstagramImageService::class)->jpegMetadata($jpeg),
         ]);

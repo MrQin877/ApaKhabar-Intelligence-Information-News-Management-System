@@ -12,6 +12,7 @@ class IntelligentNewsDraft extends Model
         'labels', 'sources_used', 'warnings', 'user_prompt', 'status',
         'published_news_id', 'instagram_media_id', 'facebook_post_id', 'version', 'reviewed_at',
         'show_on_homepage', 'publication_results', 'publication_started_at',
+        'image_crops', 'image_variants',
     ];
 
     protected $casts = [
@@ -21,6 +22,7 @@ class IntelligentNewsDraft extends Model
         'show_on_homepage' => 'boolean',
         'publication_results' => 'array',
         'publication_started_at' => 'datetime',
+        'image_crops' => 'array', 'image_variants' => 'array',
     ];
 
     public function publicationResults(): array

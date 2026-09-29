@@ -386,7 +386,11 @@ export default function NewsDetails({ news, comments = [] }: Props) {
                         <img
                             src={news.image}
                             alt={news.title}
-                            className="max-h-96 w-full object-cover transition-transform duration-700 hover:scale-[1.02]"
+                            className={
+                                news.image?.includes('/news-images/crops/')
+                                    ? 'h-auto w-full'
+                                    : 'max-h-96 w-full object-cover transition-transform duration-700 hover:scale-[1.02]'
+                            }
                         />
                     </div>
 
