@@ -1,51 +1,44 @@
-# Intelligent News Creator UI Architecture
+# AI Assistant and editorial UI architecture
 
-## Component breakdown
+See [system architecture](system-architecture.md) for backend boundaries and [repository map](repository-map.md) for related modules.
 
-- `NewsCreatorAgent`: page-level coordinator for the split workspace and server requests.
-- `ChatPanel`: conversation history, suggestions, source picker, attachments, and persistent composer.
-- `QuestionCard`: renders all material clarification fields together as selectable chips and submits one clarification round.
-- `ProgressIndicator`: shows the active generation stage, elapsed time, progress, and an optional expanded step list.
-- `DocumentPreview`: read-first rendering of the current AI draft, metadata, labels, citations, and review state.
-- `EditorToolbar`: contextual formatting actions shown only in edit mode.
-- `SourcesPanel`: collapsible document cards with page/source references and evidence excerpts.
-- `PublishConfirmation`: explicit moderator confirmation before publication.
+## Screens and components
 
-The first implementation keeps these concepts in `chat.tsx` so the behavior can be validated without changing page routing. They can later be extracted into files under `components/news-creator/` without changing the state contract.
+`resources/js/pages/admin/intelligentnewscreator/chat.tsx` coordinates the assistant. `documents.tsx` owns the independent library; `index.tsx` is the news workspace and `editor.tsx` is the manual editor.
 
-## State structure
+Shared components in `resources/js/components/intelligent-news/` include:
 
-| State                                              | Owner              | Purpose                                           |
-| -------------------------------------------------- | ------------------ | ------------------------------------------------- |
-| `prompt`, `files`, `informationIds`, `documentIds` | Chat page          | Inputs and moderator-approved sources             |
-| `answers`                                          | Question card      | All selections for the single clarification round |
-| `busy`, `elapsedSeconds`, `activeStage`            | Progress indicator | Visible generation lifecycle                      |
-| `editedArticle`                                    | Document preview   | Working copy of the current draft                 |
-| `editMode`                                         | Document preview   | Switches read view and editor toolbar             |
-| `sourcesOpen`                                      | Sources panel      | Controls evidence disclosure                      |
-| `version`, `reviewed_at`                           | Database draft     | Persistent version and human-review gate          |
+| Component | Responsibility |
+| --- | --- |
+| `source-picker.tsx` | Unified document/information selection |
+| `information-attachments.tsx` | Attached-source disclosure |
+| `session-panel.tsx` | Conversation/session navigation |
+| `chat-message.tsx` | Conversation message rendering |
+| `agent-work-trace.tsx` | Visible operational stages |
+| `document-processing-status.tsx` | Extraction progress/status |
+| `extracted-information-review.tsx` | Extracted-fact review |
+| `quality-score.tsx` | Evaluation score/details |
+| `category-proposal.tsx` | Proposed-category decisions |
+| `preview-frame.tsx` | Draft preview container, including mobile overlay |
 
-## Request lifecycle
+`publish-news-dialog.tsx` and `publish-result-dialog.tsx` are shared publishing components. `news-rich-editor.tsx` supports the manual editor; do not confuse it with the AI draft's continuous-content editing interface.
 
-```text
-Prompt/source selection
-        |
-        v
-Completeness check ---- clear ----> Generate draft
-        |
-        | material ambiguity
-        v
-One combined QuestionCard
-        |
-        | submit once; clarification_rounds = 1
-        v
-Generate with conservative defaults
-        |
-        v
-Preview -> Edit -> Save (new version, review cleared)
-        |
-        v
-Moderator marks reviewed -> Publish confirmation -> Publish
-```
+## User flow
 
-The server rejects publication when `reviewed_at` is empty. Saving an edit increments `version` and clears `reviewed_at`, ensuring that the current version must be reviewed again. AI content is never published automatically.
+Users can upload sources, select existing sources, or write facts directly in the chat. The source menu combines documents and information; a separate manual-facts menu is unnecessary. Attached information can be collapsed, with a count. Document selection is tied to related information eligibility; selecting a document does not bypass source approval.
+
+Conversation/analysis and extraction can finish without creating news. An explicit draft request starts queued generation. Material clarification is collected together, then the workflow continues within its clarification limit. Progress reports application stages rather than private chain-of-thought.
+
+A generated card offers Preview and Edit. Both open the preview panel; Edit enters editing mode. On mobile the panel overlays the assistant. The draft is shown as title plus continuous content with word count, rather than separate lead/subheadline sections. Python's structured fields are adapted at the integration boundary.
+
+Publication is offered inside the preview. The shared confirmation dialog selects channels and confirms review of the current version. Saving edits increments the version and clears old review state. The server rejects stale review confirmation and blocking quality findings. A separate mandatory “approve draft” card action is not required; the compatibility review endpoint still exists.
+
+## State and persistence
+
+Composer input, selected sources, preview mode, and unsaved edits are frontend state. Conversations, messages, selected-source context, drafts, versions, evaluation records, and run events are persisted by Laravel. Session navigation allows users to reopen prior work; publishing is part of conversation lifecycle handling rather than an instruction to automatically continue chatting.
+
+Async submission returns a request ID for polling. Ownership-checked Laravel endpoints proxy progress and expose final saved results. A loading indicator is not evidence that the model is still running: terminal status comes from server records. Mobile drawers should close on navigation, and document controls adapt to smaller screens.
+
+## Document preview
+
+`NewsCreatorController.previewDocument()` serves supported direct previews or asks the AI Service to normalize office/spreadsheet files for a readable preview. This is a content preview, not a full Microsoft Office layout renderer. Failed conversion provides a download path. Preview access is checked server-side, independently of the visible library controls.

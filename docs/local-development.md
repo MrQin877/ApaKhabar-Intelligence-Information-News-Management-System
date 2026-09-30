@@ -2,12 +2,31 @@
 
 ## Laravel and React website
 
-Run in separate terminals in this repository:
+Run the complete local application in this repository:
 
 ```sh
-php artisan serve --host=0.0.0.0 --port=8000
-npm run dev
+composer run dev
 ```
+
+This starts `php scripts/serve.php`, the document and generation queue workers,
+`php artisan schedule:work`, and Vite. The PHP launcher works on Windows without
+Bash and loads the repository upload settings. Start the separate Python AI Service
+and its model servers separately; this command does not launch them.
+
+For LAN access or individually managed processes, run the following in separate terminals:
+
+```sh
+php scripts/serve.php --host=0.0.0.0 --port=8000
+npm run dev
+php artisan queue:work --queue=documents,default --tries=5 --timeout=1250
+php artisan queue:work --queue=generation --tries=1 --timeout=1250
+php artisan schedule:work
+```
+
+Use an asynchronous queue and configure database/cache connections first. After
+configuration changes, run `php artisan config:clear` and restart workers (or the
+dev command). See [system architecture](system-architecture.md) for timeout and
+recovery behavior, and [upload limits](upload-limits.md) for PHP/web-server limits.
 
 Local Laravel `APP_URL` is `http://localhost:8000`. Open that address.
 The React website is served by Laravel/Inertia;
