@@ -10,7 +10,6 @@ import {
     Eye,
     FileSearch,
     FileText,
-    FileSpreadsheet,
     LoaderCircle,
     MoreHorizontal,
     RotateCcw,
@@ -50,6 +49,13 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import {
     Pagination,
     PaginationContent,
@@ -468,7 +474,7 @@ export default function DocumentLibrary({
                     </DialogHeader>
                     {preview && (
                         <>
-                            <div className="flex gap-2">
+                            <div className="flex flex-wrap gap-2">
                                 <Button variant="outline" size="sm" asChild>
                                     <a
                                         href={`/admin/documents/${preview.id}/preview?download=1`}
@@ -520,7 +526,7 @@ export default function DocumentLibrary({
                                     : 'Kelola dokumen sumber, tinjau hasil ekstraksi, dan setujui fakta sebelum digunakan oleh AI.'}
                             </p>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
                             <Button
                                 variant="outline"
                                 onClick={() =>
@@ -534,7 +540,6 @@ export default function DocumentLibrary({
                                 {archived ? <FileText /> : <Archive />}
                                 {archived ? 'Pustaka aktif' : 'Lihat arsip'}
                             </Button>
-                            
                         </div>
                     </header>
 
@@ -560,11 +565,11 @@ export default function DocumentLibrary({
                             tabIndex={0}
                             onClick={() => fileInput.current?.click()}
                             onKeyDown={(e) => {
- if (e.key === 'Enter' || e.key === ' ') {
-fileInput.current?.click()
-} 
-}}
-                            className={`flex flex-col sm:flex-row items-center gap-4 rounded-xl border-2 border-dashed p-4 transition-colors cursor-pointer ${dragging ? 'border-primary bg-primary/5' : 'border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50'}`}
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                    fileInput.current?.click();
+                                }
+                            }}
+                            className={`flex cursor-pointer flex-col items-center gap-4 rounded-xl border-2 border-dashed p-4 transition-colors sm:flex-row ${dragging ? 'border-primary bg-primary/5' : 'border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50'}`}
                             onDragEnter={(event) => {
                                 event.preventDefault();
                                 setDragging(true);
@@ -582,18 +587,27 @@ fileInput.current?.click()
                             <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
                                 <Upload className="size-5" />
                             </div>
-                            <div className="flex-1 min-w-0 text-center sm:text-left">
+                            <div className="min-w-0 flex-1 text-center sm:text-left">
                                 <p className="text-sm font-medium">
-                                    Klik untuk memilih atau seret hingga 5 dokumen ke area ini
+                                    Klik untuk memilih atau seret hingga 5
+                                    dokumen ke area ini
                                 </p>
                                 <p className="mt-0.5 text-xs text-muted-foreground">
-                                    Mendukung PDF, Word, Excel, CSV, teks, dan gambar (Maks 20 MB/file)
+                                    Mendukung PDF, Word, Excel, CSV, teks, dan
+                                    gambar (Maks 20 MB/file)
                                 </p>
                                 {uploading && (
-                                    <div className="mt-3 max-w-sm" onClick={(e) => e.stopPropagation()}>
-                                        <Progress value={uploading.progress} className="h-1.5" />
-                                        <p className="mt-1.5 text-xs text-muted-foreground font-medium">
-                                            Mengunggah {uploading.label} · {Math.round(uploading.progress)}%
+                                    <div
+                                        className="mt-3 max-w-sm"
+                                        onClick={(e) => e.stopPropagation()}
+                                    >
+                                        <Progress
+                                            value={uploading.progress}
+                                            className="h-1.5"
+                                        />
+                                        <p className="mt-1.5 text-xs font-medium text-muted-foreground">
+                                            Mengunggah {uploading.label} ·{' '}
+                                            {Math.round(uploading.progress)}%
                                         </p>
                                     </div>
                                 )}
@@ -609,78 +623,34 @@ fileInput.current?.click()
                         </div>
                     )}
 
-                    <section
-                        aria-label="Jenis file"
-                        className="grid grid-cols-2 gap-3 sm:grid-cols-4"
-                    >
-                        {[
-                            {
-                                type: 'all',
-                                label: 'Semua file',
-                                icon: FileText,
-                            },
-                            { type: 'docx', label: 'Word', icon: FileText },
-                            {
-                                type: 'spreadsheet',
-                                label: 'Excel & CSV',
-                                icon: FileSpreadsheet,
-                            },
-                            { type: 'pdf', label: 'PDF', icon: FileText },
-                        ].map(({ type, label, icon: Icon }) => (
-                            <button
-                                key={type}
-                                onClick={() => setFileType(type)}
-                                aria-pressed={fileType === type}
-                                className={`rounded-xl border bg-card p-4 text-left transition hover:border-primary ${fileType === type ? 'border-primary ring-1 ring-primary/20' : ''}`}
-                            >
-                                <Icon className="mb-3 size-5 text-muted-foreground" />
-                                <span className="block text-sm font-medium">
-                                    {label}
-                                </span>
-                                <span className="text-xs text-muted-foreground">
-                                    {
-                                        documents.filter(
-                                            (d) =>
-                                                type === 'all' ||
-                                                d.type === type,
-                                        ).length
-                                    }{' '}
-                                    file
-                                </span>
-                            </button>
-                        ))}
-                    </section>
-                    {!query &&
-                        filter === 'all' &&
-                        fileType === 'all' &&
-                        documents.length > 0 && (
-                            <section aria-label="File terbaru">
-                                <h2 className="mb-3 text-sm font-medium">
-                                    Baru ditambahkan
-                                </h2>
-                                <div className="grid gap-3 sm:grid-cols-3">
-                                    {documents.slice(0, 3).map((d) => (
-                                        <button
-                                            key={d.id}
-                                            onClick={() => previewDocument(d)}
-                                            className="flex min-w-0 items-center gap-3 rounded-lg border bg-card p-3 text-left hover:bg-muted"
-                                        >
-                                            <FileText className="size-5 shrink-0 text-muted-foreground" />
-                                            <span className="min-w-0">
-                                                <span className="block truncate text-sm font-medium">
-                                                    {d.name}
-                                                </span>
-                                                <span className="text-xs text-muted-foreground">
-                                                    {d.size} · Pratinjau
-                                                </span>
-                                            </span>
-                                        </button>
-                                    ))}
-                                </div>
-                            </section>
-                        )}
                     <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                        <div className="md:hidden">
+                            <Select
+                                value={filter}
+                                onValueChange={(value) =>
+                                    setFilter(value as LibraryFilter)
+                                }
+                            >
+                                <SelectTrigger
+                                    className="w-full"
+                                    aria-label="Filter status dokumen"
+                                >
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {filters.map((item) => (
+                                        <SelectItem
+                                            key={item.value}
+                                            value={item.value}
+                                        >
+                                            {item.label} ({counts[item.value]})
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
                         <Tabs
+                            className="hidden md:block"
                             value={filter}
                             onValueChange={(value) =>
                                 setFilter(value as LibraryFilter)
@@ -716,23 +686,30 @@ fileInput.current?.click()
                         </div>
                     </div>
 
-                    <div className="flex items-center justify-between gap-3 text-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
                         <p className="text-muted-foreground">
                             {shownDocuments.length} file ditemukan
                         </p>
-                        <select
-                            aria-label="Filter jenis file"
-                            className="rounded-md border bg-background p-2"
-                            value={fileType}
-                            onChange={(e) => setFileType(e.target.value)}
-                        >
-                            <option value="all">Semua jenis file</option>
-                            <option value="pdf">PDF</option>
-                            <option value="docx">Word</option>
-                            <option value="spreadsheet">Excel & CSV</option>
-                            <option value="img">Gambar</option>
-                            <option value="txt">Teks</option>
-                        </select>
+                        <Select value={fileType} onValueChange={setFileType}>
+                            <SelectTrigger
+                                className="w-full sm:w-48"
+                                aria-label="Filter jenis file"
+                            >
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">
+                                    Semua jenis file
+                                </SelectItem>
+                                <SelectItem value="pdf">PDF</SelectItem>
+                                <SelectItem value="docx">Word</SelectItem>
+                                <SelectItem value="spreadsheet">
+                                    Excel & CSV
+                                </SelectItem>
+                                <SelectItem value="img">Gambar</SelectItem>
+                                <SelectItem value="txt">Teks</SelectItem>
+                            </SelectContent>
+                        </Select>
                     </div>
                     {shownDocuments.length === 0 ? (
                         <Card className="border-dashed py-14 text-center shadow-none">
@@ -750,8 +727,8 @@ fileInput.current?.click()
                         </Card>
                     ) : (
                         <Card className="overflow-hidden py-0 shadow-none">
-                            <Table>
-                                <TableHeader>
+                            <Table className="block md:table">
+                                <TableHeader className="hidden md:table-header-group">
                                     <TableRow className="hover:bg-transparent">
                                         <TableHead className="pl-5">
                                             Dokumen
@@ -766,7 +743,7 @@ fileInput.current?.click()
                                         </TableHead>
                                     </TableRow>
                                 </TableHeader>
-                                <TableBody>
+                                <TableBody className="block md:table-row-group">
                                     {paginatedDocuments.map((document) => {
                                         const pending = document.extract.filter(
                                             (item) =>
@@ -781,16 +758,19 @@ fileInput.current?.click()
                                             ).length;
 
                                         return (
-                                            <TableRow key={document.id}>
-                                                <TableCell className="pl-5">
-                                                    <div className="flex min-w-60 items-center gap-3">
+                                            <TableRow
+                                                key={document.id}
+                                                className="grid grid-cols-2 gap-2 p-3 md:table-row md:p-0"
+                                            >
+                                                <TableCell className="col-span-2 min-w-0 p-1 md:pl-5">
+                                                    <div className="flex min-w-0 items-center gap-3 md:min-w-60">
                                                         <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border bg-muted/40">
                                                             <FileText className="size-4" />
                                                         </div>
                                                         <div className="min-w-0">
                                                             <button
                                                                 type="button"
-                                                                className="block max-w-72 truncate text-left font-medium hover:underline"
+                                                                className="block max-w-full text-left font-medium break-all whitespace-normal hover:underline md:max-w-72 md:truncate"
                                                                 onClick={() =>
                                                                     previewDocument(
                                                                         document,
@@ -831,8 +811,8 @@ fileInput.current?.click()
                                                 <TableCell className="text-muted-foreground">
                                                     {document.date}
                                                 </TableCell>
-                                                <TableCell className="pr-4 text-right">
-                                                    <div className="flex items-center justify-end gap-2">
+                                                <TableCell className="col-span-2 p-1 text-right md:pr-4">
+                                                    <div className="flex flex-wrap items-center justify-end gap-2">
                                                         {!archived && (
                                                             <Button
                                                                 size="sm"
@@ -984,7 +964,7 @@ fileInput.current?.click()
                                         ))}
                                     </select>
                                 </label>
-                                <div className="flex items-center gap-3">
+                                <div className="flex flex-wrap items-center gap-3">
                                     <Button
                                         variant="outline"
                                         size="sm"

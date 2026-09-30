@@ -25,6 +25,7 @@ use App\Models\IntelligentNewsRun;
 use App\Models\IntelligentNewsRunEvent;
 use App\Models\IntelligentNewsSession;
 use App\Models\NewsCategory;
+use App\Services\News\MetaConnections;
 use App\Services\NewsGenerationService;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\JsonResponse;
@@ -185,6 +186,8 @@ class NewsCreatorController extends Controller
                 || (! $session['has_draft'] && $session['recent']))->values();
 
         return inertia('admin/intelligentnewscreator/chat', [
+            'publishPlatforms' => app(MetaConnections::class)->platforms($request->user()->getKey()),
+            'metaAuth' => app(MetaConnections::class)->publicConfig(),
             'sessions' => $sessions,
             'categories' => NewsCategory::active()->orderBy('name')->get(['categoryID', 'name']),
             'informationItems' => $information,
@@ -195,7 +198,7 @@ class NewsCreatorController extends Controller
             'initialPrompt' => $request->query('prompt'),
             'initialManualFact' => $request->query('fact'),
             'autoGenerate' => $request->boolean('generate'),
-            'conversationReadOnly' => $newsSession?->draft?->status === 'published',
+            'conversationReadOnly' => (isset($draft) && $draft->status !== 'draft') || $newsSession?->draft?->status === 'published',
             'newsSession' => $newsSession,
             'pendingInformation' => $pendingInformation,
         ]);
@@ -552,13 +555,22 @@ class NewsCreatorController extends Controller
         abort_unless($draft->created_by === $request->user()->getKey(), 403);
         abort_unless($draft->status === 'draft', 422, 'Only draft content can be edited.');
 
-        $validated = $request->validate([
-            'headline' => ['required', 'string', 'max:255'],
-            'subheadline' => ['nullable', 'string', 'max:255'],
-            'lead' => ['required', 'string'],
-            'body' => ['required', 'array', 'min:1'],
-            'body.*' => ['required', 'string'],
-        ]);
+        if ($request->has('content') || $request->has('title')) {
+            $data = $request->validate([
+                'title' => ['required', 'string', 'max:255'],
+                'content' => ['required', 'string'],
+            ]);
+            $validated = ['title' => $data['title'], 'content' => trim($data['content'])];
+        } else {
+            $validated = $request->validate([
+                'headline' => ['required', 'string', 'max:255'],
+                'subheadline' => ['nullable', 'string', 'max:255'],
+                'lead' => ['required', 'string'],
+                'body' => ['required', 'array', 'min:1'],
+                'body.*' => ['required', 'string'],
+            ]);
+
+        }
 
         $draft->update([
             ...$validated,
@@ -669,7 +681,7 @@ class NewsCreatorController extends Controller
                 'revision_instruction' => $revisionInstruction,
                 'created_by' => $userId,
                 'snapshot' => $draft->only([
-                    'headline', 'subheadline', 'lead', 'body', 'summary', 'labels',
+                    'title', 'content', 'excerpt', 'labels',
                     'sources_used', 'warnings', 'category_id', 'image', 'user_prompt',
                 ]),
             ],

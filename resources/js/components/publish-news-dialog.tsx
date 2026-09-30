@@ -56,6 +56,7 @@ export function PublishNewsDialog({
     onSelectionChange,
     processing,
     contentReady = true,
+    requireReviewConfirmation = false,
     error,
     onPublish,
 }: {
@@ -67,6 +68,7 @@ export function PublishNewsDialog({
     onSelectionChange: (selected: PublishPlatformId[]) => void;
     processing: boolean;
     contentReady?: boolean;
+    requireReviewConfirmation?: boolean;
     error?: string;
     onPublish: () => void;
 }) {
@@ -154,7 +156,9 @@ export function PublishNewsDialog({
                     </DialogTitle>
                     <DialogDescription className="leading-6">
                         {confirmWebsite
-                            ? 'Berita akan diterbitkan di website dan aplikasi ApaKhabar.'
+                            ? requireReviewConfirmation
+                                ? 'Dengan menerbitkan, Anda menyetujui fakta, sumber, dan versi draf yang telah Anda tinjau. Berita dikirim ke platform yang dipilih.'
+                                : 'Berita akan diterbitkan di website dan aplikasi ApaKhabar.'
                             : 'Pilih platform tempat berita ini akan diterbitkan.'}
                     </DialogDescription>
                 </DialogHeader>
@@ -422,7 +426,8 @@ export function PublishNewsDialog({
                             }
 
                             if (
-                                selection.includes('website') &&
+                                (requireReviewConfirmation ||
+                                    selection.includes('website')) &&
                                 !confirmWebsite
                             ) {
                                 setConfirmWebsite(true);
@@ -444,7 +449,8 @@ export function PublishNewsDialog({
                             ? 'Menerbitkan...'
                             : confirmWebsite
                               ? 'Ya, Terbitkan'
-                              : selection.includes('website')
+                              : requireReviewConfirmation ||
+                                  selection.includes('website')
                                 ? 'Konfirmasi penerbitan'
                                 : publishLabel(selection)}
                     </Button>

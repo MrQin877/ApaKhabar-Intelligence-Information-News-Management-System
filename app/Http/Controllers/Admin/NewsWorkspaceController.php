@@ -43,8 +43,8 @@ class NewsWorkspaceController extends Controller
                     'key' => "draft-{$draft->id}",
                     'id' => $draft->id,
                     'record_type' => 'draft',
-                    'title' => $draft->headline,
-                    'summary' => $draft->summary,
+                    'title' => $draft->title,
+                    'summary' => $draft->excerpt,
                     'status' => $draft->status,
                     'creation_method' => $draft->creation_method,
                     'category' => $draft->category?->name,
@@ -157,15 +157,15 @@ class NewsWorkspaceController extends Controller
         return Inertia::render('admin/intelligentnewscreator/editor', [
             'draft' => [
                 'id' => $draft->id,
-                'headline' => $draft->headline,
+                'headline' => $draft->title,
                 'subheadline' => $draft->subheadline,
-                'content' => collect($draft->body)->join("\n\n"),
+                'content' => $draft->content,
                 'content_html' => app(ArticleHtml::class)->sanitize(
-                    preg_match('/<(p|div|br|strong|b|em|i|u|ul|ol|li|blockquote)\b/i', collect($draft->body)->join("\n\n"))
-                        ? collect($draft->body)->join("\n\n")
-                        : nl2br(e(collect($draft->body)->join("\n\n")))
+                    preg_match('/<(p|div|br|strong|b|em|i|u|ul|ol|li|blockquote)\b/i', $draft->content)
+                        ? $draft->content
+                        : nl2br(e($draft->content))
                 ),
-                'summary' => $draft->summary,
+                'summary' => $draft->excerpt,
                 'category_id' => $draft->category_id,
                 'image' => $draft->image,
                 'status' => $draft->status,
@@ -198,7 +198,11 @@ class NewsWorkspaceController extends Controller
     {
         $this->authorizeDraft($request, $draft);
         abort_unless($draft->status === 'draft', 422, 'Only draft content can be published.');
-        abort_unless($draft->reviewed_at !== null, 422, 'Review the current draft version before publishing.');
+        $confirmReview = $draft->creation_method === 'ai' && $request->boolean('confirm_review');
+        if ($confirmReview) {
+            $request->validate(['confirm_review' => ['accepted'], 'version' => ['required', 'integer', Rule::in([$draft->version])]]);
+        }
+        abort_unless($draft->reviewed_at !== null || $confirmReview, 422, 'Review the current draft version before publishing.');
         $latestQuality = $draft->qualityEvaluations()->first();
         abort_if(
             $draft->creation_method === 'ai' && $latestQuality?->publish_blocked,
@@ -209,8 +213,12 @@ class NewsWorkspaceController extends Controller
         $platforms = $request->input('platforms', ['website']);
         $request->merge(['platforms' => $platforms]);
         $this->validatePlatforms($request);
-        if (in_array('instagram', $platforms, true) && $draft->creation_method !== 'manual') {
-            throw ValidationException::withMessages(['platforms' => 'Penerbitan Instagram hanya tersedia untuk berita manual.']);
+        if ($draft->creation_method === 'ai') {
+            $request->validate(['version' => ['sometimes', 'required', 'integer', Rule::in([$draft->version])]]);
+        }
+
+        if ($confirmReview) {
+            $draft->update(['reviewed_at' => now()]);
         }
 
         $context = $this->publishContext($request, $draft->id);
@@ -229,9 +237,9 @@ class NewsWorkspaceController extends Controller
                             return $draft->published_news_id;
                         }
                         $news = News::create([
-                            'title' => $draft->headline,
-                            'content' => collect($draft->body)->join("\n\n"),
-                            'excerpt' => $draft->summary,
+                            'title' => $draft->title,
+                            'content' => $this->publicationContent($draft),
+                            'excerpt' => $draft->creation_method === 'ai' ? $draft->lead : $draft->excerpt,
                             'image' => $draft->image,
                             'category_id' => $draft->category_id,
                             'status' => 'active',
@@ -247,7 +255,7 @@ class NewsWorkspaceController extends Controller
                         if ($draft->facebook_post_id) {
                             return $draft->facebook_post_id;
                         }
-                        $message = trim(html_entity_decode(strip_tags($draft->headline."\n\n".$draft->summary), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+                        $message = trim(html_entity_decode(strip_tags($draft->title."\n\n".($draft->creation_method === 'ai' ? $this->publicationContent($draft) : $draft->excerpt)), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
                         $id = app(FacebookPublishingService::class)->publish(NewsImageUrl::resolve($draft->image), $message, $context);
                         $draft->update(['facebook_post_id' => $id]);
 
@@ -256,7 +264,7 @@ class NewsWorkspaceController extends Controller
                     if ($draft->instagram_media_id) {
                         return $draft->instagram_media_id;
                     }
-                    $caption = trim(html_entity_decode(strip_tags($draft->headline."\n\n".$draft->summary), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+                    $caption = trim(html_entity_decode(strip_tags($draft->title."\n\n".($draft->creation_method === 'ai' ? $this->publicationContent($draft) : $draft->excerpt)), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
                     $id = app(InstagramService::class)->publish(
                         NewsImageUrl::resolve($draft->image) ?? '', $caption, $context,
                     );
@@ -284,15 +292,19 @@ class NewsWorkspaceController extends Controller
             $draft->update(['status' => 'published']);
         }
         $result = ['success' => $success, 'results' => $results, 'draft_id' => $draft->id,
-            'attempt_id' => $context['attempt_id'], 'retry_url' => route('admin.news-workspace.manual.edit', $draft),
+            'attempt_id' => $context['attempt_id'], 'retry_url' => $draft->creation_method === 'ai' ? route('admin.assistant.index', ['draft' => $draft->id]) : route('admin.news-workspace.manual.edit', $draft),
             'completion_url' => route('admin.news-workspace.index')];
         PublishLog::write('final_result', [...$context, 'news_id' => $draft->published_news_id, ...$result]);
         if ($request->expectsJson() && ! $request->header('X-Inertia')) {
             return response()->json($result);
         }
 
-        return redirect()->route('admin.news-workspace.manual.edit', $draft)
-            ->with('publishResult', $result);
+        return redirect($result['retry_url'])->with('publishResult', $result);
+    }
+
+    private function publicationContent(IntelligentNewsDraft $draft): string
+    {
+        return $draft->content;
     }
 
     private function publishContext(Request $request, ?int $draftId = null): array
@@ -426,19 +438,14 @@ class NewsWorkspaceController extends Controller
 
     private function draftAttributes(array $data, int $userId): array
     {
-        $paragraphs = collect(preg_split('/\R{2,}/', trim($data['content'])))
-            ->map(fn ($paragraph) => trim($paragraph))->filter()->values()->all();
-
         return [
             'created_by' => $userId,
             'creation_method' => 'manual',
             'category_id' => $data['category_id'] ?? null,
             'image' => $data['image'] ?? null,
-            'headline' => $data['headline'],
-            'subheadline' => $data['subheadline'] ?? null,
-            'lead' => $paragraphs[0],
-            'body' => $paragraphs,
-            'summary' => $data['summary'],
+            'title' => $data['headline'],
+            'content' => $data['content'],
+            'excerpt' => $data['summary'],
             'labels' => [],
             'sources_used' => [],
             'warnings' => [],

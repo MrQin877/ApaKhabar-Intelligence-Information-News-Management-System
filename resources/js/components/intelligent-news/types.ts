@@ -118,6 +118,8 @@ export type QualityDimension =
       };
 
 export interface ArticleQuality {
+    evaluator_model?: string;
+    evaluation_version?: string;
     overall_score: number;
     quality_label: string;
     publish_blocked: boolean;
@@ -157,6 +159,8 @@ export interface Recommendation {
 }
 
 export interface AssistantPageProps {
+    publishPlatforms: import('@/components/publish-news-dialog').PublishPlatform[];
+    metaAuth: import('@/lib/meta-auth').MetaAuthConfig;
     conversationReadOnly?: boolean;
     sessions?: import('./session-panel').AssistantSessionSummary[];
     categories?: { categoryID: number; name: string }[];

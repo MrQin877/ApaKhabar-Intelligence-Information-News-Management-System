@@ -54,7 +54,7 @@ class AssistantCategoryController extends Controller
                     $draft->update(['category_id' => $category->getKey(), 'version' => $draft->version + 1, 'reviewed_at' => null]);
                     IntelligentNewsDraftVersion::create(['draft_id' => $draft->id, 'version' => $draft->version,
                         'change_type' => 'edited', 'revision_source' => 'manual', 'created_by' => $request->user()->getKey(),
-                        'snapshot' => $draft->only(['headline', 'subheadline', 'lead', 'body', 'summary', 'labels', 'sources_used', 'warnings', 'category_id', 'image', 'user_prompt'])]);
+                        'snapshot' => $draft->only(['title', 'content', 'excerpt', 'labels', 'sources_used', 'warnings', 'category_id', 'image', 'user_prompt'])]);
                 }
                 $proposal['status'] = $data['decision'];
                 $proposal['decided_by'] = $request->user()->getKey();

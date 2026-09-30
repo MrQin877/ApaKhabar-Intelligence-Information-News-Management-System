@@ -168,7 +168,7 @@ test('completed agent result saves a draft version and quality report', function
     $this->actingAs($user)->post(route('admin.assistant.generate'), [
         'information_ids' => [$source->id], 'prompt' => 'Buat berita',
     ])->assertSessionHasNoErrors();
-    $this->assertDatabaseHas('intelligent_news_drafts', ['headline' => 'Lokakarya Desa', 'status' => 'draft', 'version' => 1]);
+    $this->assertDatabaseHas('intelligent_news_drafts', ['title' => 'Lokakarya Desa', 'status' => 'draft', 'version' => 1]);
     $this->assertDatabaseCount('intelligent_news_draft_versions', 1);
     $this->assertDatabaseHas('ai_quality_evaluations', ['overall_score' => 90]);
     $session = IntelligentNewsSession::where('created_by', $user->getKey())->latest('id')->firstOrFail();
