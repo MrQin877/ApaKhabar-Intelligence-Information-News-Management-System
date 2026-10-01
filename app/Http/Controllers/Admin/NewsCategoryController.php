@@ -38,7 +38,6 @@ class NewsCategoryController extends Controller
         $category = NewsCategory::create([
             ...$data,
             'slug' => $this->uniqueSlug($data['name']),
-            'status' => 'active',
             'created_by' => $request->user()->getKey(),
         ]);
 
@@ -51,9 +50,6 @@ class NewsCategoryController extends Controller
     {
         $this->requireAdmin($request);
         $data = $this->validated($request, $category);
-        if ($category->is_default && ($data['status'] ?? 'active') === 'inactive') {
-            throw ValidationException::withMessages(['status' => 'Kategori bawaan harus tetap aktif.']);
-        }
         $category->update([
             ...$data,
             'slug' => $this->uniqueSlug($data['name'], $category),
@@ -67,14 +63,6 @@ class NewsCategoryController extends Controller
     public function destroy(Request $request, NewsCategory $category): RedirectResponse|JsonResponse
     {
         $this->requireAdmin($request);
-        if ($category->is_default) {
-            throw ValidationException::withMessages(['category' => 'Kategori bawaan tidak dapat dihapus.']);
-        }
-        if ($category->news()->exists() || $category->drafts()->exists()) {
-            throw ValidationException::withMessages([
-                'category' => 'Kategori masih digunakan. Pindahkan artikelnya atau nonaktifkan kategori ini.',
-            ]);
-        }
         $category->delete();
 
         return $request->expectsJson()
@@ -88,6 +76,7 @@ class NewsCategoryController extends Controller
             'name' => ['required', 'string', 'max:100'],
             'description' => ['nullable', 'string', 'max:1000'],
             'status' => ['sometimes', 'in:active,inactive'],
+            'is_active' => ['sometimes', 'boolean'],
             'display_order' => ['sometimes', 'integer', 'min:0', 'max:9999'],
         ]);
         $duplicate = NewsCategory::query()
@@ -98,6 +87,9 @@ class NewsCategoryController extends Controller
             throw ValidationException::withMessages(['name' => 'Nama kategori sudah digunakan.']);
         }
         $data['name'] = trim($data['name']);
+        if (mb_strtolower($data['name']) === 'lainnya') {
+            throw ValidationException::withMessages(['name' => 'Gunakan Tanpa kategori untuk berita yang tidak memiliki kategori.']);
+        }
 
         return $data;
     }
@@ -107,7 +99,7 @@ class NewsCategoryController extends Controller
         $base = Str::slug($name) ?: 'category';
         $slug = $base;
         $suffix = 2;
-        while (NewsCategory::where('slug', $slug)->when($ignore, fn ($q) => $q->whereKeyNot($ignore->getKey()))->exists()) {
+        while (NewsCategory::withTrashed()->where('slug', $slug)->when($ignore, fn ($q) => $q->whereKeyNot($ignore->getKey()))->exists()) {
             $slug = $base.'-'.$suffix++;
         }
 

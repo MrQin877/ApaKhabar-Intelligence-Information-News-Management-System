@@ -61,10 +61,8 @@ interface InformationItem {
 }
 interface GeneratedArticle {
     headline: string;
-    subheadline: string | null;
     lead: string;
     body: string[];
-    summary: string;
     labels: string[];
     warnings: string[];
     selected_sources: Array<{
@@ -656,9 +654,7 @@ export default function NewsCreator({
                             className="ang-hbtn"
                             aria-label="Document Library"
                             title="Document Library"
-                            onClick={() =>
-                                router.visit(documentRoutes.index())
-                            }
+                            onClick={() => router.visit(documentRoutes.index())}
                         >
                             <Archive size={14} strokeWidth={2} />
                             <span>Document Library</span>

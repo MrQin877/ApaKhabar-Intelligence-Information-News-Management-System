@@ -29,17 +29,6 @@ return new class extends Migration
             DB::table('news_categories')->where('categoryID', $category->categoryID)->update(['slug' => $slug]);
         });
 
-        if (! DB::table('news_categories')->whereRaw('LOWER(name) = ?', ['lainnya'])->exists()) {
-            DB::table('news_categories')->insert([
-                'name' => 'Lainnya', 'slug' => 'lainnya',
-                'description' => 'Kategori bawaan untuk berita yang tidak sesuai kategori lain.',
-                'status' => 'active', 'display_order' => 999, 'is_default' => true,
-                'created_at' => now(), 'updated_at' => now(),
-            ]);
-        } else {
-            DB::table('news_categories')->whereRaw('LOWER(name) = ?', ['lainnya'])->update(['is_default' => true]);
-        }
-
         Schema::table('news_categories', fn (Blueprint $table) => $table->unique('slug'));
     }
 

@@ -35,7 +35,6 @@ image URLs is performed.
 ```json
 {
   "headline": "ApaKhabar Instagram test",
-  "summary": "A test update from ApaKhabar.",
   "content": "<p>This is a manual news publishing test for Instagram.</p>",
   "content_format": "html",
   "image": "https://your-public-domain.example/news.jpg",
@@ -47,7 +46,7 @@ image URLs is performed.
 The existing modal also sees Instagram as connected when server credentials are configured.
 For saved manual drafts, use `PUT /admin/news/manual/{draft}` with the same payload.
 The existing reviewed-draft endpoint is `POST /admin/news/drafts/{draft}/publish`.
-Caption is the headline, a blank line, and summary, converted to plain text (maximum 2200 characters).
+Caption is the headline, a blank line, and full article content, converted to plain text (maximum 2200 characters).
 
 3. Expect the existing success redirect to `/admin/news` and check the Instagram account.
    Instagram-only marks the draft published without creating a website news item.

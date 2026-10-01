@@ -38,11 +38,13 @@ export function NewsRichEditor({
     onChange,
     invalid,
     disabled,
+    characterCount,
 }: {
     value: string;
     onChange: (html: string) => void;
     invalid: boolean;
     disabled: boolean;
+    characterCount: number;
 }) {
     const editor = useRef<HTMLDivElement>(null);
     const selection = useRef<Range | null>(null);
@@ -133,6 +135,9 @@ export function NewsRichEditor({
                         </span>
                     ),
                 )}
+                <span className="ml-auto shrink-0 pl-3 text-xs whitespace-nowrap text-muted-foreground">
+                    Minimal 20 karakter
+                </span>
             </div>
             <div
                 ref={editor}
@@ -163,6 +168,9 @@ export function NewsRichEditor({
                 }}
                 onDrop={(event) => event.preventDefault()}
             />
+            <div className="px-4 pb-3 text-right text-xs text-muted-foreground sm:px-5">
+                {characterCount} karakter
+            </div>
         </div>
     );
 }

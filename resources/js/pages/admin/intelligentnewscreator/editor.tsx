@@ -7,17 +7,20 @@ import {
     Save,
     Send,
     Settings2,
-    X,
     LoaderCircle,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
+import { flushSync } from 'react-dom';
+import { NewsImageCropDialog } from '@/components/news-image-crop-dialog';
 import { NewsRichEditor } from '@/components/news-rich-editor';
+import type { PublicationPreviewData } from '@/components/publication-preview';
 import { PublishNewsDialog } from '@/components/publish-news-dialog';
 import type {
     PublishPlatform,
     PublishPlatformId,
 } from '@/components/publish-news-dialog';
+import { PublishResultDialog } from '@/components/publish-result-dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -26,25 +29,29 @@ import {
     Select,
     SelectContent,
     SelectItem,
+    SelectSeparator,
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
 import AppLayout from '@/layouts/app-layout';
+import { defaultCrops } from '@/lib/image-crops';
+import type { ImageCrops } from '@/lib/image-crops';
+import { publishManual } from '@/lib/manual-publish';
+import type { PublishResult } from '@/lib/manual-publish';
 import type { MetaAuthConfig } from '@/lib/meta-auth';
+import { index as categoryManagement } from '@/routes/admin/categories';
 import type { BreadcrumbItem } from '@/types';
 
 interface Draft {
     id: number;
     headline: string;
-    subheadline: string | null;
     content: string;
     content_html: string;
     show_on_homepage: boolean;
-    summary: string;
     category_id: number | null;
     image: string | null;
+    image_crops: ImageCrops | null;
     status: string;
 }
 
@@ -78,21 +85,44 @@ export default function ManualEditor({
     metaAuth,
 }: Props) {
     const [confirmPublish, setConfirmPublish] = useState(false);
+    const [publishing, setPublishing] = useState(false);
+    const [publishResult, setPublishResult] = useState<PublishResult>();
+    const publishStarted = useRef(false);
     const [dragging, setDragging] = useState(false);
     const [preview, setPreview] = useState('');
+    const [cropOpen, setCropOpen] = useState(false);
     const fileInput = useRef<HTMLInputElement>(null);
-    const form = useForm({
+    const categoryManagementLink = useRef<HTMLAnchorElement>(null);
+    const [categoryOpen, setCategoryOpen] = useState(false);
+    const availableCategories = categories.filter(
+        (category) =>
+            category.name.trim().toLocaleLowerCase('id') !== 'lainnya',
+    );
+
+    const form = useForm(`ManualEditor:${draft?.id ?? 'new'}`, {
         headline: draft?.headline ?? '',
-        subheadline: draft?.subheadline ?? '',
         content: draft?.content_html ?? '',
         content_format: 'html',
         show_on_homepage: draft?.show_on_homepage ?? true,
         cover_photo: null as File | null,
-        summary: draft?.summary ?? '',
         category_id: draft?.category_id ? String(draft.category_id) : '',
         image: draft?.image ?? '',
-        platforms: [] as PublishPlatformId[],
+        image_crops: draft?.image_crops ?? (null as ImageCrops | null),
+        platforms: ['website'] as PublishPlatformId[],
     });
+    const selectedCategoryExists =
+        !form.data.category_id ||
+        availableCategories.some(
+            (category) => String(category.categoryID) === form.data.category_id,
+        );
+    const setFormData = form.setData;
+    useEffect(() => {
+        if (!selectedCategoryExists) {
+            setFormData('category_id', '');
+        }
+    }, [selectedCategoryExists, setFormData]);
+
+    const busy = form.processing || publishing || Boolean(publishResult);
     const contentText = useMemo(() => {
         if (typeof DOMParser === 'undefined') {
             return '';
@@ -110,10 +140,9 @@ export default function ManualEditor({
             .replace(/[\u200B-\u200D\uFEFF]/g, '')
             .trim();
     }, [form.data.content]);
+    const characterCount = Array.from(contentText).length;
     const hasRequiredContent = Boolean(
-        form.data.headline.trim() &&
-        form.data.summary.trim() &&
-        Array.from(contentText).length >= 20,
+        form.data.headline.trim() && characterCount >= 20,
     );
 
     useEffect(() => {
@@ -125,7 +154,7 @@ export default function ManualEditor({
     }, [preview]);
 
     function selectCover(file?: File) {
-        if (!file || form.processing) {
+        if (!file || busy) {
             return;
         }
 
@@ -143,11 +172,12 @@ export default function ManualEditor({
 
         form.clearErrors('cover_photo');
         form.setData('cover_photo', file);
+        form.setData('image_crops', defaultCrops());
         setPreview(URL.createObjectURL(file));
     }
 
-    function save(intent: 'draft' | 'publish') {
-        if (form.processing) {
+    function save(intent: 'draft' | 'publish', previewToken?: string) {
+        if (busy || publishStarted.current) {
             return;
         }
 
@@ -157,6 +187,39 @@ export default function ManualEditor({
 
         if (intent === 'publish' && !form.data.platforms.length) {
             form.setError('platforms', 'Pilih setidaknya satu platform.');
+
+            return;
+        }
+
+        if (intent === 'publish') {
+            // A ref closes the gap before React renders the disabled buttons.
+            // Keep it locked through completion, including an uncertain network outcome.
+            publishStarted.current = true;
+            setPublishing(true);
+            form.clearErrors();
+            const body = new FormData();
+
+            body.append('preview_token', previewToken ?? '');
+            form.data.platforms.forEach((platform) =>
+                body.append('platforms[]', platform),
+            );
+
+            body.append('intent', 'publish');
+
+            if (draft) {
+                body.append('_method', 'put');
+            }
+
+            void publishManual(
+                draft ? `/admin/news/manual/${draft.id}` : '/admin/news/manual',
+                body,
+                [...form.data.platforms],
+            )
+                .then((result) => {
+                    setConfirmPublish(false);
+                    setPublishResult(result);
+                })
+                .finally(() => setPublishing(false));
 
             return;
         }
@@ -193,6 +256,7 @@ export default function ManualEditor({
                         ...data,
                         cover_photo: null,
                         image: saved?.image ?? data.image,
+                        image_crops: saved?.image_crops ?? data.image_crops,
                         content: saved?.content_html ?? data.content,
                     }));
 
@@ -202,6 +266,77 @@ export default function ManualEditor({
                 },
             },
         );
+    }
+
+    async function preparePreview(): Promise<PublicationPreviewData> {
+        const body = new FormData();
+
+        for (const [key, value] of Object.entries(form.data)) {
+            if (key === 'platforms' || value === null) {
+                continue;
+            }
+
+            if (key === 'image_crops') {
+                body.append(key, JSON.stringify(value));
+            } else if (value instanceof File) {
+                body.append(key, value);
+            } else {
+                body.append(
+                    key,
+                    typeof value === 'boolean'
+                        ? value
+                            ? '1'
+                            : '0'
+                        : String(value),
+                );
+            }
+        }
+
+        const csrf = document.querySelector<HTMLMetaElement>(
+            'meta[name="csrf-token"]',
+        )?.content;
+        const cookie = document.cookie
+            .split('; ')
+            .find((value) => value.startsWith('XSRF-TOKEN='));
+        const response = await fetch('/admin/news/manual/preview', {
+            method: 'POST',
+            credentials: 'same-origin',
+            signal: AbortSignal.timeout(60000),
+            body,
+            headers: {
+                Accept: 'application/json',
+                ...(cookie
+                    ? { 'X-XSRF-TOKEN': decodeURIComponent(cookie.slice(11)) }
+                    : csrf
+                      ? { 'X-CSRF-TOKEN': csrf }
+                      : {}),
+            },
+        }).catch(() => {
+            throw new Error(
+                'Pratinjau belum dapat disiapkan. Periksa koneksi dan coba lagi.',
+            );
+        });
+
+        if (!response.ok) {
+            const result = await response.json().catch(() => ({}));
+            const fields = Object.keys(result.errors ?? {});
+            const message = fields.includes('headline')
+                ? 'Judul berita belum diisi atau terlalu panjang.'
+                : fields.includes('content')
+                  ? 'Isi berita harus berisi setidaknya 20 karakter.'
+                  : fields.some(
+                          (key) =>
+                              key.startsWith('image') || key === 'cover_photo',
+                      )
+                    ? 'Gambar belum siap. Periksa foto sampul dan potongan gambar.'
+                    : fields.includes('category_id')
+                      ? 'Kategori berita tidak tersedia. Pilih kembali kategori.'
+                      : 'Pratinjau belum dapat disiapkan. Silakan coba lagi.';
+
+            throw new Error(message);
+        }
+
+        return response.json();
     }
 
     const submit = (event: FormEvent) => {
@@ -262,7 +397,7 @@ export default function ManualEditor({
                                         onDragOver={(event) => {
                                             event.preventDefault();
 
-                                            if (!form.processing) {
+                                            if (!busy) {
                                                 setDragging(true);
                                             }
                                         }}
@@ -281,7 +416,7 @@ export default function ManualEditor({
                                             type="file"
                                             accept="image/jpeg,image/png"
                                             className="sr-only"
-                                            disabled={form.processing}
+                                            disabled={busy}
                                             onChange={(event) => {
                                                 selectCover(
                                                     event.target.files?.[0],
@@ -295,7 +430,7 @@ export default function ManualEditor({
                                             onClick={() =>
                                                 fileInput.current?.click()
                                             }
-                                            disabled={form.processing}
+                                            disabled={busy}
                                             className="flex min-h-48 w-full flex-col items-center justify-center gap-3 rounded-xl p-5 text-center outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                         >
                                             {preview || form.data.image ? (
@@ -325,29 +460,33 @@ export default function ManualEditor({
                                             </span>
                                         </button>
                                         {(preview || form.data.image) && (
-                                            <Button
-                                                type="button"
-                                                variant="secondary"
-                                                size="icon-sm"
-                                                className="absolute top-3 right-3 rounded-full shadow-sm"
-                                                aria-label="Hapus foto sampul"
-                                                disabled={form.processing}
-                                                onClick={() => {
-                                                    setPreview('');
-                                                    setConfirmPublish(false);
-                                                    form.setData((data) => ({
-                                                        ...data,
-                                                        image: '',
-                                                        cover_photo: null,
-                                                    }));
-                                                }}
-                                            >
-                                                <X />
-                                            </Button>
+                                            <div className="absolute top-3 right-3 flex items-center gap-2">
+                                                {(preview ||
+                                                    form.data.image.includes(
+                                                        '/news-images/',
+                                                    )) && (
+                                                    <Button
+                                                        type="button"
+                                                        variant="secondary"
+                                                        size="sm"
+                                                        className="h-8 rounded-full shadow-sm"
+                                                        disabled={busy}
+                                                        onClick={() =>
+                                                            setCropOpen(true)
+                                                        }
+                                                    >
+                                                        <FilePenLine />
+                                                        Edit
+                                                    </Button>
+                                                )}
+                                            </div>
                                         )}
                                     </div>
                                     <FieldError
                                         message={form.errors.cover_photo}
+                                    />
+                                    <FieldError
+                                        message={form.errors.image_crops}
                                     />
                                     <details className="text-xs text-muted-foreground">
                                         <summary className="cursor-pointer py-1">
@@ -358,14 +497,15 @@ export default function ManualEditor({
                                             type="url"
                                             value={form.data.image}
                                             disabled={
-                                                form.processing ||
+                                                busy ||
                                                 Boolean(form.data.cover_photo)
                                             }
                                             onChange={(event) =>
-                                                form.setData(
-                                                    'image',
-                                                    event.target.value,
-                                                )
+                                                form.setData((data) => ({
+                                                    ...data,
+                                                    image: event.target.value,
+                                                    image_crops: null,
+                                                }))
                                             }
                                             placeholder="https://..."
                                             className="mt-2 bg-background"
@@ -397,66 +537,17 @@ export default function ManualEditor({
                                     />
                                 </div>
                                 <div className="space-y-2">
-                                    <Label htmlFor="subheadline">
-                                        Subjudul
-                                    </Label>
-                                    <Input
-                                        id="subheadline"
-                                        value={form.data.subheadline}
-                                        onChange={(event) =>
-                                            form.setData(
-                                                'subheadline',
-                                                event.target.value,
-                                            )
-                                        }
-                                        placeholder="Keterangan tambahan untuk judul"
-                                        maxLength={255}
-                                        aria-invalid={Boolean(
-                                            form.errors.subheadline,
-                                        )}
-                                    />
-                                    <FieldError
-                                        message={form.errors.subheadline}
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="summary">Ringkasan *</Label>
-                                    <Textarea
-                                        id="summary"
-                                        value={form.data.summary}
-                                        onChange={(event) =>
-                                            form.setData(
-                                                'summary',
-                                                event.target.value,
-                                            )
-                                        }
-                                        placeholder="Ringkasan singkat untuk daftar berita"
-                                        className="min-h-28 resize-y rounded-lg bg-background leading-6"
-                                        maxLength={1000}
-                                        aria-invalid={Boolean(
-                                            form.errors.summary,
-                                        )}
-                                    />
-                                    <div className="flex justify-between gap-3">
-                                        <FieldError
-                                            message={form.errors.summary}
-                                        />
-                                        <span className="ml-auto text-xs text-muted-foreground">
-                                            {form.data.summary.length}/1000
-                                        </span>
-                                    </div>
-                                </div>
-                                <div className="space-y-2">
                                     <Label htmlFor="content">
                                         Isi berita *
                                     </Label>
                                     <NewsRichEditor
+                                        characterCount={characterCount}
                                         value={form.data.content}
                                         onChange={(html) =>
                                             form.setData('content', html)
                                         }
                                         invalid={Boolean(form.errors.content)}
-                                        disabled={form.processing}
+                                        disabled={busy}
                                     />
                                     <div id="content-error" role="alert">
                                         <FieldError
@@ -481,6 +572,8 @@ export default function ManualEditor({
                                             Kategori
                                         </Label>
                                         <Select
+                                            open={categoryOpen}
+                                            onOpenChange={setCategoryOpen}
                                             value={
                                                 form.data.category_id || 'none'
                                             }
@@ -502,22 +595,60 @@ export default function ManualEditor({
                                             >
                                                 <SelectValue placeholder="Pilih kategori" />
                                             </SelectTrigger>
-                                            <SelectContent>
+                                            <SelectContent
+                                                onKeyDown={(event) => {
+                                                    if (event.key === 'Tab') {
+                                                        event.preventDefault();
+                                                        categoryManagementLink.current?.focus();
+                                                    }
+                                                }}
+                                            >
                                                 <SelectItem value="none">
                                                     Tanpa kategori
                                                 </SelectItem>
-                                                {categories.map((category) => (
-                                                    <SelectItem
-                                                        key={
-                                                            category.categoryID
+                                                {availableCategories.map(
+                                                    (category) => (
+                                                        <SelectItem
+                                                            key={
+                                                                category.categoryID
+                                                            }
+                                                            value={String(
+                                                                category.categoryID,
+                                                            )}
+                                                        >
+                                                            {category.name}
+                                                        </SelectItem>
+                                                    ),
+                                                )}
+                                                <SelectSeparator />
+                                                <Link
+                                                    ref={categoryManagementLink}
+                                                    href={categoryManagement.url()}
+                                                    className="flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-2 text-sm outline-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
+                                                    onKeyDown={(event) => {
+                                                        if (
+                                                            event.key ===
+                                                                'Enter' ||
+                                                            event.key === ' '
+                                                        ) {
+                                                            event.stopPropagation();
                                                         }
-                                                        value={String(
-                                                            category.categoryID,
-                                                        )}
-                                                    >
-                                                        {category.name}
-                                                    </SelectItem>
-                                                ))}
+
+                                                        if (event.key === ' ') {
+                                                            event.preventDefault();
+                                                            event.currentTarget.click();
+                                                        }
+                                                    }}
+                                                    onClick={() => {
+                                                        setCategoryOpen(false);
+                                                    }}
+                                                >
+                                                    <Settings2
+                                                        className="size-4"
+                                                        aria-hidden="true"
+                                                    />
+                                                    Kelola kategori
+                                                </Link>
                                             </SelectContent>
                                         </Select>
                                         <FieldError
@@ -540,7 +671,7 @@ export default function ManualEditor({
                                                     checked,
                                                 )
                                             }
-                                            disabled={form.processing}
+                                            disabled={busy}
                                         />
                                     </div>
                                     <FieldError
@@ -566,7 +697,7 @@ export default function ManualEditor({
                             <Button
                                 type="submit"
                                 variant="outline"
-                                disabled={form.processing}
+                                disabled={busy}
                                 className="h-10 flex-1 rounded-lg bg-card sm:flex-none sm:px-5"
                             >
                                 <Save />{' '}
@@ -576,9 +707,7 @@ export default function ManualEditor({
                             </Button>
                             <Button
                                 type="button"
-                                disabled={
-                                    form.processing || !hasRequiredContent
-                                }
+                                disabled={busy || !hasRequiredContent}
                                 aria-describedby={
                                     !hasRequiredContent
                                         ? 'publish-content-hint'
@@ -588,7 +717,7 @@ export default function ManualEditor({
                                 className="h-10 flex-1 rounded-lg bg-brand-600 text-white hover:bg-brand-700 sm:flex-none sm:px-5"
                                 title="Simpan dan tinjau draf sebelum menerbitkan"
                             >
-                                {form.processing ? (
+                                {publishing || form.processing ? (
                                     <LoaderCircle className="animate-spin" />
                                 ) : (
                                     <Send />
@@ -618,10 +747,27 @@ export default function ManualEditor({
                     form.clearErrors('platforms');
                     form.setData('platforms', selected);
                 }}
-                processing={form.processing}
+                processing={publishing || form.processing}
                 error={form.errors.platforms}
-                onPublish={() => save('publish')}
+                onPreparePreview={preparePreview}
+                onPublish={(token) => save('publish', token)}
             />
+            {publishResult && <PublishResultDialog result={publishResult} />}
+            {cropOpen && (
+                <NewsImageCropDialog
+                    src={preview || form.data.image}
+                    initial={form.data.image_crops}
+                    onClose={() => setCropOpen(false)}
+                    onReplace={() => {
+                        flushSync(() => setCropOpen(false));
+                        fileInput.current?.click();
+                    }}
+                    onSave={(crops) => {
+                        form.setData('image_crops', crops);
+                        setCropOpen(false);
+                    }}
+                />
+            )}
         </>
     );
 }

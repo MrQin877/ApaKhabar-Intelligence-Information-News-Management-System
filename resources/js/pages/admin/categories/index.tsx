@@ -199,9 +199,6 @@ export default function Categories({ categories }: { categories: Category[] }) {
                                                     <Button
                                                         variant="outline"
                                                         size="sm"
-                                                        disabled={
-                                                            category.is_default
-                                                        }
                                                         onClick={() =>
                                                             toggleStatus(
                                                                 category,
@@ -216,9 +213,6 @@ export default function Categories({ categories }: { categories: Category[] }) {
                                                     <Button
                                                         variant="destructive"
                                                         size="icon-sm"
-                                                        disabled={
-                                                            category.is_default
-                                                        }
                                                         onClick={() =>
                                                             setDeleting(
                                                                 category,
@@ -305,7 +299,6 @@ export default function Categories({ categories }: { categories: Category[] }) {
                                 <Switch
                                     id="category-active"
                                     checked={form.data.status === 'active'}
-                                    disabled={editing.is_default}
                                     onCheckedChange={(checked) =>
                                         form.setData(
                                             'status',
@@ -340,15 +333,14 @@ export default function Categories({ categories }: { categories: Category[] }) {
                             Hapus kategori {deleting?.name}?
                         </AlertDialogTitle>
                         <AlertDialogDescription>
-                            {deleting?.articles_count
-                                ? `Kategori ini digunakan oleh ${deleting.articles_count} artikel/draf. Penghapusan akan ditolak; nonaktifkan atau pindahkan artikelnya terlebih dahulu.`
-                                : 'Kategori yang tidak digunakan dapat dihapus permanen.'}
+                            Kategori akan dihapus dari pilihan kategori. Berita
+                            dan draf yang sudah menggunakan kategori ini tetap
+                            tersimpan dan dapat dibuka.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
                         <AlertDialogCancel>Batal</AlertDialogCancel>
                         <AlertDialogAction
-                            disabled={Boolean(deleting?.articles_count)}
                             onClick={() =>
                                 deleting &&
                                 router.delete(

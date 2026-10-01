@@ -12,13 +12,12 @@ class NewsFactory extends Factory
     public function definition(): array
     {
         return [
-            'title'       => fake()->sentence(),
-            'content'     => fake()->paragraphs(3, true),
-            'excerpt'     => fake()->sentence(),
-            'category'    => fake()->randomElement(['Pengumuman', 'Darurat', 'Berita']),
-            'image'       => null,
-            'date'        => now()->toDateString(),
-            'views'       => 0,
+            'title' => fake()->sentence(),
+            'content' => fake()->paragraphs(3, true),
+            'category' => fake()->randomElement(['Pengumuman', 'Darurat', 'Berita']),
+            'image' => null,
+            'date' => now()->toDateString(),
+            'views' => 0,
             'likes_count' => 0,
         ];
     }

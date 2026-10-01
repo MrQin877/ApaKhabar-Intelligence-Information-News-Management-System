@@ -38,9 +38,8 @@ use Inertia\Testing\AssertableInertia as Assert;
 // ── Shared news instance for all tests ──────────────────────────
 beforeEach(function () {
     $this->news = News::factory()->create([
-        'title'    => 'Gotong Royong Desa Punggul',
-        'content'  => 'Jemput semua penduduk hadir ke program gotong royong.',
-        'excerpt'  => 'Program gotong royong akan diadakan.',
+        'title' => 'Gotong Royong Desa Punggul',
+        'content' => 'Jemput semua penduduk hadir ke program gotong royong.',
         'category' => 'Pengumuman',
     ]);
 });
@@ -80,7 +79,7 @@ test('TC-NEWS-02: authenticated villager can view news homepage', function () {
 //          items regardless of category filter.
 test('TC-NEWS-03: news homepage can be filtered by category', function () {
     News::factory()->create([
-        'title'    => 'Amaran Banjir Kilat',
+        'title' => 'Amaran Banjir Kilat',
         'category' => 'Darurat',
     ]);
 
@@ -90,8 +89,7 @@ test('TC-NEWS-03: news homepage can be filtered by category', function () {
     $response->assertStatus(200);
 
     // Verify the correct Inertia page component is rendered
-    $response->assertInertia(fn (Assert $page) =>
-        $page->component('welcome')
+    $response->assertInertia(fn (Assert $page) => $page->component('welcome')
     );
 });
 
@@ -127,7 +125,7 @@ test('TC-NEWS-06: api returns single news by id', function () {
 // Output : Related news returned with HTTP 200
 test('TC-NEWS-07: api returns related news for valid news id', function () {
     News::factory()->create([
-        'title'    => 'Mesyuarat Penduduk Desa',
+        'title' => 'Mesyuarat Penduduk Desa',
         'category' => 'Pengumuman',
     ]);
 
@@ -171,7 +169,7 @@ test('TC-NEWS-10: api returns empty array for related news with invalid id', fun
 });
 
 test('shared news controller returns JSON when request expects JSON', function () {
-    $controller = new WebNewsController();
+    $controller = new WebNewsController;
     $request = Request::create('/news', 'GET');
     $request->headers->set('accept', 'application/json');
 
@@ -185,7 +183,7 @@ test('shared comment controller returns JSON when request expects JSON', functio
     $user = User::factory()->create();
     $news = News::factory()->create();
 
-    $controller = new WebCommentController();
+    $controller = new WebCommentController;
     $request = Request::create("/news/{$news->id}/comment", 'POST', ['content' => 'This is a test comment']);
     $request->headers->set('accept', 'application/json');
     $request->setUserResolver(fn () => $user);

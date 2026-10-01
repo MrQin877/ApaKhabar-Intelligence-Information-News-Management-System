@@ -45,7 +45,7 @@ beforeEach(function () {
     Http::fake(['https://images.example.com/*' => Http::response(instagramJpeg(2400, 400), 200, ['Content-Type' => 'image/jpeg'])]);
     $this->actingAs(User::factory()->create(['roleID' => UserRole::firstOrCreate(['name' => 'admin'])->getKey()]));
     $this->article = [
-        'headline' => 'Kegiatan warga', 'summary' => 'Ringkasan kegiatan warga.',
+        'headline' => 'Kegiatan warga',
         'content' => '<p>Kegiatan warga berlangsung dengan lancar hari ini.</p>',
         'content_format' => 'html', 'intent' => 'publish',
         'image' => 'https://images.example.com/news.jpg', 'platforms' => ['instagram'],
@@ -62,7 +62,7 @@ test('manual Instagram publishing uses Cloudinary and two Meta calls and respect
     expect(News::count())->toBe($websiteCount);
     expect(IntelligentNewsDraft::sole()->status)->toBe('published');
     Http::assertSentCount(5);
-    Http::assertSent(fn ($r) => str_ends_with($r->url(), '/12345/media') && $r['image_url'] === 'https://res.cloudinary.com/demo/image/upload/news.jpg' && $r['caption'] === "Kegiatan warga\n\nRingkasan kegiatan warga." && $r['access_token'] === 'server-secret');
+    Http::assertSent(fn ($r) => str_ends_with($r->url(), '/12345/media') && $r['image_url'] === 'https://res.cloudinary.com/demo/image/upload/news.jpg' && $r['caption'] === "Kegiatan warga\n\nKegiatan warga berlangsung dengan lancar hari ini." && $r['access_token'] === 'server-secret');
     Http::assertSent(fn ($r) => str_ends_with($r->url(), '/12345/media_publish') && $r['creation_id'] === '111');
 })->with([[['instagram'], 0], [['website', 'instagram'], 1]]);
 
