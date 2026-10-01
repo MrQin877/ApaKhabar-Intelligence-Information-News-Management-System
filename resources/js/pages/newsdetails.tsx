@@ -387,7 +387,9 @@ export default function NewsDetails({ news, comments = [] }: Props) {
                             src={news.image}
                             alt={news.title}
                             className={
-                                news.image?.includes('/news-images/crops/')
+                                /\/news-images\/(?:crops\/|previews\/[^/]+\/crops\/)/.test(
+                                    news.image ?? '',
+                                )
                                     ? 'h-auto w-full'
                                     : 'max-h-96 w-full object-cover transition-transform duration-700 hover:scale-[1.02]'
                             }

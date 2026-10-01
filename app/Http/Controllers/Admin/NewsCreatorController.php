@@ -639,10 +639,13 @@ class NewsCreatorController extends Controller
             ->timeout($timeout);
     }
 
-    private function resolveCategoryId(array $article): int
+    private function resolveCategoryId(array $article): ?int
     {
         $categories = NewsCategory::query()->active()
             ->orderBy('display_order')->get(['categoryID', 'name', 'is_default']);
+        if ($categories->isEmpty()) {
+            return null;
+        }
         $requested = mb_strtolower(trim((string) ($article['category'] ?? '')));
         $labels = collect($article['labels'] ?? [])->map(fn ($label) => mb_strtolower((string) $label));
 

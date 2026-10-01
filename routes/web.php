@@ -114,6 +114,7 @@ Route::prefix('admin')
         // News management, including manual drafts and AI-produced drafts.
         Route::get('/news', [NewsWorkspaceController::class, 'index'])->name('news-workspace.index');
         Route::get('/news/manual/create', [NewsWorkspaceController::class, 'create'])->name('news-workspace.manual.create');
+        Route::post('/news/manual/preview', [NewsWorkspaceController::class, 'preview'])->name('news-workspace.manual.preview');
         Route::post('/news/manual', [NewsWorkspaceController::class, 'store'])->name('news-workspace.manual.store');
         Route::get('/news/manual/{draft}/edit', [NewsWorkspaceController::class, 'edit'])->name('news-workspace.manual.edit');
         Route::put('/news/manual/{draft}', [NewsWorkspaceController::class, 'update'])->name('news-workspace.manual.update');

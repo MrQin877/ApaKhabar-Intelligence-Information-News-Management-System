@@ -37,7 +37,7 @@ class News extends Model
 
     public function categoryRecord()
     {
-        return $this->belongsTo(NewsCategory::class, 'category_id', 'categoryID');
+        return $this->belongsTo(NewsCategory::class, 'category_id', 'categoryID')->withTrashed();
     }
 
     public function getCategoryAttribute(): ?string

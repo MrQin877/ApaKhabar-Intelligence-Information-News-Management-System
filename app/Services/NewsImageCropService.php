@@ -9,7 +9,7 @@ class NewsImageCropService
 {
     public const SIZES = ['website' => [1600, 900], 'instagram' => [1080, 1080], 'facebook' => [1200, 630]];
 
-    public function generate(string $url, array $settings): array
+    public function generate(string $url, array $settings, string $directory = 'news-images/crops'): array
     {
         $path = parse_url($url, PHP_URL_PATH) ?: '';
         if (! preg_match('~(?:^|/)(news-images/.+)$~', $path, $match)
@@ -72,7 +72,7 @@ class NewsImageCropService
                 imagejpeg($canvas, null, 95);
                 $jpeg = ob_get_clean();
                 imagedestroy($canvas);
-                $destination = 'news-images/crops/'.hash('sha256', $bytes.json_encode($crop).$platform.'v1').'.jpg';
+                $destination = $directory.'/'.hash('sha256', $bytes.json_encode($crop).$platform.'v1').'.jpg';
                 if (! $disk->put($destination, $jpeg, 'public')) {
                     throw ValidationException::withMessages(['image_crops' => 'Potongan gambar gagal disimpan. Silakan coba lagi.']);
                 }

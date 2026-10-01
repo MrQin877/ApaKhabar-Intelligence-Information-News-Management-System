@@ -18,6 +18,7 @@ use App\Support\PublishLog;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -130,6 +131,56 @@ class NewsWorkspaceController extends Controller
             'categories' => $this->categories(),
             'publishPlatforms' => $this->publishPlatforms(),
             'metaAuth' => app(MetaConnections::class)->publicConfig(),
+        ]);
+    }
+
+    public function preview(Request $request): JsonResponse
+    {
+        try {
+            return $this->preparePreview($request);
+        } catch (ValidationException $exception) {
+            throw $exception;
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return response()->json(['message' => 'Pratinjau belum dapat disiapkan. Silakan coba lagi.'], 500);
+        }
+    }
+
+    private function preparePreview(Request $request): JsonResponse
+    {
+        // Prepare through the same sanitizer, upload and crop pipeline as saving.
+        $request->merge(['intent' => 'draft']);
+        $directory = 'news-images/previews/'.Str::uuid();
+        $disk = Storage::disk(config('filesystems.news_media_disk', 'public'));
+        if (! $disk->put($directory.'/created-at', (string) now()->timestamp)) {
+            throw new \RuntimeException('Unable to initialize publication preview storage.');
+        }
+        $data = $this->validateDraftData($request, $directory);
+        $attributes = $this->draftAttributes($data, $request->user()->getKey());
+        $content = collect($attributes['body'])->join("\n\n");
+        $caption = ArticleText::post($data['headline'], $content);
+        $images = collect(['website', 'facebook', 'instagram'])->mapWithKeys(
+            fn ($platform) => [$platform => NewsImageUrl::resolve($data['image_variants'][$platform] ?? $data['image'] ?? null)]
+        )->all();
+        $issues = [];
+        if (! $images['instagram']) {
+            $issues['instagram'][] = 'Gambar Instagram belum siap. Kembali dan tambahkan foto sampul.';
+        } elseif (! isset($data['image_variants']['instagram'])) {
+            $issues['instagram'][] = 'Gambar Instagram belum siap. Kembali dan gunakan Pratinjau & Sesuaikan untuk menyiapkan gambar.';
+        }
+        if (mb_strlen($caption) > 2200) {
+            $issues['instagram'][] = 'Teks Instagram terlalu panjang. Pendekkan judul dan isi berita hingga maksimal 2.200 karakter.';
+        }
+        $token = (string) Str::uuid();
+        Cache::put('publication-preview:'.$token, [
+            'user_id' => $request->user()->getKey(), 'data' => $data, 'issues' => $issues,
+        ], now()->addHour());
+
+        return response()->json([
+            'token' => $token, 'title' => $data['headline'], 'content' => $content,
+            'category' => NewsCategory::find($data['category_id'] ?? null)?->name,
+            'caption' => $caption, 'images' => $images, 'issues' => $issues,
         ]);
     }
 
@@ -421,8 +472,23 @@ class NewsWorkspaceController extends Controller
         }
     }
 
-    private function validateDraftData(Request $request): array
+    private function validateDraftData(Request $request, ?string $previewDirectory = null): array
     {
+        if ($request->filled('preview_token')) {
+            $prepared = Cache::get('publication-preview:'.$request->input('preview_token'));
+            if (! $prepared || $prepared['user_id'] !== $request->user()->getKey()) {
+                throw ValidationException::withMessages(['platforms' => 'Pratinjau sudah berakhir. Buka kembali pratinjau sebelum menerbitkan.']);
+            }
+            $this->validatePlatforms($request);
+            foreach ($request->input('platforms') as $platform) {
+                if (! empty($prepared['issues'][$platform])) {
+                    throw ValidationException::withMessages(['platforms' => $prepared['issues'][$platform]]);
+                }
+            }
+
+            return [...$prepared['data'], 'intent' => 'publish', 'platforms' => $request->input('platforms')];
+        }
+
         if (is_string($request->input('image_crops'))) {
             $request->merge(['image_crops' => json_decode($request->input('image_crops'), true) ?? 'invalid']);
         }
@@ -439,7 +505,7 @@ class NewsWorkspaceController extends Controller
             ])->all(),
             'headline' => ['required', 'string', 'max:255'],
             'content' => ['required', 'string', 'min:20', 'max:100000'],
-            'category_id' => ['nullable', 'integer', Rule::exists('news_categories', 'categoryID')],
+            'category_id' => ['nullable', 'integer', Rule::exists('news_categories', 'categoryID')->where('is_active', true)->whereNull('deleted_at')],
             'image' => ['nullable', 'url', 'max:2048'],
             'cover_photo' => ['nullable', 'image', 'mimes:jpg,jpeg,png', 'max:5120'],
             'show_on_homepage' => ['sometimes', 'boolean'],
@@ -462,7 +528,7 @@ class NewsWorkspaceController extends Controller
 
         if ($request->hasFile('cover_photo')) {
             $disk = config('filesystems.news_media_disk', 'public');
-            $path = $request->file('cover_photo')->storePublicly('news-images', $disk);
+            $path = $request->file('cover_photo')->storePublicly($previewDirectory ?? 'news-images', $disk);
             if (! $path) {
                 throw ValidationException::withMessages(['cover_photo' => 'Gambar gagal disimpan. Silakan coba lagi.']);
             }
@@ -471,9 +537,12 @@ class NewsWorkspaceController extends Controller
                 : Storage::disk($disk)->url($path);
         }
 
+        // The upload has been persisted; only its URL belongs in a reusable snapshot.
+        unset($data['cover_photo']);
+
         $data['image'] = NewsImageUrl::resolve($data['image'] ?? null);
         $data['image_variants'] = ! empty($data['image_crops'])
-            ? app(NewsImageCropService::class)->generate($data['image'] ?? '', $data['image_crops']) : null;
+            ? app(NewsImageCropService::class)->generate($data['image'] ?? '', $data['image_crops'], $previewDirectory ? $previewDirectory.'/crops' : 'news-images/crops') : null;
 
         return $data;
     }

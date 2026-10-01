@@ -1,10 +1,16 @@
-import { LoaderCircle, Send } from 'lucide-react';
+import { CheckCircle2, LoaderCircle, Send } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import AppLogoIcon from '@/components/app-logo-icon';
 import {
     FacebookLoginControl,
     InstagramLoginControl,
 } from '@/components/meta-auth-controls';
+import {
+    PublicationPreview,
+    PlatformIcon,
+    platformNames,
+} from '@/components/publication-preview';
+import type { PublicationPreviewData } from '@/components/publication-preview';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -59,6 +65,7 @@ export function PublishNewsDialog({
     contentReady = true,
     error,
     onPublish,
+    onPreparePreview,
 }: {
     open: boolean;
     onOpenChange: (open: boolean) => void;
@@ -69,12 +76,21 @@ export function PublishNewsDialog({
     processing: boolean;
     contentReady?: boolean;
     error?: string;
-    onPublish: () => void;
+    onPublish: (token: string) => void;
+    onPreparePreview: () => Promise<PublicationPreviewData>;
 }) {
     const [livePlatforms, setLivePlatforms] = useState<
         PublishPlatform[] | null
     >(null);
-    const [confirmWebsite, setConfirmWebsite] = useState(false);
+    const [showPreview, setShowPreview] = useState(false);
+    const [preview, setPreview] = useState<PublicationPreviewData | null>(null);
+    const [preparing, setPreparing] = useState(false);
+    const [previewError, setPreviewError] = useState('');
+    const [active, setActive] = useState<PublishPlatformId>('website');
+    const [imageStates, setImageStates] = useState<
+        Partial<Record<PublishPlatformId, 'ready' | 'failed'>>
+    >({});
+    const locked = processing || preparing;
     const platforms = livePlatforms ?? initialPlatforms;
     useEffect(() => {
         if (!open) {
@@ -103,31 +119,6 @@ export function PublishNewsDialog({
             disposed = true;
         };
     }, [open]);
-    useEffect(() => {
-        if (!open) {
-            return;
-        }
-
-        const next = selected.filter((id) =>
-            platforms.some(
-                (p) =>
-                    p.id === id &&
-                    p.status === 'connected' &&
-                    p.publishable !== false,
-            ),
-        );
-
-        if (!next.includes('website')) {
-            next.unshift('website');
-        }
-
-        if (
-            next.length !== selected.length ||
-            next.some((id, index) => id !== selected[index])
-        ) {
-            onSelectionChange(next);
-        }
-    }, [open, platforms, selected, onSelectionChange]);
     const available = platforms
         .filter(
             (platform) =>
@@ -135,7 +126,45 @@ export function PublishNewsDialog({
                 platform.publishable !== false,
         )
         .map((platform) => platform.id);
-    const selection = selected.filter((id) => available.includes(id));
+    const selection = selected;
+    const issues = selection.flatMap((id) => {
+        const platform = platforms.find((item) => item.id === id);
+
+        return [
+            ...(platform?.status !== 'connected'
+                ? [`${platformNames[id]} belum terhubung.`]
+                : platform.publishable === false
+                  ? [`${platformNames[id]} belum siap. Hubungi administrator.`]
+                  : []),
+            ...(preview?.issues[id] ?? []),
+            ...(preview?.images[id] && imageStates[id] !== 'ready'
+                ? [
+                      `Gambar ${platformNames[id]} ${imageStates[id] === 'failed' ? 'belum siap. Kembali dan periksa gambar.' : 'sedang disiapkan.'}`,
+                  ]
+                : []),
+        ];
+    });
+    async function prepare() {
+        setPreparing(true);
+        setPreviewError('');
+        setPreview(null);
+        setImageStates({});
+
+        try {
+            const data = await onPreparePreview();
+            setPreview(data);
+            setActive(selection[0]);
+            setShowPreview(true);
+        } catch (error) {
+            setPreviewError(
+                error instanceof Error
+                    ? error.message
+                    : 'Pratinjau belum siap. Silakan coba lagi.',
+            );
+        } finally {
+            setPreparing(false);
+        }
+    }
     const allSelected =
         available.length > 0 && selection.length === available.length;
 
@@ -143,45 +172,143 @@ export function PublishNewsDialog({
         <Dialog
             open={open}
             onOpenChange={(next) => {
-                if (!processing) {
-                    setConfirmWebsite(false);
+                if (!locked) {
+                    setShowPreview(false);
                     onOpenChange(next);
                 }
             }}
         >
             <DialogContent
-                closeDisabled={processing}
-                className="max-h-[calc(100dvh-2rem)] gap-0 overflow-y-auto rounded-2xl p-0 sm:max-w-xl"
+                closeDisabled={locked}
+                className={`flex flex-col gap-0 rounded-2xl p-0 ${showPreview ? 'max-h-[90dvh] overflow-y-auto [scrollbar-gutter:stable_both-edges] sm:max-w-[900px]' : 'max-h-[calc(100dvh-2rem)] overflow-hidden sm:max-w-xl'}`}
                 overlayClassName="bg-black/45 backdrop-blur-sm"
             >
-                <DialogHeader className="px-6 pt-7 pb-5 text-left sm:px-7">
+                <DialogHeader
+                    className={`shrink-0 px-6 text-left sm:px-7 ${showPreview ? 'pt-4 pb-2' : 'pt-7 pb-5'}`}
+                >
                     <DialogTitle className="pr-6 text-xl">
-                        {confirmWebsite
-                            ? 'Konfirmasi penerbitan'
+                        {showPreview
+                            ? 'Pratinjau Publikasi'
                             : 'Terbitkan Berita'}
                     </DialogTitle>
                     <DialogDescription className="leading-6">
-                        {confirmWebsite
-                            ? 'Berita akan diterbitkan di website dan aplikasi ApaKhabar.'
+                        {showPreview
+                            ? 'Periksa tampilan berita sebelum diterbitkan.'
                             : 'Pilih platform tempat berita ini akan diterbitkan.'}
                     </DialogDescription>
                 </DialogHeader>
-                {confirmWebsite ? (
-                    <div className="space-y-3 px-6 pb-6 sm:px-7">
-                        <p className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-4 text-sm leading-6 text-amber-800 dark:text-amber-200">
-                            Pastikan konten sudah benar sebelum diterbitkan.
-                        </p>
-                        {error && (
+                {showPreview && preview ? (
+                    <>
+                        <div className="shrink-0 space-y-2 border-b px-6 pb-2 sm:px-7">
+                            <p className="text-sm">
+                                Akan diterbitkan ke:{' '}
+                                <strong>
+                                    {selection
+                                        .map((id) => platformNames[id])
+                                        .join(' / ')}
+                                </strong>
+                            </p>
+                            <div
+                                role="tablist"
+                                aria-label="Platform publikasi"
+                                className="flex gap-2 overflow-x-auto"
+                            >
+                                {selection.map((id) => (
+                                    <Button
+                                        key={id}
+                                        type="button"
+                                        role="tab"
+                                        id={`preview-tab-${id}`}
+                                        aria-controls={`preview-panel-${id}`}
+                                        aria-selected={active === id}
+                                        variant={
+                                            active === id
+                                                ? 'default'
+                                                : 'outline'
+                                        }
+                                        className="min-h-11 shrink-0"
+                                        onClick={() => setActive(id)}
+                                    >
+                                        <PlatformIcon platform={id} />
+                                        {platformNames[id]}
+                                    </Button>
+                                ))}
+                            </div>
+                        </div>
+                        <div className="grid min-h-[calc(clamp(100px,20dvh,180px)+180px)] shrink-0 items-start bg-muted/20 px-4 py-3">
+                            {selection.map((id) => (
+                                <div
+                                    key={id}
+                                    role="tabpanel"
+                                    id={`preview-panel-${id}`}
+                                    aria-labelledby={`preview-tab-${id}`}
+                                    className={`col-start-1 row-start-1 min-w-0 ${active !== id ? 'pointer-events-none invisible' : ''}`}
+                                    aria-hidden={active !== id}
+                                    inert={active !== id}
+                                >
+                                    <PublicationPreview
+                                        data={preview}
+                                        platform={id}
+                                        accountName={
+                                            platforms.find(
+                                                (platform) =>
+                                                    platform.id === id &&
+                                                    platform.status ===
+                                                        'connected',
+                                            )?.account
+                                        }
+                                        onImageLoad={() =>
+                                            setImageStates((states) => ({
+                                                ...states,
+                                                [id]: 'ready',
+                                            }))
+                                        }
+                                        onImageError={() =>
+                                            setImageStates((states) => ({
+                                                ...states,
+                                                [id]: 'failed',
+                                            }))
+                                        }
+                                    />
+                                </div>
+                            ))}
+                        </div>
+                        <div
+                            className="shrink-0 bg-background px-6 py-2 text-sm"
+                            aria-live="polite"
+                        >
+                            {issues.length ? (
+                                <ul className="space-y-1 text-destructive">
+                                    {issues.map((issue) => (
+                                        <li key={issue}>{issue}</li>
+                                    ))}
+                                </ul>
+                            ) : (
+                                <p className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400">
+                                    <CheckCircle2
+                                        className="size-4"
+                                        aria-hidden="true"
+                                    />
+                                    Siap diterbitkan
+                                </p>
+                            )}
+                            {error && (
+                                <p role="alert" className="text-destructive">
+                                    {error}
+                                </p>
+                            )}
+                        </div>
+                    </>
+                ) : (
+                    <div className="min-h-0 space-y-3 overflow-y-auto px-6 pb-6 sm:px-7">
+                        {previewError && (
                             <p
                                 role="alert"
                                 className="text-sm text-destructive"
                             >
-                                {error}
+                                {previewError}
                             </p>
                         )}
-                    </div>
-                ) : (
-                    <div className="space-y-3 px-6 pb-6 sm:px-7">
                         <div className="mb-4 flex items-center gap-2.5">
                             <Checkbox
                                 id="publish-all"
@@ -192,12 +319,10 @@ export function PublishNewsDialog({
                                           ? 'indeterminate'
                                           : false
                                 }
-                                disabled={processing || !available.length}
+                                disabled={locked || !available.length}
                                 onCheckedChange={(checked) =>
                                     onSelectionChange(
-                                        checked === true
-                                            ? available
-                                            : ['website'],
+                                        checked === true ? available : [],
                                     )
                                 }
                             />
@@ -215,11 +340,12 @@ export function PublishNewsDialog({
                             const connected = platform.status === 'connected';
                             const expired = platform.status === 'expired';
                             const checked = selection.includes(platform.id);
-                            const locked = platform.id === 'website';
+                            const unavailable = preparing || processing;
                             const selectable =
-                                !locked &&
-                                connected &&
-                                platform.publishable !== false &&
+                                !unavailable &&
+                                (checked ||
+                                    (connected &&
+                                        platform.publishable !== false)) &&
                                 !processing;
                             const toggleSelection = (value: boolean) => {
                                 if (!selectable) {
@@ -323,7 +449,7 @@ export function PublishNewsDialog({
                                                     {connected
                                                         ? platform.id ===
                                                           'website'
-                                                            ? 'Berita akan diterbitkan di website dan aplikasi ApaKhabar.'
+                                                            ? 'Periksa tampilan berita sebelum diterbitkan.'
                                                             : 'Terhubung'
                                                         : expired
                                                           ? 'Koneksi perlu diperbarui'
@@ -331,16 +457,17 @@ export function PublishNewsDialog({
                                                 </p>
                                             )}
                                         </div>
-                                        {connected && (
+                                        {(connected || checked) && (
                                             <Checkbox
                                                 id={`publish-${platform.id}`}
                                                 className="mt-1"
                                                 checked={checked}
                                                 disabled={
-                                                    locked ||
+                                                    unavailable ||
                                                     processing ||
-                                                    platform.publishable ===
-                                                        false
+                                                    (!checked &&
+                                                        platform.publishable ===
+                                                            false)
                                                 }
                                                 onCheckedChange={(value) =>
                                                     toggleSelection(
@@ -363,7 +490,7 @@ export function PublishNewsDialog({
                                                 {platform.id === 'facebook' ? (
                                                     <FacebookLoginControl
                                                         config={metaAuth}
-                                                        disabled={processing}
+                                                        disabled={locked}
                                                         onConnected={
                                                             setLivePlatforms
                                                         }
@@ -371,7 +498,7 @@ export function PublishNewsDialog({
                                                 ) : (
                                                     <InstagramLoginControl
                                                         config={metaAuth}
-                                                        disabled={processing}
+                                                        disabled={locked}
                                                         onConnected={
                                                             setLivePlatforms
                                                         }
@@ -403,62 +530,60 @@ export function PublishNewsDialog({
                         )}
                     </div>
                 )}
-                <DialogFooter className="border-t bg-muted/20 px-6 py-4 sm:px-7">
+                <DialogFooter className="sticky bottom-0 z-10 shrink-0 border-t bg-background px-6 py-3 sm:justify-between sm:px-7">
                     <Button
                         type="button"
                         variant="outline"
-                        disabled={processing}
+                        className="min-h-11"
+                        disabled={locked}
                         onClick={() => {
-                            if (confirmWebsite) {
-                                setConfirmWebsite(false);
+                            if (showPreview) {
+                                setShowPreview(false);
                             } else {
-                                setConfirmWebsite(false);
+                                setShowPreview(false);
                                 onOpenChange(false);
                             }
                         }}
                     >
-                        {confirmWebsite ? 'Kembali' : 'Batal'}
+                        {showPreview ? 'Kembali' : 'Batal'}
                     </Button>
                     <Button
                         type="button"
                         disabled={
-                            processing || !contentReady || !selection.length
+                            locked ||
+                            !contentReady ||
+                            !selection.length ||
+                            (showPreview && issues.length > 0)
                         }
                         onClick={() => {
-                            if (
-                                processing ||
-                                !contentReady ||
-                                !selection.length
-                            ) {
+                            if (locked || !contentReady || !selection.length) {
                                 return;
                             }
 
-                            if (
-                                selection.includes('website') &&
-                                !confirmWebsite
-                            ) {
-                                setConfirmWebsite(true);
+                            if (!showPreview) {
+                                void prepare();
 
                                 return;
                             }
 
-                            setConfirmWebsite(false);
-                            onPublish();
+                            if (preview && !issues.length) {
+                                onPublish(preview.token);
+                            }
                         }}
-                        className="h-auto min-h-9 bg-brand-600 whitespace-normal text-white hover:bg-brand-700"
+                        className="h-auto min-h-11 bg-brand-600 whitespace-normal text-white hover:bg-brand-700"
                     >
                         {processing ? (
                             <LoaderCircle className="animate-spin" />
                         ) : (
                             <Send />
                         )}
-                        {processing
-                            ? 'Menerbitkan...'
-                            : confirmWebsite
-                              ? 'Ya, Terbitkan'
-                              : selection.includes('website')
-                                ? 'Konfirmasi penerbitan'
-                                : publishLabel(selection)}
+                        {preparing
+                            ? 'Menyiapkan pratinjau...'
+                            : processing
+                              ? 'Menerbitkan...'
+                              : showPreview
+                                ? 'Terbitkan Sekarang'
+                                : 'Lihat Pratinjau'}
                     </Button>
                 </DialogFooter>
             </DialogContent>

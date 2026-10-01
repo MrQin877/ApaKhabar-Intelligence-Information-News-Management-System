@@ -54,7 +54,7 @@ class IntelligentNewsDraft extends Model
 
     public function category()
     {
-        return $this->belongsTo(NewsCategory::class, 'category_id', 'categoryID');
+        return $this->belongsTo(NewsCategory::class, 'category_id', 'categoryID')->withTrashed();
     }
 
     public function versions()

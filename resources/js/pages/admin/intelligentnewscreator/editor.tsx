@@ -14,6 +14,7 @@ import type { FormEvent } from 'react';
 import { flushSync } from 'react-dom';
 import { NewsImageCropDialog } from '@/components/news-image-crop-dialog';
 import { NewsRichEditor } from '@/components/news-rich-editor';
+import type { PublicationPreviewData } from '@/components/publication-preview';
 import { PublishNewsDialog } from '@/components/publish-news-dialog';
 import type {
     PublishPlatform,
@@ -28,6 +29,7 @@ import {
     Select,
     SelectContent,
     SelectItem,
+    SelectSeparator,
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
@@ -38,6 +40,7 @@ import type { ImageCrops } from '@/lib/image-crops';
 import { publishManual } from '@/lib/manual-publish';
 import type { PublishResult } from '@/lib/manual-publish';
 import type { MetaAuthConfig } from '@/lib/meta-auth';
+import { index as categoryManagement } from '@/routes/admin/categories';
 import type { BreadcrumbItem } from '@/types';
 
 interface Draft {
@@ -89,7 +92,14 @@ export default function ManualEditor({
     const [preview, setPreview] = useState('');
     const [cropOpen, setCropOpen] = useState(false);
     const fileInput = useRef<HTMLInputElement>(null);
-    const form = useForm({
+    const categoryManagementLink = useRef<HTMLAnchorElement>(null);
+    const [categoryOpen, setCategoryOpen] = useState(false);
+    const availableCategories = categories.filter(
+        (category) =>
+            category.name.trim().toLocaleLowerCase('id') !== 'lainnya',
+    );
+
+    const form = useForm(`ManualEditor:${draft?.id ?? 'new'}`, {
         headline: draft?.headline ?? '',
         content: draft?.content_html ?? '',
         content_format: 'html',
@@ -98,8 +108,20 @@ export default function ManualEditor({
         category_id: draft?.category_id ? String(draft.category_id) : '',
         image: draft?.image ?? '',
         image_crops: draft?.image_crops ?? (null as ImageCrops | null),
-        platforms: [] as PublishPlatformId[],
+        platforms: ['website'] as PublishPlatformId[],
     });
+    const selectedCategoryExists =
+        !form.data.category_id ||
+        availableCategories.some(
+            (category) => String(category.categoryID) === form.data.category_id,
+        );
+    const setFormData = form.setData;
+    useEffect(() => {
+        if (!selectedCategoryExists) {
+            setFormData('category_id', '');
+        }
+    }, [selectedCategoryExists, setFormData]);
+
     const busy = form.processing || publishing || Boolean(publishResult);
     const contentText = useMemo(() => {
         if (typeof DOMParser === 'undefined') {
@@ -154,7 +176,7 @@ export default function ManualEditor({
         setPreview(URL.createObjectURL(file));
     }
 
-    function save(intent: 'draft' | 'publish') {
+    function save(intent: 'draft' | 'publish', previewToken?: string) {
         if (busy || publishStarted.current) {
             return;
         }
@@ -177,26 +199,10 @@ export default function ManualEditor({
             form.clearErrors();
             const body = new FormData();
 
-            for (const [key, value] of Object.entries(form.data)) {
-                if (key === 'platforms') {
-                    form.data.platforms.forEach((platform) =>
-                        body.append('platforms[]', platform),
-                    );
-                } else if (key === 'image_crops' && value) {
-                    body.append(key, JSON.stringify(value));
-                } else if (value instanceof File) {
-                    body.append(key, value);
-                } else if (value !== null) {
-                    body.append(
-                        key,
-                        typeof value === 'boolean'
-                            ? value
-                                ? '1'
-                                : '0'
-                            : String(value),
-                    );
-                }
-            }
+            body.append('preview_token', previewToken ?? '');
+            form.data.platforms.forEach((platform) =>
+                body.append('platforms[]', platform),
+            );
 
             body.append('intent', 'publish');
 
@@ -260,6 +266,77 @@ export default function ManualEditor({
                 },
             },
         );
+    }
+
+    async function preparePreview(): Promise<PublicationPreviewData> {
+        const body = new FormData();
+
+        for (const [key, value] of Object.entries(form.data)) {
+            if (key === 'platforms' || value === null) {
+                continue;
+            }
+
+            if (key === 'image_crops') {
+                body.append(key, JSON.stringify(value));
+            } else if (value instanceof File) {
+                body.append(key, value);
+            } else {
+                body.append(
+                    key,
+                    typeof value === 'boolean'
+                        ? value
+                            ? '1'
+                            : '0'
+                        : String(value),
+                );
+            }
+        }
+
+        const csrf = document.querySelector<HTMLMetaElement>(
+            'meta[name="csrf-token"]',
+        )?.content;
+        const cookie = document.cookie
+            .split('; ')
+            .find((value) => value.startsWith('XSRF-TOKEN='));
+        const response = await fetch('/admin/news/manual/preview', {
+            method: 'POST',
+            credentials: 'same-origin',
+            signal: AbortSignal.timeout(60000),
+            body,
+            headers: {
+                Accept: 'application/json',
+                ...(cookie
+                    ? { 'X-XSRF-TOKEN': decodeURIComponent(cookie.slice(11)) }
+                    : csrf
+                      ? { 'X-CSRF-TOKEN': csrf }
+                      : {}),
+            },
+        }).catch(() => {
+            throw new Error(
+                'Pratinjau belum dapat disiapkan. Periksa koneksi dan coba lagi.',
+            );
+        });
+
+        if (!response.ok) {
+            const result = await response.json().catch(() => ({}));
+            const fields = Object.keys(result.errors ?? {});
+            const message = fields.includes('headline')
+                ? 'Judul berita belum diisi atau terlalu panjang.'
+                : fields.includes('content')
+                  ? 'Isi berita harus berisi setidaknya 20 karakter.'
+                  : fields.some(
+                          (key) =>
+                              key.startsWith('image') || key === 'cover_photo',
+                      )
+                    ? 'Gambar belum siap. Periksa foto sampul dan potongan gambar.'
+                    : fields.includes('category_id')
+                      ? 'Kategori berita tidak tersedia. Pilih kembali kategori.'
+                      : 'Pratinjau belum dapat disiapkan. Silakan coba lagi.';
+
+            throw new Error(message);
+        }
+
+        return response.json();
     }
 
     const submit = (event: FormEvent) => {
@@ -495,6 +572,8 @@ export default function ManualEditor({
                                             Kategori
                                         </Label>
                                         <Select
+                                            open={categoryOpen}
+                                            onOpenChange={setCategoryOpen}
                                             value={
                                                 form.data.category_id || 'none'
                                             }
@@ -516,22 +595,60 @@ export default function ManualEditor({
                                             >
                                                 <SelectValue placeholder="Pilih kategori" />
                                             </SelectTrigger>
-                                            <SelectContent>
+                                            <SelectContent
+                                                onKeyDown={(event) => {
+                                                    if (event.key === 'Tab') {
+                                                        event.preventDefault();
+                                                        categoryManagementLink.current?.focus();
+                                                    }
+                                                }}
+                                            >
                                                 <SelectItem value="none">
                                                     Tanpa kategori
                                                 </SelectItem>
-                                                {categories.map((category) => (
-                                                    <SelectItem
-                                                        key={
-                                                            category.categoryID
+                                                {availableCategories.map(
+                                                    (category) => (
+                                                        <SelectItem
+                                                            key={
+                                                                category.categoryID
+                                                            }
+                                                            value={String(
+                                                                category.categoryID,
+                                                            )}
+                                                        >
+                                                            {category.name}
+                                                        </SelectItem>
+                                                    ),
+                                                )}
+                                                <SelectSeparator />
+                                                <Link
+                                                    ref={categoryManagementLink}
+                                                    href={categoryManagement.url()}
+                                                    className="flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-2 text-sm outline-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
+                                                    onKeyDown={(event) => {
+                                                        if (
+                                                            event.key ===
+                                                                'Enter' ||
+                                                            event.key === ' '
+                                                        ) {
+                                                            event.stopPropagation();
                                                         }
-                                                        value={String(
-                                                            category.categoryID,
-                                                        )}
-                                                    >
-                                                        {category.name}
-                                                    </SelectItem>
-                                                ))}
+
+                                                        if (event.key === ' ') {
+                                                            event.preventDefault();
+                                                            event.currentTarget.click();
+                                                        }
+                                                    }}
+                                                    onClick={() => {
+                                                        setCategoryOpen(false);
+                                                    }}
+                                                >
+                                                    <Settings2
+                                                        className="size-4"
+                                                        aria-hidden="true"
+                                                    />
+                                                    Kelola kategori
+                                                </Link>
                                             </SelectContent>
                                         </Select>
                                         <FieldError
@@ -632,7 +749,8 @@ export default function ManualEditor({
                 }}
                 processing={publishing || form.processing}
                 error={form.errors.platforms}
-                onPublish={() => save('publish')}
+                onPreparePreview={preparePreview}
+                onPublish={(token) => save('publish', token)}
             />
             {publishResult && <PublishResultDialog result={publishResult} />}
             {cropOpen && (

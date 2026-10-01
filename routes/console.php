@@ -2,6 +2,7 @@
 
 use App\Jobs\ProcessIntelligenceDocument;
 use App\Models\IntelligenceDocument;
+use App\Services\PublicationPreviewFiles;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -20,3 +21,8 @@ Schedule::call(function (): void {
         ->pluck('id')
         ->each(fn (int $id) => ProcessIntelligenceDocument::dispatch($id)->onQueue('documents'));
 })->everyMinute()->name('resume-stalled-intelligence-documents')->withoutOverlapping();
+
+Artisan::command('news:cleanup-publication-previews', function () {
+    $removed = app(PublicationPreviewFiles::class)->cleanup();
+    $this->info("Removed {$removed} expired publication preview directories.");
+})->purpose('Remove expired, unreferenced publication preview images')->hourly()->withoutOverlapping();
