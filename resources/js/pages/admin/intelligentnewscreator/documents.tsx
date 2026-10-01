@@ -1,207 +1,323 @@
-import { Head, router } from '@inertiajs/react';
-import { RotateCcw } from 'lucide-react';
+import { Head, router, usePage } from '@inertiajs/react';
+import {
+    AlertCircle,
+    Archive,
+    ArchiveRestore,
+    Bot,
+    CheckCircle2,
+    Clock3,
+    Download,
+    Eye,
+    FileSearch,
+    FileText,
+    LoaderCircle,
+    MoreHorizontal,
+    RotateCcw,
+    Search,
+    ShieldCheck,
+    Upload,
+    XCircle,
+} from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, DragEvent } from 'react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogDescription,
+} from '@/components/ui/dialog';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
+import {
+    Pagination,
+    PaginationContent,
+    PaginationItem,
+    PaginationLink,
+    PaginationNext,
+    PaginationPrevious,
+} from '@/components/ui/pagination';
+import { Progress } from '@/components/ui/progress';
+import {
+    Sheet,
+    SheetContent,
+    SheetDescription,
+    SheetHeader,
+    SheetTitle,
+} from '@/components/ui/sheet';
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from '@/components/ui/table';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import AppLayout from '@/layouts/app-layout';
 import type { BreadcrumbItem } from '@/types';
 
-// ---------------------------------------------------------------------------
-// Types & mock data
-// ---------------------------------------------------------------------------
-
-type DocCategory = 'Safety' | 'Education' | 'Information';
-type DocType = 'pdf' | 'docx' | 'img';
 type DocStatus = 'ready' | 'processing' | 'failed';
+type ReviewStatus = 'pending' | 'approved' | 'rejected';
+type LibraryFilter = 'all' | 'review' | 'processing' | 'approved' | 'failed';
+
+interface ExtractedInformation {
+    id: number;
+    year: string;
+    text: string;
+    confidence: number | null;
+    quality_score: number | null;
+    review_status: ReviewStatus;
+    embedding_status: 'pending' | 'ready' | 'failed';
+}
 
 interface DocumentItem {
     id: number;
     name: string;
-    type: DocType;
+    type: 'pdf' | 'docx' | 'img' | 'spreadsheet' | 'txt';
     size: string;
     date: string;
     status: DocStatus;
-    category: DocCategory;
-    extract: {
-        id: number;
-        year: string;
-        text: string;
-        confidence: number | null;
-        quality_score: number | null;
-        review_status: 'pending' | 'approved' | 'rejected';
-        embedding_status: 'pending' | 'ready' | 'failed';
-    }[];
+    extract: ExtractedInformation[];
     error?: string | null;
     attempts?: number;
+    previewable: boolean;
+    archive_after?: string | null;
+    archived_at?: string | null;
 }
 
-const CATEGORIES: (DocCategory | 'All')[] = [
-    'All',
-    'Safety',
-    'Education',
-    'Information',
+const filters: Array<{ value: LibraryFilter; label: string }> = [
+    { value: 'all', label: 'Semua' },
+    { value: 'review', label: 'Perlu ditinjau' },
+    { value: 'processing', label: 'Diproses' },
+    { value: 'approved', label: 'Disetujui' },
+    { value: 'failed', label: 'Gagal' },
 ];
 
-// ---------------------------------------------------------------------------
-// Icon
-// ---------------------------------------------------------------------------
+const REVIEW_PAGE_SIZE = 5;
 
-function DocIcon({ type }: { type: DocType }) {
-    if (type === 'img') {
+function documentState(document: DocumentItem): LibraryFilter {
+    if (document.status === 'failed') {
+        return 'failed';
+    }
+
+    if (document.status === 'processing') {
+        return 'processing';
+    }
+
+    if (document.extract.some((item) => item.review_status === 'pending')) {
+        return 'review';
+    }
+
+    if (document.extract.some((item) => item.review_status === 'approved')) {
+        return 'approved';
+    }
+
+    return 'all';
+}
+
+function StatusBadge({ document }: { document: DocumentItem }) {
+    const state = documentState(document);
+
+    if (state === 'processing') {
         return (
-            <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-            >
-                <rect x="3" y="3" width="18" height="18" rx="2" />
-                <circle cx="8.5" cy="8.5" r="1.5" />
-                <path d="M21 15l-5-5L5 21" />
-            </svg>
+            <Badge variant="secondary">
+                <LoaderCircle className="animate-spin" /> Diproses
+            </Badge>
         );
     }
 
-    return (
-        <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-        >
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-            <path d="M14 2v6h6" />
-        </svg>
-    );
+    if (state === 'failed') {
+        return (
+            <Badge variant="destructive">
+                <XCircle /> Gagal
+            </Badge>
+        );
+    }
+
+    if (state === 'review') {
+        return (
+            <Badge className="border-warning-border bg-warning-bg text-warning-text">
+                <Clock3 /> Perlu ditinjau
+            </Badge>
+        );
+    }
+
+    if (state === 'approved') {
+        return (
+            <Badge className="border-success-border bg-success-bg text-success-text">
+                <ShieldCheck /> Disetujui
+            </Badge>
+        );
+    }
+
+    return <Badge variant="outline">Tidak ada informasi</Badge>;
 }
 
-// ---------------------------------------------------------------------------
-// Styles — shares the same design tokens as newscreator.tsx (ang- prefix)
-// ---------------------------------------------------------------------------
+function documentQuality(document: DocumentItem): number | null {
+    const scores = document.extract
+        .map((item) => item.quality_score)
+        .filter((score): score is number => score !== null);
 
-const STYLES = `
-:root{
-  --bg:#F4F5F7; --surface:#FFFFFF; --surface-2:#FAFBFC; --ink:#1A2233;
-  --ink-soft:#5C6675; --ink-faint:#8E96A3; --border:#E3E6EB; --border-strong:#D3D8DF;
-  --accent:#2B5FE0; --accent-hover:#2450C4; --accent-soft:#EAF0FE; --accent-soft-border:#CBDAFB;
-  --success:#1F8F5F; --success-soft:#E7F6EE; --warn:#B7791A; --warn-soft:#FCF3E1;
-  --radius-sm:8px; --radius-md:10px; --radius-lg:14px;
-  --shadow-sm:0 1px 2px rgba(20,25,40,0.04); --shadow-md:0 4px 16px rgba(20,25,40,0.06);
-  --font-ui:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;
-  --font-serif:'Source Serif 4',Georgia,serif; --font-mono:'IBM Plex Mono',monospace;
+    if (!scores.length) {
+        return null;
+    }
+
+    return scores.reduce((total, score) => total + score, 0) / scores.length;
 }
-.ang-app *{box-sizing:border-box;}
-.ang-app{font-family:var(--font-ui);background:var(--bg);color:var(--ink);min-height:100vh;}
-.ang-app button{font-family:inherit;cursor:pointer;background:none;border:none;color:inherit;}
-.ang-app input,.ang-app select{font-family:inherit;color:inherit;}
-.ang-archive-page{max-width:920px;margin:0 auto;padding:36px 28px 60px;}
-.ang-archive-head{margin-bottom:22px;}
-.ang-archive-eyebrow{font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:.08em;color:var(--accent);text-transform:uppercase;margin-bottom:6px;}
-.ang-archive-head h2{font-family:var(--font-serif);font-size:26px;font-weight:600;letter-spacing:-.01em;margin:0 0 6px;}
-.ang-archive-head p{font-size:13px;color:var(--ink-soft);line-height:1.5;margin:0;max-width:520px;}
-.ang-stat-strip{display:flex;gap:20px;margin-top:16px;}
-.ang-stat{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:10px 16px;min-width:88px;}
-.ang-stat .n{font-size:20px;font-weight:700;color:var(--ink);}
-.ang-stat .l{font-size:11px;color:var(--ink-faint);font-weight:500;text-transform:uppercase;letter-spacing:.03em;}
-.ang-upload-bar{display:flex;align-items:center;gap:14px;background:var(--surface);border:1.5px dashed var(--border-strong);border-radius:var(--radius-lg);padding:18px 20px;margin-bottom:26px;transition:.15s;}
-.ang-upload-bar.drag{border-color:var(--accent);background:var(--accent-soft);}
-.ang-upload-icon{width:38px;height:38px;flex:0 0 38px;border-radius:10px;background:var(--accent-soft);border:1px solid var(--accent-soft-border);display:flex;align-items:center;justify-content:center;color:var(--accent);}
-.ang-upload-copy{flex:1;min-width:0;}
-.ang-upload-copy strong{display:block;font-size:13.5px;font-weight:600;margin-bottom:2px;}
-.ang-upload-copy span{font-size:12px;color:var(--ink-faint);}
-.ang-cat-select{height:34px;padding:0 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-2);font-size:12.5px;color:var(--ink);}
-.ang-upload-input{display:none;}
-.ang-progress-wrap{width:100%;margin-top:10px;}
-.ang-progress-track{height:5px;border-radius:3px;background:var(--border);overflow:hidden;}
-.ang-progress-bar{height:100%;background:var(--accent);transition:width .2s;}
-.ang-progress-label{display:flex;justify-content:space-between;font-size:11px;color:var(--ink-faint);margin-top:5px;}
-.ang-section-label{display:flex;align-items:center;gap:10px;margin-bottom:14px;}
-.ang-section-label h3{font-size:13px;font-weight:600;margin:0;white-space:nowrap;}
-.ang-section-label .line{flex:1;height:1px;background:var(--border);}
-.ang-section-label .count{font-size:11.5px;color:var(--ink-faint);}
-.ang-cat-filters{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:18px;}
-.ang-cat-filter{padding:6px 12px;border:1px solid var(--border-strong);border-radius:20px;font-size:12px;font-weight:500;color:var(--ink-soft);background:var(--surface);transition:.12s;}
-.ang-cat-filter:hover{border-color:var(--accent);color:var(--accent);}
-.ang-cat-filter.active{background:var(--accent);border-color:var(--accent);color:#fff;}
-.ang-doc-list{display:flex;flex-direction:column;gap:8px;}
-.ang-doc-row{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:12px 14px;transition:.12s;}
-.ang-doc-row:hover{border-color:var(--border-strong);box-shadow:var(--shadow-sm);}
-.ang-doc-row-icon{width:34px;height:34px;flex:0 0 34px;border-radius:8px;background:var(--surface-2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--ink-faint);}
-.ang-doc-row-info{flex:1;min-width:0;}
-.ang-doc-row-name{font-size:13px;font-weight:500;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.ang-doc-row-meta{font-size:11.5px;color:var(--ink-faint);}
-.ang-cat-tag{font-size:10.5px;font-weight:600;padding:3px 9px;border-radius:12px;text-transform:uppercase;letter-spacing:.02em;white-space:nowrap;}
-.ang-cat-tag.cat-safety{background:var(--warn-soft);color:var(--warn);}
-.ang-cat-tag.cat-education{background:var(--accent-soft);color:var(--accent);}
-.ang-cat-tag.cat-information{background:var(--success-soft);color:var(--success);}
-.ang-status-badge{font-size:10.5px;font-weight:600;padding:3px 9px;border-radius:12px;text-transform:uppercase;letter-spacing:.02em;white-space:nowrap;}
-.ang-status-badge.ready{background:var(--success-soft);color:var(--success);}
-.ang-status-badge.processing{background:var(--warn-soft);color:var(--warn);}
-.ang-doc-row-date{font-size:11.5px;color:var(--ink-faint);white-space:nowrap;}
-.ang-row-actions{display:flex;gap:4px;}
-.ang-icon-btn{width:30px;height:30px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:var(--ink-soft);}
-.ang-icon-btn:hover{background:var(--surface-2);}
-.ang-icon-btn.danger:hover{background:#FCEBEA;color:#C43D3D;}
-.ang-empty{padding:40px 0;text-align:center;font-size:13px;color:var(--ink-faint);}
-.ang-modal-overlay{position:fixed;inset:0;background:rgba(20,25,40,.42);display:flex;align-items:center;justify-content:center;z-index:200;padding:20px;}
-.ang-modal-card{width:480px;max-width:100%;background:var(--surface);border-radius:var(--radius-lg);box-shadow:var(--shadow-md);padding:24px;max-height:86vh;overflow-y:auto;}
-.ang-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:18px;}
-.ang-modal-head h3{font-size:15px;font-weight:600;margin:0 0 3px;}
-.ang-modal-head .meta{font-size:11.5px;color:var(--ink-faint);}
-.ang-modal-close{width:28px;height:28px;flex:0 0 28px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:var(--ink-soft);}
-.ang-modal-close:hover{background:var(--surface-2);}
-.ang-modal-body h4{font-size:11px;font-weight:600;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.04em;margin:16px 0 8px;}
-.ang-modal-body h4:first-child{margin-top:0;}
-.ang-extract-block{background:var(--surface-2);border-left:2px solid var(--accent);border-radius:0 8px 8px 0;padding:12px 14px;font-family:var(--font-serif);font-size:13.5px;line-height:1.65;color:var(--ink-soft);}
-.ang-extract-year{font-family:var(--font-mono);font-size:11px;font-weight:600;color:var(--accent);margin-bottom:3px;}
-.ang-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px;}
-.ang-wbtn{display:flex;align-items:center;gap:6px;height:34px;padding:0 14px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12.5px;font-weight:500;color:var(--ink-soft);background:var(--surface);transition:.15s;}
-.ang-wbtn:hover{background:var(--surface-2);border-color:var(--border-strong);color:var(--ink);}
-.ang-wbtn.primary{background:var(--accent);color:#fff;border-color:var(--accent);}
-.ang-wbtn.primary:hover{background:var(--accent-hover);}
-.ang-back-btn{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:500;color:var(--ink-soft);margin-bottom:14px;padding:6px 10px 6px 6px;border-radius:var(--radius-sm);transition:.15s;}
-.ang-back-btn:hover{background:var(--surface-2);color:var(--ink);}
-@media (max-width:640px){
-  .ang-archive-page{padding:24px 16px 40px;}
-  .ang-upload-bar{flex-wrap:wrap;}
-  .ang-doc-row{flex-wrap:wrap;}
+
+function informationTitle(item: ExtractedInformation) {
+    return item.text.split(' — ')[0] || 'Informasi hasil ekstraksi';
 }
-`;
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
+function informationDescription(item: ExtractedInformation) {
+    const description = item.text.split(' — ').slice(1).join(' — ');
 
-interface Props {
+    return description || item.text;
+}
+
+export default function DocumentLibrary({
+    documents = [],
+    archived = false,
+}: {
     documents?: DocumentItem[];
-}
-
-export default function DocumentArchive({ documents }: Props) {
-    const docs = useMemo(() => documents ?? [], [documents]);
-    const [activeCategory, setActiveCategory] = useState<DocCategory | 'All'>(
-        'All',
-    );
-    const [modalDoc, setModalDoc] = useState<DocumentItem | null>(null);
-    const [uploadCategory, setUploadCategory] = useState<DocCategory>('Safety');
-    const [isDragging, setIsDragging] = useState(false);
-    const [uploadProgress, setUploadProgress] = useState<{
-        name: string;
-        pct: number;
+    archived?: boolean;
+}) {
+    const errors = (usePage().props.errors ?? {}) as Record<string, string>;
+    const [fileType, updateFileType] = useState('all');
+    const [page, setPage] = useState(1);
+    const [pageSize, updatePageSize] = useState(10);
+    const [preview, setPreview] = useState<DocumentItem | null>(null);
+    const [previewLoading, setPreviewLoading] = useState(false);
+    const [filter, updateFilter] = useState<LibraryFilter>('all');
+    const [query, updateQuery] = useState('');
+    const [selectedId, setSelectedId] = useState<number | null>(null);
+    const [reviewPage, setReviewPage] = useState(1);
+    const [dragging, setDragging] = useState(false);
+    const [selectedInformationIds, setSelectedInformationIds] = useState<
+        number[]
+    >([]);
+    const [reviewTarget, setReviewTarget] = useState<{
+        items: ExtractedInformation[];
+        decision: 'approved' | 'rejected';
     } | null>(null);
-    const fileInputRef = useRef<HTMLInputElement>(null);
+    const [archiveTarget, setArchiveTarget] = useState<{
+        document: DocumentItem;
+        action: 'archive' | 'restore';
+    } | null>(null);
+    const [uploading, setUploading] = useState<{
+        label: string;
+        progress: number;
+    } | null>(null);
+    const setFilter = (value: LibraryFilter) => {
+        setPage(1);
+        updateFilter(value);
+    };
+    const setQuery = (value: string) => {
+        setPage(1);
+        updateQuery(value);
+    };
+    const setFileType = (value: string) => {
+        setPage(1);
+        updateFileType(value);
+    };
+    const setPageSize = (value: number) => {
+        setPage(1);
+        updatePageSize(value);
+    };
+    const fileInput = useRef<HTMLInputElement>(null);
 
-    const shownDocs =
-        activeCategory === 'All'
-            ? docs
-            : docs.filter((d) => d.category === activeCategory);
-    const readyCount = docs.filter((d) => d.status === 'ready').length;
+    const selected = useMemo(
+        () => documents.find((document) => document.id === selectedId) ?? null,
+        [documents, selectedId],
+    );
+
+    const reviewPageCount = Math.max(
+        1,
+        Math.ceil((selected?.extract.length ?? 0) / REVIEW_PAGE_SIZE),
+    );
+    const currentReviewPage = Math.min(reviewPage, reviewPageCount);
+    const paginatedInformation = useMemo(() => {
+        const start = (currentReviewPage - 1) * REVIEW_PAGE_SIZE;
+
+        return selected?.extract.slice(start, start + REVIEW_PAGE_SIZE) ?? [];
+    }, [currentReviewPage, selected]);
+    const pendingOnPage = paginatedInformation.filter(
+        (item) => item.review_status === 'pending',
+    );
+    const allPendingOnPageSelected =
+        pendingOnPage.length > 0 &&
+        pendingOnPage.every((item) => selectedInformationIds.includes(item.id));
+
+    const counts = useMemo(() => {
+        const count = (state: LibraryFilter) =>
+            state === 'all'
+                ? documents.length
+                : documents.filter(
+                      (document) => documentState(document) === state,
+                  ).length;
+
+        return Object.fromEntries(
+            filters.map(({ value }) => [value, count(value)]),
+        ) as Record<LibraryFilter, number>;
+    }, [documents]);
+
+    const shownDocuments = useMemo(() => {
+        const needle = query.trim().toLocaleLowerCase('id');
+
+        return documents.filter((document) => {
+            const matchesState =
+                filter === 'all' || documentState(document) === filter;
+            const matchesQuery =
+                !needle ||
+                [document.name, ...document.extract.map((item) => item.text)]
+                    .join(' ')
+                    .toLocaleLowerCase('id')
+                    .includes(needle);
+
+            return (
+                matchesState &&
+                matchesQuery &&
+                (fileType === 'all' || document.type === fileType)
+            );
+        });
+    }, [documents, filter, query, fileType]);
+    const pageCount = Math.max(1, Math.ceil(shownDocuments.length / pageSize));
+    const safePage = Math.min(page, pageCount);
+    const paginatedDocuments = shownDocuments.slice(
+        (safePage - 1) * pageSize,
+        safePage * pageSize,
+    );
 
     useEffect(() => {
-        if (!docs.some((document) => document.status === 'processing')) {
+        if (!documents.some((document) => document.status === 'processing')) {
             return;
         }
 
@@ -211,11 +327,34 @@ export default function DocumentArchive({ documents }: Props) {
         );
 
         return () => window.clearInterval(timer);
-    }, [docs]);
+    }, [documents]);
 
-    function handleFiles(files: File[]) {
+    function openReview(document: DocumentItem) {
+        setSelectedId(document.id);
+        setReviewPage(1);
+        setSelectedInformationIds([]);
+    }
+
+    function previewDocument(document: DocumentItem) {
+        setPreviewLoading(true);
+        setPreview(document);
+    }
+
+    function upload(files: File[]) {
+        if (!files.length) {
+            return;
+        }
+
         if (files.length > 5) {
-            alert('You can upload a maximum of five documents at a time.');
+            return window.alert('Maksimum lima file untuk setiap unggahan.');
+        }
+
+        const oversized = files.find((file) => file.size > 20 * 1024 * 1024);
+
+        if (oversized) {
+            window.alert(
+                `${oversized.name} melebihi batas 20 MB per file. Pisahkan atau kompres file terlebih dahulu.`,
+            );
 
             return;
         }
@@ -232,436 +371,1038 @@ export default function DocumentArchive({ documents }: Props) {
             'png',
         ];
 
-        const invalid = files.find((file) => {
-            const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
-
-            return !supported.includes(ext);
-        });
-
-        if (invalid) {
-            alert(
-                'Unsupported format. Upload PDF, DOCX, XLSX, XLSM, CSV, TXT, JPG, JPEG, or PNG.',
+        if (
+            files.some(
+                (file) =>
+                    !supported.includes(
+                        file.name.split('.').pop()?.toLowerCase() ?? '',
+                    ),
+            )
+        ) {
+            return window.alert(
+                'Gunakan PDF, DOCX, XLSX, XLSM, CSV, TXT, JPG, JPEG, atau PNG.',
             );
-
-            return;
         }
 
-        const uploadLabel = `${files.length} file(s)`;
-        setUploadProgress({ name: uploadLabel, pct: 0 });
         const data = new FormData();
         files.forEach((file) => data.append('documents[]', file));
+        data.append('origin', 'library');
         data.append('intent', 'extract_information');
         data.append('extraction_mode', 'general');
+        setUploading({ label: `${files.length} file`, progress: 0 });
         router.post('/admin/documents', data, {
             forceFormData: true,
             preserveScroll: true,
             onProgress: (progress) =>
-                setUploadProgress({
-                    name: uploadLabel,
-                    pct: progress?.percentage ?? 0,
+                setUploading({
+                    label: `${files.length} file`,
+                    progress: progress?.percentage ?? 0,
                 }),
-            onFinish: () => setUploadProgress(null),
+            onFinish: () => setUploading(null),
         });
     }
 
-    function onFileInputChange(e: ChangeEvent<HTMLInputElement>) {
-        if (e.target.files?.length) {
-            handleFiles(Array.from(e.target.files));
-        }
-
-        e.target.value = '';
+    function changeFiles(event: ChangeEvent<HTMLInputElement>) {
+        upload(Array.from(event.target.files ?? []));
+        event.target.value = '';
     }
 
-    function onDrop(e: DragEvent<HTMLDivElement>) {
-        e.preventDefault();
-        setIsDragging(false);
-
-        if (e.dataTransfer.files.length) {
-            handleFiles(Array.from(e.dataTransfer.files));
-        }
+    function dropFiles(event: DragEvent<HTMLDivElement>) {
+        event.preventDefault();
+        setDragging(false);
+        upload(Array.from(event.dataTransfer.files));
     }
 
-    function openInCreator(doc: DocumentItem) {
-        setModalDoc(null);
-        router.visit(`/admin/ai-assistant?doc=${doc.id}`);
+    function confirmReview() {
+        if (!reviewTarget) {
+            return;
+        }
+
+        const ids = reviewTarget.items.map((item) => item.id);
+        const url =
+            ids.length === 1
+                ? `/admin/information/${ids[0]}/review`
+                : '/admin/information/review/bulk';
+        const payload =
+            ids.length === 1
+                ? { decision: reviewTarget.decision }
+                : {
+                      decision: reviewTarget.decision,
+                      information_ids: ids,
+                  };
+
+        router.post(url, payload, {
+            preserveScroll: true,
+            onSuccess: () => {
+                setSelectedInformationIds([]);
+                setReviewTarget(null);
+                router.reload({ only: ['documents'] });
+            },
+        });
+    }
+
+    function confirmArchiveAction() {
+        if (!archiveTarget) {
+            return;
+        }
+
+        router.post(
+            `/admin/documents/${archiveTarget.document.id}/${archiveTarget.action}`,
+            {},
+            {
+                preserveScroll: true,
+                onSuccess: () => setArchiveTarget(null),
+            },
+        );
     }
 
     return (
         <>
-            <Head title="Document Library" />
-            <div className="ang-app">
-                <style>{STYLES}</style>
-
-                <div className="ang-archive-page">
-                    <div className="ang-archive-head">
-                        <button
-                            className="ang-back-btn"
-                            onClick={() => router.visit('/admin/ai-assistant')}
-                        >
-                            <svg
-                                width="14"
-                                height="14"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth={2}
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                            >
-                                <path d="M19 12H5M12 19l-7-7 7-7" />
-                            </svg>
-                            Back to AI Assistant
-                        </button>
-                        <div className="ang-archive-eyebrow">
-                            Source material
+            <Dialog
+                open={Boolean(preview)}
+                onOpenChange={(open) => !open && setPreview(null)}
+            >
+                <DialogContent className="flex h-[90dvh] max-w-[96vw] flex-col sm:max-w-[96vw]">
+                    <DialogHeader>
+                        <DialogTitle className="truncate pr-8">
+                            {preview?.name}
+                        </DialogTitle>
+                        <DialogDescription>
+                            Pratinjau dokumen asli. Untuk format dan isi
+                            lengkap, unduh file.
+                        </DialogDescription>
+                    </DialogHeader>
+                    {preview && (
+                        <>
+                            <div className="flex flex-wrap gap-2">
+                                <Button variant="outline" size="sm" asChild>
+                                    <a
+                                        href={`/admin/documents/${preview.id}/preview?download=1`}
+                                    >
+                                        Unduh asli
+                                    </a>
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                        openReview(preview);
+                                        setPreview(null);
+                                    }}
+                                >
+                                    Tinjau informasi
+                                </Button>
+                            </div>
+                            {previewLoading && (
+                                <p
+                                    role="status"
+                                    className="text-sm text-muted-foreground"
+                                >
+                                    Memuat pratinjau…
+                                </p>
+                            )}
+                            <iframe
+                                key={preview.id}
+                                title={`Pratinjau ${preview.name}`}
+                                src={`/admin/documents/${preview.id}/preview`}
+                                onLoad={() => setPreviewLoading(false)}
+                                className="min-h-0 flex-1 rounded-lg border bg-white"
+                            />
+                        </>
+                    )}
+                </DialogContent>
+            </Dialog>
+            <Head title={archived ? 'Arsip Dokumen' : 'Pustaka Dokumen'} />
+            <div className="min-h-full bg-background p-4 text-foreground md:p-6">
+                <div className="mx-auto flex max-w-7xl flex-col gap-6">
+                    <header className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
+                        <div>
+                            <h1 className="text-2xl font-semibold tracking-tight">
+                                {archived ? 'Arsip dokumen' : 'Pustaka dokumen'}
+                            </h1>
+                            <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
+                                {archived
+                                    ? 'Dokumen terarsip tidak ditampilkan atau digunakan oleh AI sampai dipulihkan.'
+                                    : 'Kelola dokumen sumber, tinjau hasil ekstraksi, dan setujui fakta sebelum digunakan oleh AI.'}
+                            </p>
                         </div>
-                        <h2>Document Library</h2>
-                        <p>
-                            Every report, poster, and event file you've uploaded
-                            — sorted, tagged, and ready to cite.
-                        </p>
-                        <div className="ang-stat-strip">
-                            <div className="ang-stat">
-                                <div className="n">{docs.length}</div>
-                                <div className="l">Documents</div>
+                        <div className="flex flex-wrap gap-2">
+                            <Button
+                                variant="outline"
+                                onClick={() =>
+                                    router.visit(
+                                        archived
+                                            ? '/admin/documents'
+                                            : '/admin/documents/archived',
+                                    )
+                                }
+                            >
+                                {archived ? <FileText /> : <Archive />}
+                                {archived ? 'Pustaka aktif' : 'Lihat arsip'}
+                            </Button>
+                        </div>
+                    </header>
+
+                    {(errors.document ||
+                        errors.documents ||
+                        errors.information) && (
+                        <Alert variant="destructive">
+                            <AlertCircle />
+                            <AlertTitle>
+                                Dokumen memerlukan perhatian
+                            </AlertTitle>
+                            <AlertDescription>
+                                {errors.document ||
+                                    errors.documents ||
+                                    errors.information}
+                            </AlertDescription>
+                        </Alert>
+                    )}
+
+                    {!archived && (
+                        <div
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => fileInput.current?.click()}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                    fileInput.current?.click();
+                                }
+                            }}
+                            className={`flex cursor-pointer flex-col items-center gap-4 rounded-xl border-2 border-dashed p-4 transition-colors sm:flex-row ${dragging ? 'border-primary bg-primary/5' : 'border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50'}`}
+                            onDragEnter={(event) => {
+                                event.preventDefault();
+                                setDragging(true);
+                            }}
+                            onDragOver={(event) => {
+                                event.preventDefault();
+                                setDragging(true);
+                            }}
+                            onDragLeave={(event) => {
+                                event.preventDefault();
+                                setDragging(false);
+                            }}
+                            onDrop={dropFiles}
+                        >
+                            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                                <Upload className="size-5" />
                             </div>
-                            <div className="ang-stat">
-                                <div className="n">{readyCount}</div>
-                                <div className="l">Ready</div>
+                            <div className="min-w-0 flex-1 text-center sm:text-left">
+                                <p className="text-sm font-medium">
+                                    Klik untuk memilih atau seret hingga 5
+                                    dokumen ke area ini
+                                </p>
+                                <p className="mt-0.5 text-xs text-muted-foreground">
+                                    Mendukung PDF, Word, Excel, CSV, teks, dan
+                                    gambar (Maks 20 MB/file)
+                                </p>
+                                {uploading && (
+                                    <div
+                                        className="mt-3 max-w-sm"
+                                        onClick={(e) => e.stopPropagation()}
+                                    >
+                                        <Progress
+                                            value={uploading.progress}
+                                            className="h-1.5"
+                                        />
+                                        <p className="mt-1.5 text-xs font-medium text-muted-foreground">
+                                            Mengunggah {uploading.label} ·{' '}
+                                            {Math.round(uploading.progress)}%
+                                        </p>
+                                    </div>
+                                )}
                             </div>
+                            <input
+                                ref={fileInput}
+                                type="file"
+                                multiple
+                                className="hidden"
+                                accept=".pdf,.docx,.xlsx,.xlsm,.csv,.txt,.jpg,.jpeg,.png"
+                                onChange={changeFiles}
+                            />
+                        </div>
+                    )}
+
+                    <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                        <div className="md:hidden">
+                            <Select
+                                value={filter}
+                                onValueChange={(value) =>
+                                    setFilter(value as LibraryFilter)
+                                }
+                            >
+                                <SelectTrigger
+                                    className="w-full"
+                                    aria-label="Filter status dokumen"
+                                >
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {filters.map((item) => (
+                                        <SelectItem
+                                            key={item.value}
+                                            value={item.value}
+                                        >
+                                            {item.label} ({counts[item.value]})
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <Tabs
+                            className="hidden md:block"
+                            value={filter}
+                            onValueChange={(value) =>
+                                setFilter(value as LibraryFilter)
+                            }
+                        >
+                            <TabsList className="h-auto flex-wrap justify-start">
+                                {filters.map((item) => (
+                                    <TabsTrigger
+                                        key={item.value}
+                                        value={item.value}
+                                    >
+                                        {item.label}
+                                        <Badge
+                                            variant="secondary"
+                                            className="ml-1.5"
+                                        >
+                                            {counts[item.value]}
+                                        </Badge>
+                                    </TabsTrigger>
+                                ))}
+                            </TabsList>
+                        </Tabs>
+                        <div className="relative w-full xl:w-72">
+                            <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+                            <Input
+                                value={query}
+                                onChange={(event) =>
+                                    setQuery(event.target.value)
+                                }
+                                placeholder="Cari dokumen atau informasi…"
+                                className="pl-9"
+                            />
                         </div>
                     </div>
 
-                    <div
-                        className={`ang-upload-bar${isDragging ? 'drag' : ''}`}
-                        onDragEnter={(e) => {
-                            e.preventDefault();
-                            setIsDragging(true);
-                        }}
-                        onDragOver={(e) => {
-                            e.preventDefault();
-                            setIsDragging(true);
-                        }}
-                        onDragLeave={(e) => {
-                            e.preventDefault();
-                            setIsDragging(false);
-                        }}
-                        onDrop={onDrop}
-                    >
-                        <div className="ang-upload-icon">
-                            <svg
-                                width="16"
-                                height="16"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth={2}
+                    <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+                        <p className="text-muted-foreground">
+                            {shownDocuments.length} file ditemukan
+                        </p>
+                        <Select value={fileType} onValueChange={setFileType}>
+                            <SelectTrigger
+                                className="w-full sm:w-48"
+                                aria-label="Filter jenis file"
                             >
-                                <path d="M12 16V4M12 4l-4 4M12 4l4 4" />
-                                <path d="M4 16v3a2 2 0 002 2h12a2 2 0 002-2v-3" />
-                            </svg>
-                        </div>
-                        <div className="ang-upload-copy">
-                            <strong>Upload a document</strong>
-                            <span>
-                                PDF, DOCX, XLSX, XLSM, CSV, TXT, JPG, JPEG, PNG
-                                · max 20 MB · scans use OCR
-                            </span>
-                            {uploadProgress && (
-                                <div className="ang-progress-wrap">
-                                    <div className="ang-progress-track">
-                                        <div
-                                            className="ang-progress-bar"
-                                            style={{
-                                                width: `${uploadProgress.pct}%`,
-                                            }}
-                                        />
-                                    </div>
-                                    <div className="ang-progress-label">
-                                        <span>
-                                            Uploading {uploadProgress.name}
-                                        </span>
-                                        <span>
-                                            {Math.round(uploadProgress.pct)}%
-                                        </span>
-                                    </div>
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">
+                                    Semua jenis file
+                                </SelectItem>
+                                <SelectItem value="pdf">PDF</SelectItem>
+                                <SelectItem value="docx">Word</SelectItem>
+                                <SelectItem value="spreadsheet">
+                                    Excel & CSV
+                                </SelectItem>
+                                <SelectItem value="img">Gambar</SelectItem>
+                                <SelectItem value="txt">Teks</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    {shownDocuments.length === 0 ? (
+                        <Card className="border-dashed py-14 text-center shadow-none">
+                            <CardContent>
+                                <FileSearch className="mx-auto size-9 text-muted-foreground" />
+                                <p className="mt-3 font-medium">
+                                    Tidak ada dokumen pada tahap ini
+                                </p>
+                                <p className="mt-1 text-sm text-muted-foreground">
+                                    {archived
+                                        ? 'Belum ada dokumen yang diarsipkan.'
+                                        : 'Ubah filter atau unggah dokumen baru.'}
+                                </p>
+                            </CardContent>
+                        </Card>
+                    ) : (
+                        <Card className="overflow-hidden py-0 shadow-none">
+                            <Table className="block md:table">
+                                <TableHeader className="hidden md:table-header-group">
+                                    <TableRow className="hover:bg-transparent">
+                                        <TableHead className="pl-5">
+                                            Dokumen
+                                        </TableHead>
+                                        <TableHead>Informasi</TableHead>
+                                        <TableHead>Status</TableHead>
+                                        <TableHead>Diperbarui</TableHead>
+                                        <TableHead>
+                                            <span className="sr-only">
+                                                Tindakan
+                                            </span>
+                                        </TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody className="block md:table-row-group">
+                                    {paginatedDocuments.map((document) => {
+                                        const pending = document.extract.filter(
+                                            (item) =>
+                                                item.review_status ===
+                                                'pending',
+                                        ).length;
+                                        const approved =
+                                            document.extract.filter(
+                                                (item) =>
+                                                    item.review_status ===
+                                                    'approved',
+                                            ).length;
+
+                                        return (
+                                            <TableRow
+                                                key={document.id}
+                                                className="grid grid-cols-2 gap-2 p-3 md:table-row md:p-0"
+                                            >
+                                                <TableCell className="col-span-2 min-w-0 p-1 md:pl-5">
+                                                    <div className="flex min-w-0 items-center gap-3 md:min-w-60">
+                                                        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border bg-muted/40">
+                                                            <FileText className="size-4" />
+                                                        </div>
+                                                        <div className="min-w-0">
+                                                            <button
+                                                                type="button"
+                                                                className="block max-w-full text-left font-medium break-all whitespace-normal hover:underline md:max-w-72 md:truncate"
+                                                                onClick={() =>
+                                                                    previewDocument(
+                                                                        document,
+                                                                    )
+                                                                }
+                                                            >
+                                                                {document.name}
+                                                            </button>
+                                                            <p className="mt-0.5 text-xs text-muted-foreground">
+                                                                {document.type.toUpperCase()}{' '}
+                                                                ·{' '}
+                                                                {document.size}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <div className="space-y-0.5">
+                                                        <p className="font-medium">
+                                                            {
+                                                                document.extract
+                                                                    .length
+                                                            }{' '}
+                                                            ditemukan
+                                                        </p>
+                                                        <p className="text-xs text-muted-foreground">
+                                                            {pending > 0
+                                                                ? `${pending} perlu ditinjau`
+                                                                : `${approved} disetujui`}
+                                                        </p>
+                                                    </div>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <StatusBadge
+                                                        document={document}
+                                                    />
+                                                </TableCell>
+                                                <TableCell className="text-muted-foreground">
+                                                    {document.date}
+                                                </TableCell>
+                                                <TableCell className="col-span-2 p-1 text-right md:pr-4">
+                                                    <div className="flex flex-wrap items-center justify-end gap-2">
+                                                        {!archived && (
+                                                            <Button
+                                                                size="sm"
+                                                                variant={
+                                                                    pending > 0
+                                                                        ? 'default'
+                                                                        : 'outline'
+                                                                }
+                                                                className={
+                                                                    document.status ===
+                                                                    'failed'
+                                                                        ? ' '
+                                                                        : undefined
+                                                                }
+                                                                disabled={
+                                                                    document.status ===
+                                                                    'processing'
+                                                                }
+                                                                onClick={() => {
+                                                                    if (
+                                                                        document.status ===
+                                                                        'failed'
+                                                                    ) {
+                                                                        router.post(
+                                                                            `/admin/documents/${document.id}/retry`,
+                                                                            {},
+                                                                            {
+                                                                                preserveScroll: true,
+                                                                            },
+                                                                        );
+
+                                                                        return;
+                                                                    }
+
+                                                                    openReview(
+                                                                        document,
+                                                                    );
+                                                                }}
+                                                            >
+                                                                {document.status ===
+                                                                'failed' ? (
+                                                                    <>
+                                                                        <RotateCcw />
+                                                                        Coba
+                                                                        lagi
+                                                                    </>
+                                                                ) : document.status ===
+                                                                  'processing' ? (
+                                                                    <>
+                                                                        <LoaderCircle className="animate-spin" />
+                                                                        Diproses
+                                                                    </>
+                                                                ) : pending >
+                                                                  0 ? (
+                                                                    'Tinjau'
+                                                                ) : (
+                                                                    'Lihat'
+                                                                )}
+                                                            </Button>
+                                                        )}
+                                                        <DropdownMenu>
+                                                            <DropdownMenuTrigger
+                                                                asChild
+                                                            >
+                                                                <Button
+                                                                    size="icon"
+                                                                    variant="ghost"
+                                                                    aria-label={`Tindakan untuk ${document.name}`}
+                                                                >
+                                                                    <MoreHorizontal />
+                                                                </Button>
+                                                            </DropdownMenuTrigger>
+                                                            <DropdownMenuContent align="end">
+                                                                <DropdownMenuItem
+                                                                    onClick={() =>
+                                                                        previewDocument(
+                                                                            document,
+                                                                        )
+                                                                    }
+                                                                >
+                                                                    {document.previewable ? (
+                                                                        <Eye />
+                                                                    ) : (
+                                                                        <Download />
+                                                                    )}
+                                                                    {document.previewable
+                                                                        ? 'Pratinjau dokumen'
+                                                                        : 'Unduh dokumen'}
+                                                                </DropdownMenuItem>
+                                                                {!archived &&
+                                                                    approved >
+                                                                        0 && (
+                                                                        <DropdownMenuItem
+                                                                            onClick={() =>
+                                                                                router.visit(
+                                                                                    `/admin/ai-assistant?doc=${document.id}`,
+                                                                                )
+                                                                            }
+                                                                        >
+                                                                            <Bot />
+                                                                            Gunakan
+                                                                            di
+                                                                            AI
+                                                                        </DropdownMenuItem>
+                                                                    )}
+                                                                <DropdownMenuItem
+                                                                    onClick={() =>
+                                                                        setArchiveTarget(
+                                                                            {
+                                                                                document,
+                                                                                action: archived
+                                                                                    ? 'restore'
+                                                                                    : 'archive',
+                                                                            },
+                                                                        )
+                                                                    }
+                                                                >
+                                                                    {archived ? (
+                                                                        <ArchiveRestore />
+                                                                    ) : (
+                                                                        <Archive />
+                                                                    )}
+                                                                    {archived
+                                                                        ? 'Pulihkan dokumen'
+                                                                        : 'Arsipkan dokumen'}
+                                                                </DropdownMenuItem>
+                                                            </DropdownMenuContent>
+                                                        </DropdownMenu>
+                                                    </div>
+                                                </TableCell>
+                                            </TableRow>
+                                        );
+                                    })}
+                                </TableBody>
+                            </Table>
+                            <div className="flex flex-wrap items-center justify-between gap-3 border-t px-5 py-3 text-sm">
+                                <label>
+                                    File per halaman{' '}
+                                    <select
+                                        aria-label="File per halaman"
+                                        value={pageSize}
+                                        onChange={(e) =>
+                                            setPageSize(Number(e.target.value))
+                                        }
+                                        className="ml-2 rounded border bg-background p-1"
+                                    >
+                                        {[10, 20, 50].map((n) => (
+                                            <option key={n}>{n}</option>
+                                        ))}
+                                    </select>
+                                </label>
+                                <div className="flex flex-wrap items-center gap-3">
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        disabled={safePage === 1}
+                                        onClick={() => setPage(safePage - 1)}
+                                    >
+                                        Sebelumnya
+                                    </Button>
+                                    <span>
+                                        {safePage} / {pageCount}
+                                    </span>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        disabled={safePage === pageCount}
+                                        onClick={() => setPage(safePage + 1)}
+                                    >
+                                        Berikutnya
+                                    </Button>
                                 </div>
+                            </div>
+                        </Card>
+                    )}
+                </div>
+            </div>
+
+            <Sheet
+                open={Boolean(selected)}
+                onOpenChange={(open) => !open && setSelectedId(null)}
+            >
+                <SheetContent className="w-full gap-0 overflow-hidden p-0 sm:max-w-2xl">
+                    <SheetHeader className="border-b px-5 py-4 pr-12">
+                        <SheetTitle className="truncate">
+                            {selected?.name}
+                        </SheetTitle>
+                        <SheetDescription>
+                            Tinjau maksimal lima informasi per halaman. Hanya
+                            informasi yang disetujui dapat digunakan oleh AI.
+                        </SheetDescription>
+                    </SheetHeader>
+
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-3">
+                        <div className="flex flex-wrap gap-2">
+                            <Badge variant="secondary">
+                                {selected?.extract.length ?? 0} informasi
+                            </Badge>
+                            {!!selected?.extract.filter(
+                                (item) => item.review_status === 'pending',
+                            ).length && (
+                                <Badge className="border-warning-border bg-warning-bg text-warning-text">
+                                    {
+                                        selected.extract.filter(
+                                            (item) =>
+                                                item.review_status ===
+                                                'pending',
+                                        ).length
+                                    }{' '}
+                                    menunggu
+                                </Badge>
                             )}
                         </div>
-                        <select
-                            className="ang-cat-select"
-                            value={uploadCategory}
-                            onChange={(e) =>
-                                setUploadCategory(e.target.value as DocCategory)
-                            }
-                        >
-                            <option value="Safety">Safety</option>
-                            <option value="Education">Education</option>
-                            <option value="Information">Information</option>
-                        </select>
-                        <button
-                            className="ang-wbtn primary"
-                            onClick={() => fileInputRef.current?.click()}
-                        >
-                            Choose File
-                        </button>
-                        <input
-                            ref={fileInputRef}
-                            className="ang-upload-input"
-                            type="file"
-                            multiple
-                            accept=".pdf,.docx,.xlsx,.xlsm,.csv,.txt,.jpg,.jpeg,.png"
-                            onChange={onFileInputChange}
-                        />
-                    </div>
-
-                    <div className="ang-section-label">
-                        <h3>My Documents</h3>
-                        <div className="line" />
-                        <div className="count">
-                            {docs.length} {docs.length === 1 ? 'file' : 'files'}
-                        </div>
-                    </div>
-
-                    <div className="ang-cat-filters">
-                        {CATEGORIES.map((c) => {
-                            const count =
-                                c === 'All'
-                                    ? docs.length
-                                    : docs.filter((d) => d.category === c)
-                                          .length;
-
-                            return (
-                                <button
-                                    key={c}
-                                    className={`ang-cat-filter${activeCategory === c ? 'active' : ''}`}
-                                    onClick={() => setActiveCategory(c)}
-                                >
-                                    {c} ({count})
-                                </button>
-                            );
-                        })}
-                    </div>
-
-                    <div className="ang-doc-list">
-                        {shownDocs.length === 0 && (
-                            <div className="ang-empty">
-                                No documents in "{activeCategory}" yet.
-                            </div>
+                        {selected && documentQuality(selected) !== null && (
+                            <Badge variant="outline">
+                                Kualitas dokumen{' '}
+                                {documentQuality(selected)?.toFixed(1)}%
+                            </Badge>
                         )}
-                        {shownDocs.map((d) => (
-                            <div className="ang-doc-row" key={d.id}>
-                                <div className="ang-doc-row-icon">
-                                    <DocIcon type={d.type} />
-                                </div>
-                                <div className="ang-doc-row-info">
-                                    <div className="ang-doc-row-name">
-                                        {d.name}
-                                    </div>
-                                    <div className="ang-doc-row-meta">
-                                        {d.type.toUpperCase()} · {d.size}
-                                    </div>
-                                </div>
-                                <span
-                                    className={`ang-cat-tag cat-${d.category.toLowerCase()}`}
-                                >
-                                    {d.category}
-                                </span>
-                                <div
-                                    className={`ang-status-badge ${d.status === 'ready' ? 'ready' : 'processing'}`}
-                                >
-                                    {d.status === 'ready'
-                                        ? 'Ready'
-                                        : d.status === 'failed'
-                                          ? 'Failed'
-                                          : 'Processing'}
-                                </div>
-                                <div className="ang-doc-row-date">{d.date}</div>
-                                <div className="ang-row-actions">
-                                    {d.status !== 'ready' && (
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="icon-sm"
-                                            title="Retry processing"
-                                            onClick={() =>
-                                                router.post(
-                                                    `/admin/documents/${d.id}/retry`,
-                                                    {},
-                                                    { preserveScroll: true },
-                                                )
+                        {selected && (
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => previewDocument(selected)}
+                            >
+                                {selected.previewable ? <Eye /> : <Download />}
+                                {selected.previewable
+                                    ? 'Pratinjau dokumen'
+                                    : 'Unduh dokumen'}
+                            </Button>
+                        )}
+                    </div>
+
+                    {!archived && pendingOnPage.length > 0 && (
+                        <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/20 px-5 py-3">
+                            <label className="flex cursor-pointer items-center gap-2 text-sm">
+                                <Checkbox
+                                    checked={allPendingOnPageSelected}
+                                    onCheckedChange={(checked) => {
+                                        const pageIds = pendingOnPage.map(
+                                            (item) => item.id,
+                                        );
+                                        setSelectedInformationIds((current) =>
+                                            checked
+                                                ? Array.from(
+                                                      new Set([
+                                                          ...current,
+                                                          ...pageIds,
+                                                      ]),
+                                                  )
+                                                : current.filter(
+                                                      (id) =>
+                                                          !pageIds.includes(id),
+                                                  ),
+                                        );
+                                    }}
+                                />
+                                Pilih semua di halaman ini
+                            </label>
+                            <Button
+                                size="sm"
+                                disabled={selectedInformationIds.length === 0}
+                                onClick={() =>
+                                    setReviewTarget({
+                                        items:
+                                            selected?.extract.filter((item) =>
+                                                selectedInformationIds.includes(
+                                                    item.id,
+                                                ),
+                                            ) ?? [],
+                                        decision: 'approved',
+                                    })
+                                }
+                            >
+                                <CheckCircle2 /> Setujui terpilih (
+                                {selectedInformationIds.length})
+                            </Button>
+                        </div>
+                    )}
+
+                    <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4">
+                        {selected?.status === 'processing' && (
+                            <Alert>
+                                <LoaderCircle className="animate-spin" />
+                                <AlertTitle>Dokumen masih diproses</AlertTitle>
+                                <AlertDescription>
+                                    Hasil ekstraksi akan muncul otomatis setelah
+                                    pekerja latar belakang selesai.
+                                </AlertDescription>
+                            </Alert>
+                        )}
+                        {selected?.status === 'failed' && (
+                            <Alert variant="destructive">
+                                <AlertCircle />
+                                <AlertTitle>Ekstraksi gagal</AlertTitle>
+                                <AlertDescription>
+                                    {selected.error ||
+                                        'Tidak ditemukan informasi yang dapat digunakan.'}
+                                </AlertDescription>
+                            </Alert>
+                        )}
+                        {paginatedInformation.map((item) => (
+                            <Card
+                                key={item.id}
+                                className="gap-3 py-4 shadow-none"
+                            >
+                                <CardHeader className="px-4">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="flex min-w-0 items-start gap-3">
+                                            {!archived &&
+                                                item.review_status ===
+                                                    'pending' && (
+                                                    <Checkbox
+                                                        className="mt-1"
+                                                        checked={selectedInformationIds.includes(
+                                                            item.id,
+                                                        )}
+                                                        onCheckedChange={(
+                                                            checked,
+                                                        ) =>
+                                                            setSelectedInformationIds(
+                                                                (current) =>
+                                                                    checked
+                                                                        ? [
+                                                                              ...current,
+                                                                              item.id,
+                                                                          ]
+                                                                        : current.filter(
+                                                                              (
+                                                                                  id,
+                                                                              ) =>
+                                                                                  id !==
+                                                                                  item.id,
+                                                                          ),
+                                                            )
+                                                        }
+                                                        aria-label={`Pilih ${informationTitle(item)}`}
+                                                    />
+                                                )}
+                                            <CardTitle className="text-sm leading-6">
+                                                {informationTitle(item)}
+                                            </CardTitle>
+                                        </div>
+                                        <Badge
+                                            variant={
+                                                item.review_status ===
+                                                'approved'
+                                                    ? 'default'
+                                                    : item.review_status ===
+                                                        'rejected'
+                                                      ? 'destructive'
+                                                      : 'secondary'
                                             }
                                         >
-                                            <RotateCcw />
-                                        </Button>
-                                    )}
-                                    <button
-                                        className="ang-icon-btn"
-                                        title="View"
-                                        onClick={() => setModalDoc(d)}
-                                    >
-                                        <svg
-                                            width="15"
-                                            height="15"
-                                            viewBox="0 0 24 24"
-                                            fill="none"
-                                            stroke="currentColor"
-                                            strokeWidth={2}
-                                        >
-                                            <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z" />
-                                            <circle cx="12" cy="12" r="3" />
-                                        </svg>
-                                    </button>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-
-                {modalDoc && (
-                    <div
-                        className="ang-modal-overlay"
-                        onClick={(e) => {
-                            if (e.target === e.currentTarget) {
-                                setModalDoc(null);
-                            }
-                        }}
-                    >
-                        <div className="ang-modal-card">
-                            <div className="ang-modal-head">
-                                <div>
-                                    <h3>{modalDoc.name}</h3>
-                                    <div className="meta">
-                                        {modalDoc.type.toUpperCase()} ·{' '}
-                                        {modalDoc.size} · Uploaded{' '}
-                                        {modalDoc.date}
+                                            {item.review_status === 'approved'
+                                                ? 'Disetujui'
+                                                : item.review_status ===
+                                                    'rejected'
+                                                  ? 'Ditolak'
+                                                  : 'Menunggu tinjauan'}
+                                        </Badge>
                                     </div>
-                                </div>
-                                <button
-                                    className="ang-modal-close"
-                                    onClick={() => setModalDoc(null)}
-                                    aria-label="Close"
-                                >
-                                    <svg
-                                        width="14"
-                                        height="14"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        strokeWidth={2}
-                                    >
-                                        <path d="M4 4l16 16M20 4L4 20" />
-                                    </svg>
-                                </button>
-                            </div>
-                            <div className="ang-modal-body">
-                                <h4>Category</h4>
-                                <span
-                                    className={`ang-cat-tag cat-${modalDoc.category.toLowerCase()}`}
-                                >
-                                    {modalDoc.category}
-                                </span>
-                                <h4>Status</h4>
-                                <div
-                                    className={`ang-status-badge ${modalDoc.status === 'ready' ? 'ready' : 'processing'}`}
-                                >
-                                    {modalDoc.status === 'ready'
-                                        ? 'Ready to use'
-                                        : modalDoc.status === 'failed'
-                                          ? 'Extraction failed'
-                                          : 'Still processing'}
-                                </div>
-                                <h4>Extracted Information</h4>
-                                <div className="ang-extract-block">
-                                    {modalDoc.extract.map((e, i) => (
-                                        <div
-                                            key={i}
-                                            style={{
-                                                marginBottom:
-                                                    i <
-                                                    modalDoc.extract.length - 1
-                                                        ? 12
-                                                        : 0,
-                                            }}
-                                        >
-                                            <div className="ang-extract-year">
-                                                {e.year}
+                                </CardHeader>
+                                <CardContent className="space-y-3 px-4">
+                                    <p className="text-sm leading-6 text-muted-foreground">
+                                        {informationDescription(item)}
+                                    </p>
+                                    <div className="flex flex-wrap gap-2">
+                                        <Badge variant="outline">
+                                            Kualitas{' '}
+                                            {item.quality_score == null
+                                                ? '–'
+                                                : `${item.quality_score.toFixed(1)}%`}
+                                        </Badge>
+                                        <Badge variant="outline">
+                                            Keyakinan model{' '}
+                                            {item.confidence == null
+                                                ? '–'
+                                                : `${Math.round(item.confidence * 100)}%`}
+                                        </Badge>
+                                        <Badge variant="outline">
+                                            Indeks {item.embedding_status}
+                                        </Badge>
+                                    </div>
+                                    {!archived &&
+                                        item.review_status === 'pending' && (
+                                            <div className="grid grid-cols-2 gap-2 border-t pt-3">
+                                                <Button
+                                                    size="sm"
+                                                    onClick={() =>
+                                                        setReviewTarget({
+                                                            items: [item],
+                                                            decision:
+                                                                'approved',
+                                                        })
+                                                    }
+                                                >
+                                                    <CheckCircle2 /> Setujui
+                                                </Button>
+                                                <Button
+                                                    size="sm"
+                                                    variant="destructive"
+                                                    onClick={() =>
+                                                        setReviewTarget({
+                                                            items: [item],
+                                                            decision:
+                                                                'rejected',
+                                                        })
+                                                    }
+                                                >
+                                                    <XCircle /> Tolak
+                                                </Button>
                                             </div>
-                                            <div>{e.text}</div>
-                                            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                                                <span className="rounded-full border px-2 py-1">
-                                                    Estimated quality:{' '}
-                                                    {e.quality_score == null
-                                                        ? 'Not available'
-                                                        : `${e.quality_score.toFixed(1)}%`}
-                                                </span>
-                                                <span className="rounded-full border px-2 py-1">
-                                                    Extraction confidence:{' '}
-                                                    {e.confidence == null
-                                                        ? 'Not available'
-                                                        : `${Math.round(e.confidence * 100)}%`}
-                                                </span>
-                                                <span className="rounded-full border px-2 py-1">
-                                                    Review: {e.review_status}
-                                                </span>
-                                            </div>
-                                            {e.review_status === 'pending' && (
-                                                <div className="mt-2 flex gap-2">
-                                                    <Button
-                                                        size="sm"
-                                                        onClick={() =>
-                                                            router.post(
-                                                                `/admin/information/${e.id}/review`,
-                                                                { decision: 'approved' },
-                                                                { preserveScroll: true },
-                                                            )
-                                                        }
-                                                    >
-                                                        Approve
-                                                    </Button>
-                                                    <Button
-                                                        size="sm"
-                                                        variant="outline"
-                                                        onClick={() =>
-                                                            router.post(
-                                                                `/admin/information/${e.id}/review`,
-                                                                { decision: 'rejected' },
-                                                                { preserveScroll: true },
-                                                            )
-                                                        }
-                                                    >
-                                                        Reject
-                                                    </Button>
-                                                </div>
-                                            )}
-                                        </div>
-                                    ))}
-                                </div>
-                                <div className="ang-modal-actions">
-                                    <button
-                                        className="ang-wbtn"
-                                        onClick={() => setModalDoc(null)}
-                                    >
-                                        Close
-                                    </button>
-                                    <button
-                                        className="ang-wbtn primary"
-                                        onClick={() => openInCreator(modalDoc)}
-                                    >
-                                        Use in Creator
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
+                                        )}
+                                    {item.review_status !== 'pending' && (
+                                        <p className="border-t pt-3 text-xs text-muted-foreground">
+                                            Keputusan telah disimpan. Status
+                                            dapat ditinjau dari label di atas.
+                                        </p>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        ))}
+                        {selected?.status === 'ready' &&
+                            selected.extract.length === 0 && (
+                                <Alert>
+                                    <AlertCircle />
+                                    <AlertTitle>Tidak ada informasi</AlertTitle>
+                                    <AlertDescription>
+                                        Dokumen dapat dibaca, tetapi belum
+                                        menghasilkan informasi yang dapat
+                                        ditinjau. Coba proses ulang dengan
+                                        arahan ekstraksi yang lebih sesuai.
+                                    </AlertDescription>
+                                </Alert>
+                            )}
                     </div>
-                )}
-            </div>
+
+                    {selected && selected.extract.length > REVIEW_PAGE_SIZE && (
+                        <div className="flex flex-col gap-2 border-t bg-background px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
+                            <p className="text-xs text-muted-foreground">
+                                Menampilkan{' '}
+                                {(currentReviewPage - 1) * REVIEW_PAGE_SIZE + 1}
+                                –
+                                {Math.min(
+                                    currentReviewPage * REVIEW_PAGE_SIZE,
+                                    selected.extract.length,
+                                )}{' '}
+                                dari {selected.extract.length}
+                            </p>
+                            <Pagination className="mx-0 w-auto justify-start sm:justify-end">
+                                <PaginationContent>
+                                    <PaginationItem>
+                                        <PaginationPrevious
+                                            href="#"
+                                            aria-disabled={
+                                                currentReviewPage === 1
+                                            }
+                                            className={
+                                                currentReviewPage === 1
+                                                    ? 'pointer-events-none opacity-50'
+                                                    : undefined
+                                            }
+                                            onClick={(event) => {
+                                                event.preventDefault();
+                                                setReviewPage((page) =>
+                                                    Math.max(1, page - 1),
+                                                );
+                                            }}
+                                        />
+                                    </PaginationItem>
+                                    {Array.from(
+                                        { length: reviewPageCount },
+                                        (_, index) => index + 1,
+                                    ).map((page) => (
+                                        <PaginationItem key={page}>
+                                            <PaginationLink
+                                                href="#"
+                                                isActive={
+                                                    page === currentReviewPage
+                                                }
+                                                onClick={(event) => {
+                                                    event.preventDefault();
+                                                    setReviewPage(page);
+                                                }}
+                                            >
+                                                {page}
+                                            </PaginationLink>
+                                        </PaginationItem>
+                                    ))}
+                                    <PaginationItem>
+                                        <PaginationNext
+                                            href="#"
+                                            aria-disabled={
+                                                currentReviewPage ===
+                                                reviewPageCount
+                                            }
+                                            className={
+                                                currentReviewPage ===
+                                                reviewPageCount
+                                                    ? 'pointer-events-none opacity-50'
+                                                    : undefined
+                                            }
+                                            onClick={(event) => {
+                                                event.preventDefault();
+                                                setReviewPage((page) =>
+                                                    Math.min(
+                                                        reviewPageCount,
+                                                        page + 1,
+                                                    ),
+                                                );
+                                            }}
+                                        />
+                                    </PaginationItem>
+                                </PaginationContent>
+                            </Pagination>
+                        </div>
+                    )}
+                </SheetContent>
+            </Sheet>
+
+            <AlertDialog
+                open={Boolean(reviewTarget)}
+                onOpenChange={(open) => !open && setReviewTarget(null)}
+            >
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>
+                            {reviewTarget?.decision === 'approved'
+                                ? 'Setujui informasi terpilih?'
+                                : 'Tolak informasi ini?'}
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                            {reviewTarget?.decision === 'approved'
+                                ? `${reviewTarget.items.length} informasi akan ditambahkan ke indeks pencarian dan dapat digunakan oleh Asisten AI.`
+                                : 'Informasi akan dihapus secara lunak dari pustaka aktif dan tidak dapat digunakan oleh Asisten AI.'}
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Batal</AlertDialogCancel>
+                        <AlertDialogAction
+                            className={
+                                reviewTarget?.decision === 'rejected'
+                                    ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
+                                    : undefined
+                            }
+                            onClick={confirmReview}
+                        >
+                            {reviewTarget?.decision === 'approved'
+                                ? 'Ya, setujui'
+                                : 'Ya, tolak'}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+
+            <AlertDialog
+                open={Boolean(archiveTarget)}
+                onOpenChange={(open) => !open && setArchiveTarget(null)}
+            >
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>
+                            {archiveTarget?.action === 'restore'
+                                ? 'Pulihkan dokumen?'
+                                : 'Arsipkan dokumen?'}
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                            {archiveTarget?.action === 'restore'
+                                ? 'Dokumen dan informasi yang pernah disetujui akan kembali tersedia untuk Asisten AI.'
+                                : 'Dokumen akan disembunyikan dari pustaka aktif dan tidak dapat digunakan oleh Asisten AI. Dokumen tetap dapat dipulihkan dari arsip.'}
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Batal</AlertDialogCancel>
+                        <AlertDialogAction onClick={confirmArchiveAction}>
+                            {archiveTarget?.action === 'restore'
+                                ? 'Pulihkan'
+                                : 'Arsipkan'}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </>
     );
 }
+
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Dokumen', href: '/admin/documents' },
 ];
-DocumentArchive.layout = (page: React.ReactNode) => (
+DocumentLibrary.layout = (page: React.ReactNode) => (
     <AppLayout breadcrumbs={breadcrumbs}>{page}</AppLayout>
 );

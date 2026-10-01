@@ -98,7 +98,11 @@ Route::prefix('admin')
 
         // General AI assistant. News generation and document extraction are
         // capabilities of this workspace, not its navigation parent.
+        Route::post('/ai-assistant/category-proposals/{message}', [\App\Http\Controllers\Admin\AssistantCategoryController::class, 'decide'])->name('assistant.category-decision');
         Route::get('/ai-assistant', [NewsCreatorController::class, 'create'])->name('assistant.index');
+        Route::get('/ai-assistant/runs/{requestId}', [NewsCreatorController::class, 'agentProgress'])->name('assistant.progress');
+        Route::post('/ai-assistant/generate-async', [NewsCreatorController::class, 'generateAsync'])->name('assistant.generate-async');
+        Route::get('/ai-assistant/documents/{document}/progress', [NewsCreatorController::class, 'documentProgress'])->name('assistant.document-progress');
         Route::post('/ai-assistant/generate', [NewsCreatorController::class, 'generate'])->name('assistant.generate');
         Route::post('/ai-assistant/recommendations', [NewsCreatorController::class, 'recommend'])->name('assistant.recommendations');
         Route::put('/ai-assistant/drafts/{draft}', [NewsCreatorController::class, 'updateDraft'])->name('assistant.drafts.update');
@@ -107,9 +111,14 @@ Route::prefix('admin')
 
         // Independent document and extracted-information library.
         Route::get('/documents', [NewsCreatorController::class, 'documents'])->name('documents.index');
+        Route::get('/documents/archived', [NewsCreatorController::class, 'archivedDocuments'])->name('documents.archived');
         Route::post('/documents', [NewsCreatorController::class, 'storeDocument'])->name('documents.store');
+        Route::get('/documents/{document}/preview', [NewsCreatorController::class, 'previewDocument'])->name('documents.preview');
         Route::post('/documents/{document}/retry', [NewsCreatorController::class, 'retryDocument'])->name('documents.retry');
+        Route::post('/documents/{document}/archive', [NewsCreatorController::class, 'archiveDocument'])->name('documents.archive');
+        Route::post('/documents/{document}/restore', [NewsCreatorController::class, 'restoreDocument'])->name('documents.restore');
         Route::post('/information/{information}/review', [NewsCreatorController::class, 'reviewInformation'])->name('information.review');
+        Route::post('/information/review/bulk', [NewsCreatorController::class, 'bulkReviewInformation'])->name('information.review.bulk');
 
         // News management, including manual drafts and AI-produced drafts.
         Route::get('/news', [NewsWorkspaceController::class, 'index'])->name('news-workspace.index');

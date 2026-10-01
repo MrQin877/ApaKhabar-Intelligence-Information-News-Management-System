@@ -1,12 +1,17 @@
 <?php
+
 use App\Http\Middleware\CheckRole;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Exceptions\PostTooLargeException;
 use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
-use Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful;  // ← ADD THIS
+use Illuminate\Http\Request;
+use Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful;
+
+  // ← ADD THIS
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -17,7 +22,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);
-        
+
         $middleware->web(append: [
             HandleAppearance::class,
             HandleInertiaRequests::class,
@@ -34,5 +39,13 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        $exceptions->render(function (PostTooLargeException $exception, Request $request) {
+            $message = 'Unggahan terlalu besar. Maksimum 20 MB per file dan 5 file per unggahan. Jika ukuran sudah sesuai, periksa batas unggahan server.';
+            if ($request->expectsJson()) {
+                return response()->json(['message' => $message], 413);
+            }
+
+            // Do not invoke the debug renderer: serializing the rejected body can exhaust memory.
+            return response()->view('errors.413', ['message' => $message], 413);
+        });
     })->create();

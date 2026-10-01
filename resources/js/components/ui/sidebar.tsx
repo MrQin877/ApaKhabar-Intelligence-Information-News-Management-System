@@ -186,6 +186,15 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
+          onClick={(event) => {
+            // Covers navigation links in every mobile sidebar section, including submenus.
+            if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+            const link = event.target instanceof Element ? event.target.closest("a[href]") : null
+            if (!(link instanceof HTMLAnchorElement)) return
+            const href = link.getAttribute("href")
+            if (!href || href.startsWith("#") || link.hasAttribute("download") || (link.target && link.target !== "_self")) return
+            setOpenMobile(false)
+          }}
           className="bg-sidebar text-sidebar-foreground w-(--sidebar-width) p-0 [&>button]:hidden"
           style={
             {

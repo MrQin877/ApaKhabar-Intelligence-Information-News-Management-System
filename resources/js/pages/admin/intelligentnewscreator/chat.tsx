@@ -1,12 +1,6 @@
 import { Head, router, usePage } from '@inertiajs/react';
 import {
-    AlignCenter,
-    AlignLeft,
-    AlignRight,
-    Archive,
-    ArrowLeft,
-    Bold,
-    Bot,
+    ArrowUp,
     ChevronDown,
     ChevronRight,
     Clock3,
@@ -14,48 +8,64 @@ import {
     FileText,
     FolderSearch,
     ImagePlus,
-    Italic,
-    List,
-    ListOrdered,
     LoaderCircle,
+    Maximize2,
+    Minimize2,
     Paperclip,
-    Redo2,
+    PanelRightClose,
+    Plus,
     Save,
-    Send,
     Sparkles,
-    Underline,
-    Undo2,
     X,
 } from 'lucide-react';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-    AlertDialog,
-    AlertDialogAction,
-    AlertDialogCancel,
-    AlertDialogContent,
-    AlertDialogDescription,
-    AlertDialogFooter,
-    AlertDialogHeader,
-    AlertDialogTitle,
-    AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
+    AgentWorkTrace,
+    SavedAgentWorkTrace,
+} from '@/components/intelligent-news/agent-work-trace';
+import {
+    AssistantConversationIntro,
+    AssistantEmptyState,
+} from '@/components/intelligent-news/assistant-empty-state';
+import { CategoryProposalCard } from '@/components/intelligent-news/category-proposal';
+import {
+    ChatMessage,
+    PendingUserMessage,
+} from '@/components/intelligent-news/chat-message';
+import { DocumentProcessingStatus } from '@/components/intelligent-news/document-processing-status';
+import { ExtractedInformationReview } from '@/components/intelligent-news/extracted-information-review';
+import { PreviewFrame } from '@/components/intelligent-news/preview-frame';
+import {
+    QualityScoreBadge,
+    QualityScoreBreakdown,
+} from '@/components/intelligent-news/quality-score';
+import { SessionPanel } from '@/components/intelligent-news/session-panel';
+import { SourcePicker } from '@/components/intelligent-news/source-picker';
+import type {
+    Article,
+    AssistantPageProps,
+    AgentRunEvent,
+    InformationItem,
+    Recommendation,
+} from '@/components/intelligent-news/types';
+import { WorkspaceActions } from '@/components/intelligent-news/workspace-actions';
+import { PublishNewsDialog } from '@/components/publish-news-dialog';
+import type { PublishPlatformId } from '@/components/publish-news-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
     Collapsible,
     CollapsibleContent,
     CollapsibleTrigger,
 } from '@/components/ui/collapsible';
+
 import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogHeader,
-    DialogTitle,
-    DialogTrigger,
-} from '@/components/ui/dialog';
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import {
     MessageScroller,
@@ -65,130 +75,26 @@ import {
     MessageScrollerProvider,
     MessageScrollerViewport,
 } from '@/components/ui/message-scroller';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+
 import { Textarea } from '@/components/ui/textarea';
 import AppLayout from '@/layouts/app-layout';
-import { apiFetch } from '@/lib/api';
+import { assistantTurnAnchors } from '@/lib/assistant-turns';
+import { csrfPost } from '@/lib/csrf-request';
+import { groupDocumentSources } from '@/lib/group-document-sources';
 import type { BreadcrumbItem } from '@/types';
-
-interface InformationItem {
-    id: number;
-    document_id: number;
-    title: string;
-    summary: string;
-    labels: string[];
-    document: { id: number; original_name: string };
-}
-interface DocumentItem {
-    id: number;
-    original_name: string;
-    status: string;
-}
-interface MissingQuestion {
-    field: string;
-    importance: 'required' | 'recommended';
-    kind?:
-        | 'unverified_subject'
-        | 'possible_typo'
-        | 'format_choice'
-        | 'missing_fact'
-        | 'conflict';
-    question: string;
-    reason?: string | null;
-    options?: string[];
-    selection_type?: 'single' | 'multi' | 'ranked' | 'text';
-    sources?: Array<{
-        title: string;
-        url: string;
-        snippet: string;
-        published_at?: string | null;
-        source?: string;
-    }>;
-}
-interface UserFact {
-    field: string;
-    value: string;
-}
-interface SessionMessage {
-    id: number;
-    role: 'user' | 'assistant' | 'tool' | 'system';
-    intent: string | null;
-    content: string | null;
-    payload: Record<string, unknown> | null;
-    created_at: string;
-}
-interface NewsSession {
-    id: number;
-    status:
-        | 'collecting_sources'
-        | 'processing_files'
-        | 'awaiting_answers'
-        | 'ready_to_generate'
-        | 'draft_generated';
-    prompt: string | null;
-    selected_document_ids: number[];
-    selected_information_ids: number[];
-    pending_questions: MissingQuestion[];
-    user_facts: UserFact[];
-    conflicts: string[];
-    messages?: SessionMessage[];
-}
-interface Evidence {
-    source: string;
-    quote: string;
-}
-interface Article {
-    draft_id: number;
-    headline: string;
-    lead: string;
-    body: string[];
-    labels: string[];
-    category: string | null;
-    warnings: string[];
-    image: string | null;
-    version: number;
-    reviewed_at: string | null;
-    updated_at: string | null;
-    quality?: {
-        overall_score: number;
-        quality_label: string;
-        publish_blocked: boolean;
-        dimensions: Record<string, number>;
-        warnings: string[];
-    } | null;
-    selected_sources: Array<{
-        id: number;
-        title: string;
-        document: string;
-        evidence: Evidence[];
-    }>;
-}
-interface Recommendation {
-    information_id: number;
-    document_id: number;
-    name: string;
-    source: string;
-    excerpt: string;
-    distance: number | null;
-}
-interface Props {
-    informationItems: InformationItem[];
-    documents: DocumentItem[];
-    generatedArticle?: Article | null;
-    newsSession?: NewsSession | null;
-    preselectedInformationIds?: number[];
-    initialDocumentIds?: number[];
-    initialPrompt?: string | null;
-    initialManualFact?: string | null;
-    autoGenerate?: boolean;
-}
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Asisten AI', href: '/admin/ai-assistant' },
 ];
 
 export default function NewsCreatorAgent({
+    publishPlatforms,
+    metaAuth,
+    conversationReadOnly = false,
+    sessions = [],
+    categories = [],
     informationItems,
+    pendingInformation = [],
     documents,
     generatedArticle,
     newsSession,
@@ -197,68 +103,456 @@ export default function NewsCreatorAgent({
     initialPrompt = '',
     initialManualFact = '',
     autoGenerate = false,
-}: Props) {
-    const errors = (usePage().props.errors ?? {}) as Record<string, string>;
+}: AssistantPageProps) {
+    const progressStorageKey = `ai-generation:${usePage().props.auth.user?.id ?? 'guest'}:${newsSession?.id ?? 'new'}`;
+    const [generationErrors, setGenerationErrors] = useState<
+        Record<string, string>
+    >({});
+    const errors = {
+        ...((usePage().props.errors ?? {}) as Record<string, string>),
+        ...generationErrors,
+    };
     const fileInput = useRef<HTMLInputElement>(null);
+    const dragDepth = useRef(0);
+    const [draggingFiles, setDraggingFiles] = useState(false);
+    useEffect(() => {
+        // Prevent the browser from navigating away when a file misses the chat area.
+        const preventFileNavigation = (event: DragEvent) => {
+            if (event.dataTransfer?.types.includes('Files')) {
+                event.preventDefault();
+
+                if (event.type === 'dragover') {
+                    event.dataTransfer.dropEffect = 'none';
+                }
+            }
+        };
+        const resetDrag = () => {
+            dragDepth.current = 0;
+            setDraggingFiles(false);
+        };
+        window.addEventListener('dragover', preventFileNavigation);
+        window.addEventListener('drop', preventFileNavigation);
+        window.addEventListener('drop', resetDrag);
+        window.addEventListener('dragend', resetDrag);
+        window.addEventListener('blur', resetDrag);
+
+        return () => {
+            window.removeEventListener('dragover', preventFileNavigation);
+            window.removeEventListener('drop', preventFileNavigation);
+            window.removeEventListener('drop', resetDrag);
+            window.removeEventListener('dragend', resetDrag);
+            window.removeEventListener('blur', resetDrag);
+        };
+    }, []);
+    const composerInput = useRef<HTMLTextAreaElement>(null);
     const newsImageInput = useRef<HTMLInputElement>(null);
     const autoGenerated = useRef(false);
-    const [prompt, setPrompt] = useState(
-        initialPrompt ?? newsSession?.prompt ?? '',
-    );
+    const workspace = useRef<HTMLDivElement>(null);
+    const [prompt, setPrompt] = useState(initialPrompt ?? '');
+    const [pendingUserMessage, setPendingUserMessage] = useState<{
+        content: string;
+        attachments?: string[];
+        informationAttachments?: InformationItem[];
+    } | null>(null);
     const [files, setFiles] = useState<File[]>([]);
-    const [manualFact, setManualFact] = useState(initialManualFact ?? '');
+    const [manualFact] = useState(initialManualFact ?? '');
+    const [workflowMode, setWorkflowMode] = useState<
+        'news' | 'extract' | 'search' | null
+    >(null);
     const [informationIds, setInformationIds] = useState(
         newsSession?.selected_information_ids ??
             generatedArticle?.selected_sources.map((source) => source.id) ??
             preselectedInformationIds,
     );
     const [documentIds, setDocumentIds] = useState(
-        newsSession?.selected_document_ids ?? initialDocumentIds,
+        newsSession ? [] : (initialDocumentIds ?? []),
     );
     const [answers, setAnswers] = useState<Record<string, string>>({});
     const [busy, setBusy] = useState(false);
+    const [activeRequestId, setActiveRequestId] = useState<string | null>(null);
+    const [liveEvents, setLiveEvents] = useState<AgentRunEvent[]>([]);
+    const [progressMessage, setProgressMessage] = useState(
+        'Menunggu pekerja antrean AI…',
+    );
+    const startGeneration = useCallback(
+        async (payload: Record<string, unknown>) => {
+            const selectedIds = new Set(
+                (payload.information_ids ?? []) as number[],
+            );
+            const selectedDocuments = new Set(
+                (payload.document_ids ?? []) as number[],
+            );
+            const candidates = new Map(
+                [...informationItems, ...pendingInformation].map((item) => [
+                    item.id,
+                    item,
+                ]),
+            );
+            const attachments = [...candidates.values()].filter(
+                (item) =>
+                    selectedIds.has(item.id) ||
+                    (selectedDocuments.has(item.document_id) &&
+                        informationItems.some(
+                            (approved) => approved.id === item.id,
+                        )),
+            );
+            setPendingUserMessage((previous) => ({
+                content:
+                    previous?.content ??
+                    String(payload.prompt || 'Lanjutkan permintaan ini.'),
+                informationAttachments: attachments,
+            }));
+            setGenerationErrors({});
+            setProgressMessage('Menunggu pekerja antrean AI…');
+
+            try {
+                sessionStorage.setItem(
+                    progressStorageKey,
+                    JSON.stringify({
+                        id: payload.request_id,
+                        started: Date.now(),
+                    }),
+                );
+            } catch {
+                /* Storage can be disabled; polling still works. */
+            }
+
+            try {
+                const response = await csrfPost(
+                    '/admin/ai-assistant/generate-async',
+                    payload,
+                );
+                const data = await response.json();
+
+                if (!response.ok) {
+                    const messages = Object.values(data.errors ?? {})
+                        .flat()
+                        .join(' ');
+
+                    throw new Error(
+                        messages ||
+                            data.message ||
+                            'Permintaan AI tidak dapat dimulai.',
+                    );
+                }
+            } catch (error) {
+                try {
+                    sessionStorage.removeItem(progressStorageKey);
+                } catch {
+                    /* Storage unavailable. */
+                }
+
+                setGenerationErrors({
+                    generation:
+                        error instanceof Error
+                            ? error.message
+                            : 'Permintaan AI gagal.',
+                });
+                setBusy(false);
+                setActiveRequestId(null);
+                setPendingUserMessage(null);
+            }
+        },
+        [progressStorageKey, informationItems, pendingInformation],
+    );
+    useEffect(() => {
+        if (!newsSession?.id || conversationReadOnly) {
+            return;
+        }
+
+        try {
+            const saved = JSON.parse(
+                sessionStorage.getItem(progressStorageKey) ?? 'null',
+            );
+
+            if (saved?.id && Date.now() - saved.started < 86400000) {
+                autoGenerated.current = true;
+                setActiveRequestId(saved.id);
+                setElapsedSeconds(
+                    Math.floor((Date.now() - saved.started) / 1000),
+                );
+                setBusy(true);
+            }
+        } catch {
+            /* No recoverable local progress. */
+        }
+    }, [progressStorageKey, newsSession?.id, conversationReadOnly]);
+    useEffect(() => {
+        if (!busy || !activeRequestId) {
+            return;
+        }
+
+        const controller = new AbortController();
+        let timer: ReturnType<typeof setTimeout>;
+        let missing = 0;
+        const poll = async () => {
+            try {
+                const response = await fetch(
+                    `/admin/ai-assistant/runs/${activeRequestId}`,
+                    {
+                        headers: { Accept: 'application/json' },
+                        signal: controller.signal,
+                    },
+                );
+
+                if (
+                    response.status === 401 ||
+                    response.status === 403 ||
+                    response.status === 419
+                ) {
+                    setGenerationErrors({
+                        generation:
+                            'Sesi berakhir. Muat ulang halaman untuk masuk kembali.',
+                    });
+                    setBusy(false);
+
+                    return;
+                }
+
+                if (!response.ok) {
+                    if (response.status === 404 && ++missing > 15) {
+                        setGenerationErrors({
+                            generation:
+                                'Proses tidak ditemukan. Muat ulang percakapan lalu coba lagi.',
+                        });
+                        setBusy(false);
+
+                        return;
+                    }
+
+                    throw new Error('Progress unavailable');
+                }
+
+                missing = 0;
+                const data = await response.json();
+
+                if (data.message?.role === 'user') {
+                    setPendingUserMessage({
+                        content: data.message.content,
+                        informationAttachments:
+                            data.message.payload?.information_attachments ?? [],
+                    });
+                }
+
+                if (data.status === 'completed' || data.status === 'failed') {
+                    try {
+                        sessionStorage.removeItem(progressStorageKey);
+                    } catch {
+                        /* Storage unavailable. */
+                    }
+                }
+
+                if (data.status === 'completed' && data.url) {
+                    setBusy(false);
+                    setActiveRequestId(null);
+                    setPendingUserMessage(null);
+                    // Old queued results can contain APP_URL's host rather than this tab's host.
+                    const destination = new URL(
+                        data.url,
+                        window.location.origin,
+                    );
+                    router.visit(destination.pathname + destination.search, {
+                        preserveScroll: true,
+                    });
+
+                    return;
+                }
+
+                if (data.status === 'failed') {
+                    setGenerationErrors(
+                        Object.fromEntries(
+                            Object.entries(
+                                data.errors ?? {
+                                    generation: 'Proses AI gagal.',
+                                },
+                            ).map(([key, value]) => [
+                                key,
+                                Array.isArray(value)
+                                    ? value.join(' ')
+                                    : String(value),
+                            ]),
+                        ),
+                    );
+                    setBusy(false);
+                    setActiveRequestId(null);
+                    setPendingUserMessage(null);
+
+                    return;
+                }
+
+                setProgressMessage(
+                    data.status === 'queued'
+                        ? 'Menunggu pekerja antrean AI. Proses belum dimulai.'
+                        : 'Terhubung ke layanan AI · pembaruan setiap 2 detik',
+                );
+                setLiveEvents(
+                    (data.events ?? []).map(
+                        (event: AgentRunEvent & { sequence: number }) => ({
+                            ...event,
+                            id: event.sequence,
+                        }),
+                    ),
+                );
+            } catch {
+                if (!controller.signal.aborted) {
+                    setProgressMessage(
+                        'Pembaruan terputus; mencoba menyambung kembali…',
+                    );
+                }
+            }
+
+            if (!controller.signal.aborted) {
+                timer = setTimeout(poll, 2000);
+            }
+        };
+        void poll();
+
+        return () => {
+            controller.abort();
+            clearTimeout(timer);
+        };
+    }, [busy, activeRequestId, progressStorageKey]);
     const [picker, setPicker] = useState(false);
-    const [query, setQuery] = useState('');
     const [recommendations, setRecommendations] = useState<Recommendation[]>(
         [],
     );
     const [findingRelated, setFindingRelated] = useState(false);
-    const [showProgressSteps, setShowProgressSteps] = useState(false);
     const [elapsedSeconds, setElapsedSeconds] = useState(0);
     const [editMode, setEditMode] = useState(false);
+    const [publishOpen, setPublishOpen] = useState(false);
+    const [publishing, setPublishing] = useState(false);
+    const [selectedPlatforms, setSelectedPlatforms] = useState<
+        PublishPlatformId[]
+    >(['website']);
+    const [publishError, setPublishError] = useState('');
     const [editedArticle, setEditedArticle] = useState<Article | null>(
         generatedArticle ?? null,
     );
-    const [sourcesOpen, setSourcesOpen] = useState(false);
-    const questions = newsSession?.pending_questions ?? [];
-    const displayedUserFacts = (newsSession?.user_facts ?? []).filter(
-        (fact) =>
-            !['category', 'topic', 'tone', 'format', 'report_type'].includes(
-                fact.field.toLowerCase(),
-            ),
+    const articleContent = editedArticle
+        ? [editedArticle.lead, ...editedArticle.body]
+              .filter(Boolean)
+              .join('\n\n')
+        : '';
+    const documentSources = groupDocumentSources(
+        editedArticle?.selected_sources ?? [],
     );
+    const wordCount = articleContent
+        .trim()
+        .split(/\s+/u)
+        .filter(Boolean).length;
+    const draftDirty = Boolean(
+        editedArticle &&
+        generatedArticle &&
+        (editedArticle.headline !== generatedArticle.headline ||
+            editedArticle.subheadline !== generatedArticle.subheadline ||
+            editedArticle.lead !== generatedArticle.lead ||
+            JSON.stringify(editedArticle.body) !==
+                JSON.stringify(generatedArticle.body)),
+    );
+    const [previewOpen, setPreviewOpen] = useState(Boolean(generatedArticle));
+    const [previewWidth, setPreviewWidth] = useState(720);
+    const [resizingPreview, setResizingPreview] = useState(false);
+    const [composerExpanded, setComposerExpanded] = useState(false);
+    const [composerOverflowing, setComposerOverflowing] = useState(false);
+    const [composerMultiline, setComposerMultiline] = useState(false);
+    const [sourcesOpen, setSourcesOpen] = useState(false);
+    const [attachmentsOpen, setAttachmentsOpen] = useState(false);
+    const questions = newsSession?.pending_questions ?? [];
     const allQuestionsAnswered =
         questions.length > 0 &&
         questions.every((question) => Boolean(answers[question.field]?.trim()));
+    const { draftMessageId, extractionMessageId } = assistantTurnAnchors(
+        newsSession?.messages ?? [],
+    );
+    const draftCard = generatedArticle && !errors.guidance && (
+        <>
+            <Card className="max-w-[94%] gap-3 border-success-border bg-success-bg py-4 shadow-sm">
+                <CardHeader className="gap-2 px-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <Badge>Draf AI</Badge>
+                        <QualityScoreBadge quality={generatedArticle.quality} />
+                        {generatedArticle.category && (
+                            <Badge variant="outline">
+                                {generatedArticle.category}
+                            </Badge>
+                        )}
+                    </div>
+                    <CardTitle className="text-base leading-6 text-foreground">
+                        {generatedArticle.headline}
+                    </CardTitle>
+                    <p className="line-clamp-3 text-sm leading-6 text-muted-foreground">
+                        {generatedArticle.lead}
+                    </p>
+                </CardHeader>
+                <CardContent className="space-y-3 px-4">
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                        <span>
+                            ±
+                            {Math.max(
+                                1,
+                                Math.ceil(
+                                    (generatedArticle.body
+                                        .join(' ')
+                                        .split(/\s+/).length +
+                                        generatedArticle.lead.split(/\s+/)
+                                            .length) /
+                                        200,
+                                ),
+                            )}{' '}
+                            menit baca
+                        </span>
+                        <span>
+                            {generatedArticle.selected_sources.length} sumber
+                        </span>
+                        <span>Versi {generatedArticle.version ?? 1}</span>
+                    </div>
+                    {generatedArticle.warnings.length > 0 && (
+                        <div className="rounded-lg border border-warning-border bg-warning-bg p-3 text-xs leading-5 text-warning-text">
+                            {generatedArticle.warnings[0]}
+                        </div>
+                    )}
+                    {generatedArticle.quality && (
+                        <QualityScoreBreakdown
+                            quality={generatedArticle.quality}
+                        />
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                                setEditMode(false);
+                                setPreviewOpen(true);
+                            }}
+                        >
+                            Pratinjau
+                        </Button>
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={conversationReadOnly}
+                            onClick={() => {
+                                setEditMode(true);
+                                setPreviewOpen(true);
+                            }}
+                        >
+                            <Edit3 /> Edit
+                        </Button>
+                    </div>
+                </CardContent>
+            </Card>
+        </>
+    );
     const processingFiles = newsSession?.status === 'processing_files';
+    const reviewingExtraction = pendingInformation.length > 0;
     const hasSources = informationIds.length > 0 || documentIds.length > 0;
-    const shownInformation = useMemo(() => {
-        const needle = query.trim().toLocaleLowerCase('id');
-
-        return needle
-            ? informationItems.filter((item) =>
-                  [
-                      item.title,
-                      item.summary,
-                      item.document.original_name,
-                      ...item.labels,
-                  ]
-                      .join(' ')
-                      .toLocaleLowerCase('id')
-                      .includes(needle),
-              )
-            : informationItems;
-    }, [informationItems, query]);
+    const conversationStarted = Boolean(
+        newsSession ||
+        generatedArticle ||
+        busy ||
+        processingFiles ||
+        errors.guidance,
+    );
     const actions = errors.guidance
         ? [
               'Pilih informasi tersimpan',
@@ -287,6 +581,20 @@ export default function NewsCreatorAgent({
                 ];
 
     function handleQuickAction(action: string) {
+        if (action.toLocaleLowerCase('id').includes('berita')) {
+            setWorkflowMode('news');
+        } else if (
+            action.toLocaleLowerCase('id').includes('ekstrak') ||
+            action === 'Unggah dokumen'
+        ) {
+            setWorkflowMode('extract');
+        } else if (
+            action.toLocaleLowerCase('id').includes('informasi') ||
+            action.toLocaleLowerCase('id').includes('sumber')
+        ) {
+            setWorkflowMode('search');
+        }
+
         if (
             action === 'Pilih informasi tersimpan' ||
             action === 'Pilih sumber informasi'
@@ -313,18 +621,28 @@ export default function NewsCreatorAgent({
 
         setPrompt(action);
     }
-    const generationStages = [
-        'Mencari sumber relevan…',
-        'Mengambil informasi…',
-        'Menganalisis gaya penulisan…',
-        'Menyusun artikel…',
-        'Menyelesaikan draf…',
-    ];
-    const activeStage = Math.min(
-        Math.floor(elapsedSeconds / 4),
-        generationStages.length - 1,
-    );
 
+    const resizeComposer = useCallback(
+        (element: HTMLTextAreaElement) => {
+            element.style.height = 'auto';
+            const collapsedLimit = 160;
+            const heightLimit = composerExpanded
+                ? Math.round(window.innerHeight * 0.45)
+                : collapsedLimit;
+            const contentHeight = element.scrollHeight;
+            const nextHeight = Math.min(
+                Math.max(contentHeight, 36),
+                heightLimit,
+            );
+
+            element.style.height = `${nextHeight}px`;
+            element.style.overflowY =
+                contentHeight > heightLimit ? 'auto' : 'hidden';
+            setComposerOverflowing(contentHeight > collapsedLimit);
+            setComposerMultiline(contentHeight > 44);
+        },
+        [composerExpanded],
+    );
     const toggle = (
         values: number[],
         id: number,
@@ -336,11 +654,23 @@ export default function NewsCreatorAgent({
                 : [...values, id],
         );
     function addFiles(list: FileList | null) {
-        if (!list) {
+        if (!list || conversationReadOnly || busy || processingFiles) {
             return;
         }
 
         const incoming = Array.from(list);
+        const unsupported = incoming.find(
+            (file) =>
+                !/\.(pdf|docx|xlsx|xlsm|csv|txt|jpe?g|png)$/i.test(file.name),
+        );
+
+        if (unsupported) {
+            window.alert(
+                `${unsupported.name}: format tidak didukung. Gunakan PDF, Word (.docx), Excel (.xlsx/.xlsm), CSV, TXT, JPG, atau PNG.`,
+            );
+
+            return;
+        }
 
         if (files.length + incoming.length > 5) {
             window.alert('Maksimum lima dokumen untuk setiap permintaan.');
@@ -348,41 +678,94 @@ export default function NewsCreatorAgent({
             return;
         }
 
+        const oversized = incoming.find((file) => file.size > 20 * 1024 * 1024);
+
+        if (oversized) {
+            window.alert(
+                `${oversized.name} melebihi batas 20 MB per file. Pisahkan atau kompres file terlebih dahulu.`,
+            );
+
+            return;
+        }
+
         setFiles((current) => [...current, ...incoming]);
     }
     function submit(answerOverrides: Record<string, string> = {}) {
+        if (conversationReadOnly) {
+            return;
+        }
+
+        const submittedPrompt = prompt.trim();
+        const submittedAnswers = { ...answers, ...answerOverrides };
+
+        if (
+            !files.length &&
+            !submittedPrompt &&
+            !Object.values(submittedAnswers).some(Boolean)
+        ) {
+            setGenerationErrors({
+                prompt: 'Tulis pertanyaan atau instruksi sebelum mengirim.',
+            });
+
+            return;
+        }
+
         if (files.length) {
+            setActiveRequestId(null);
+            setLiveEvents([]);
             const data = new FormData();
             files.forEach((file) => data.append('documents[]', file));
+            data.append('origin', 'assistant');
 
-            if (prompt.trim()) {
-                data.append('prompt', prompt.trim());
+            if (submittedPrompt) {
+                data.append('prompt', submittedPrompt);
             }
 
             const generationIntent =
-                /\b(generate|create|write|buat|bikin|tulis)\b.{0,30}\b(news|article|berita|artikel|laporan)\b/i.test(
-                    prompt,
+                !/\b(jangan|do not|don't|not now|belum)\b/i.test(
+                    submittedPrompt,
+                ) &&
+                /\b(generate|create|write|make|buatkan|buat|bikin|tuliskan|tulis|susunkan|susun|hasilkan)\b.{0,40}\b(news|article|berita|artikel|laporan)\b/i.test(
+                    submittedPrompt,
                 );
             const generalExtraction =
-                !prompt.trim() ||
+                !submittedPrompt ||
                 /\b(all|everything|semua|seluruh|tidak tahu|don't know)\b/i.test(
                     prompt,
                 );
             data.append(
                 'intent',
-                generationIntent ? 'generate_news' : 'extract_information',
+                generationIntent
+                    ? 'generate_news'
+                    : /\b(simpan saja|store only|save only)\b/i.test(
+                            submittedPrompt,
+                        )
+                      ? 'store_document'
+                      : /\b(bandingkan|analisis|analyze|compare)\b/i.test(
+                              submittedPrompt,
+                          )
+                        ? 'analysis'
+                        : /[?]|\b(apa|berapa|siapa|kapan|what|how many|who|when)\b/i.test(
+                                submittedPrompt,
+                            )
+                          ? 'question'
+                          : 'extract_information',
             );
             data.append(
                 'extraction_mode',
                 generalExtraction ? 'general' : 'targeted',
             );
 
-            if (!generalExtraction && prompt.trim()) {
-                data.append('extraction_query', prompt.trim());
+            if (!generalExtraction && submittedPrompt) {
+                data.append('extraction_query', submittedPrompt);
             }
 
             if (manualFact.trim()) {
                 data.append('manual_fact', manualFact.trim());
+            }
+
+            if (newsSession?.id) {
+                data.append('session_id', String(newsSession.id));
             }
 
             informationIds.forEach((id) =>
@@ -392,11 +775,28 @@ export default function NewsCreatorAgent({
                 data.append('document_ids[]', String(id)),
             );
 
+            const attachedNames = files.map((f) => f.name);
+            setFiles([]);
+            setDocumentIds([]);
+
+            if (fileInput.current) {
+                fileInput.current.value = '';
+            }
+
             setBusy(true);
             setElapsedSeconds(0);
+            setPendingUserMessage({
+                content: submittedPrompt || 'Proses file yang saya lampirkan.',
+                attachments: attachedNames,
+            });
+            setPrompt('');
             router.post('/admin/documents', data, {
                 forceFormData: true,
-                onFinish: () => setBusy(false),
+                onError: () => setPrompt(submittedPrompt),
+                onFinish: () => {
+                    setBusy(false);
+                    setPendingUserMessage(null);
+                },
             });
 
             return;
@@ -404,26 +804,97 @@ export default function NewsCreatorAgent({
 
         setBusy(true);
         setElapsedSeconds(0);
-        router.post(
-            '/admin/ai-assistant/generate',
-            {
-                draft_id: editedArticle?.draft_id ?? null,
-                session_id: newsSession?.id ?? null,
-                information_ids: informationIds,
-                document_ids: documentIds,
-                prompt: prompt.trim() || null,
-                answers: manualFact.trim()
-                    ? {
-                          ...answers,
-                          ...answerOverrides,
-                          additional_context: manualFact.trim(),
-                      }
-                    : { ...answers, ...answerOverrides },
-                tone: 'formal',
-            },
-            { onFinish: () => setBusy(false) },
-        );
+        const answerText = Object.values(submittedAnswers)
+            .filter(Boolean)
+            .join(', ');
+        setPendingUserMessage({
+            content:
+                submittedPrompt ||
+                (answerText
+                    ? `Saya memilih: ${answerText}`
+                    : 'Lanjutkan permintaan ini.'),
+        });
+        setPrompt('');
+        const requestId = crypto.randomUUID();
+        setActiveRequestId(requestId);
+        setLiveEvents([]);
+        void startGeneration({
+            mode:
+                questions.length > 0 && Object.keys(submittedAnswers).length > 0
+                    ? 'news'
+                    : 'auto',
+            request_id: requestId,
+            draft_id: editedArticle?.draft_id ?? null,
+            session_id: newsSession?.id ?? null,
+            information_ids: informationIds,
+            document_ids: documentIds,
+            prompt: submittedPrompt || null,
+            answers: manualFact.trim()
+                ? {
+                      ...submittedAnswers,
+                      additional_context: manualFact.trim(),
+                  }
+                : submittedAnswers,
+            tone: 'formal',
+        });
     }
+
+    function continueAfterInformationReview(newlyApprovedIds: number[]) {
+        if (!newsSession?.id) {
+            return;
+        }
+
+        const approvedIds = Array.from(
+            new Set([...informationIds, ...newlyApprovedIds]),
+        );
+        setInformationIds(approvedIds);
+
+        if (newsSession.current_intent !== 'generate_news') {
+            router.reload({
+                only: [
+                    'informationItems',
+                    'pendingInformation',
+                    'newsSession',
+                    'sessions',
+                ],
+            });
+
+            return;
+        }
+
+        setBusy(true);
+        setElapsedSeconds(0);
+        const requestId = crypto.randomUUID();
+        setActiveRequestId(requestId);
+        setLiveEvents([]);
+        void startGeneration({
+            request_id: requestId,
+            session_id: newsSession.id,
+            information_ids: approvedIds,
+            document_ids: [],
+            prompt: newsSession.prompt,
+            draft_id: editedArticle?.draft_id ?? null,
+            answers: {},
+            tone: 'formal',
+        });
+    }
+
+    useEffect(() => {
+        const current = sessions.find((s) => s.id === newsSession?.id);
+
+        if (current?.request_id && !activeRequestId) {
+            setActiveRequestId(current.request_id);
+            setBusy(true);
+        }
+    }, [sessions, newsSession?.id, activeRequestId]);
+    useEffect(() => {
+        const timer = window.setInterval(
+            () => router.reload({ only: ['sessions'] }),
+            8000,
+        );
+
+        return () => window.clearInterval(timer);
+    }, []);
 
     function saveDraft() {
         if (!editedArticle) {
@@ -433,34 +904,58 @@ export default function NewsCreatorAgent({
         router.put(
             `/admin/ai-assistant/drafts/${editedArticle.draft_id}`,
             {
-                headline: editedArticle.headline,
-                lead: editedArticle.lead,
-                body: editedArticle.body,
+                title: editedArticle.headline,
+                content: articleContent,
             },
             { onSuccess: () => setEditMode(false) },
         );
     }
 
-    function editorCommand(command: string, value?: string) {
-        document.execCommand(command, false, value);
-    }
-
-    function markReviewed() {
-        if (!editedArticle) {
-            return;
-        }
-
-        router.post(
-            `/admin/ai-assistant/drafts/${editedArticle.draft_id}/review`,
-        );
-    }
-
     function publishDraft() {
-        if (!editedArticle?.reviewed_at) {
+        if (
+            conversationReadOnly ||
+            editMode ||
+            draftDirty ||
+            publishing ||
+            !editedArticle ||
+            editedArticle.quality?.publish_blocked
+        ) {
             return;
         }
 
-        router.post(`/admin/news/drafts/${editedArticle.draft_id}/publish`);
+        setPublishError('');
+        setPublishOpen(true);
+    }
+
+    function confirmPublish() {
+        if (
+            conversationReadOnly ||
+            editMode ||
+            draftDirty ||
+            publishing ||
+            !editedArticle ||
+            editedArticle.quality?.publish_blocked ||
+            !selectedPlatforms.length
+        ) {
+            return;
+        }
+
+        setPublishing(true);
+        router.post(
+            `/admin/news/drafts/${editedArticle.draft_id}/publish`,
+            {
+                platforms: selectedPlatforms,
+                version: editedArticle.version,
+                confirm_review: true,
+            },
+            {
+                preserveScroll: true,
+                onSuccess: () => setPublishOpen(false),
+                onError: (errors) =>
+                    setPublishError(Object.values(errors).join(' ')),
+                onFinish: () => setPublishing(false),
+            },
+        );
     }
 
     function uploadNewsImage(file: File | undefined) {
@@ -484,26 +979,21 @@ export default function NewsCreatorAgent({
         setFindingRelated(true);
 
         try {
-            const token =
-                document.querySelector<HTMLMetaElement>(
-                    'meta[name="csrf-token"]',
-                )?.content ?? '';
-            const response = await apiFetch(
+            const response = await csrfPost(
                 '/admin/ai-assistant/recommendations',
-                {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        Accept: 'application/json',
-                        'X-CSRF-TOKEN': token,
-                    },
-                    body: JSON.stringify({ query: prompt.trim() }),
-                },
+                { query: prompt.trim() },
             );
             const data = (await response.json()) as {
                 recommendations?: Recommendation[];
             };
             setRecommendations(data.recommendations ?? []);
+        } catch (error) {
+            setGenerationErrors({
+                generation:
+                    error instanceof Error
+                        ? error.message
+                        : 'Pencarian sumber gagal.',
+            });
         } finally {
             setFindingRelated(false);
         }
@@ -519,25 +1009,26 @@ export default function NewsCreatorAgent({
 
         autoGenerated.current = true;
         setBusy(true);
-        router.post(
-            '/admin/ai-assistant/generate',
-            {
-                information_ids: preselectedInformationIds,
-                document_ids: initialDocumentIds,
-                prompt: initialPrompt || null,
-                answers: initialManualFact
-                    ? { additional_context: initialManualFact }
-                    : {},
-                tone: 'formal',
-            },
-            { onFinish: () => setBusy(false) },
-        );
+        const requestId = crypto.randomUUID();
+        setActiveRequestId(requestId);
+        setLiveEvents([]);
+        void startGeneration({
+            request_id: requestId,
+            information_ids: preselectedInformationIds,
+            document_ids: initialDocumentIds,
+            prompt: initialPrompt || null,
+            answers: initialManualFact
+                ? { additional_context: initialManualFact }
+                : {},
+            tone: 'formal',
+        });
     }, [
         autoGenerate,
         initialDocumentIds,
         initialPrompt,
         initialManualFact,
         preselectedInformationIds,
+        startGeneration,
     ]);
 
     useEffect(() => {
@@ -548,7 +1039,12 @@ export default function NewsCreatorAgent({
         const timer = window.setInterval(
             () =>
                 router.reload({
-                    only: ['newsSession', 'documents', 'informationItems'],
+                    only: [
+                        'newsSession',
+                        'documents',
+                        'informationItems',
+                        'pendingInformation',
+                    ],
                 }),
             5000,
         );
@@ -558,7 +1054,48 @@ export default function NewsCreatorAgent({
 
     useEffect(() => {
         setEditedArticle(generatedArticle ?? null);
+
+        if (generatedArticle) {
+            setPreviewOpen(true);
+        }
     }, [generatedArticle]);
+
+    useEffect(() => {
+        if (!resizingPreview) {
+            return;
+        }
+
+        const resize = (event: MouseEvent) => {
+            const minimumChatWidth = 420;
+            const minimumPreviewWidth = 380;
+            const workspaceBounds = workspace.current?.getBoundingClientRect();
+            const availableWidth = workspaceBounds?.width ?? window.innerWidth;
+            const rightEdge = workspaceBounds?.right ?? window.innerWidth;
+            const maximumPreviewWidth = Math.min(
+                960,
+                availableWidth - minimumChatWidth,
+            );
+            setPreviewWidth(
+                Math.max(
+                    minimumPreviewWidth,
+                    Math.min(maximumPreviewWidth, rightEdge - event.clientX),
+                ),
+            );
+        };
+        const stop = () => setResizingPreview(false);
+
+        window.addEventListener('mousemove', resize);
+        window.addEventListener('mouseup', stop);
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+
+        return () => {
+            window.removeEventListener('mousemove', resize);
+            window.removeEventListener('mouseup', stop);
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        };
+    }, [resizingPreview]);
 
     useEffect(() => {
         if (!busy) {
@@ -573,452 +1110,612 @@ export default function NewsCreatorAgent({
         return () => window.clearInterval(timer);
     }, [busy]);
 
+    useEffect(() => {
+        if (composerInput.current) {
+            resizeComposer(composerInput.current);
+        }
+    }, [prompt, resizeComposer]);
+
     return (
         <>
+            <PublishNewsDialog
+                open={publishOpen}
+                onOpenChange={setPublishOpen}
+                platforms={publishPlatforms}
+                metaAuth={metaAuth}
+                selected={selectedPlatforms}
+                onSelectionChange={setSelectedPlatforms}
+                processing={publishing}
+                contentReady={
+                    !editMode && !draftDirty && Boolean(editedArticle)
+                }
+                requireReviewConfirmation
+                error={publishError}
+                onPublish={confirmPublish}
+            />
             <Head title="Asisten AI" />
-            <div className="dark flex h-[calc(100vh-4rem)] min-h-[640px] flex-col overflow-hidden bg-background text-foreground lg:flex-row">
-                <section className="flex min-h-0 flex-1 flex-col border-b bg-background lg:w-[42%] lg:max-w-[620px] lg:border-r lg:border-b-0">
-                    <header className="flex shrink-0 items-center justify-between border-b px-5 py-4">
-                        <div className="flex items-center gap-3">
-                            <div className="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                                <Bot className="size-5" />
-                            </div>
-                            <div>
-                                <h1 className="font-semibold">Asisten AI</h1>
-                                <p className="text-xs text-muted-foreground">
-                                    Ekstraksi dokumen dan pembuatan berita
+            <div
+                ref={workspace}
+                className="relative -mt-16 flex h-dvh min-h-0 flex-col overflow-hidden bg-background text-foreground lg:flex-row"
+            >
+                <SessionPanel sessions={sessions} current={newsSession?.id} />
+                <section
+                    onDragEnter={(event) => {
+                        if (!event.dataTransfer.types.includes('Files')) {
+                            return;
+                        }
+
+                        event.preventDefault();
+                        dragDepth.current += 1;
+                        setDraggingFiles(true);
+                    }}
+                    onDragOver={(event) => {
+                        if (!event.dataTransfer.types.includes('Files')) {
+                            return;
+                        }
+
+                        event.preventDefault();
+                        event.stopPropagation();
+                        event.dataTransfer.dropEffect =
+                            conversationReadOnly || busy || processingFiles
+                                ? 'none'
+                                : 'copy';
+                    }}
+                    onDragLeave={(event) => {
+                        if (!event.dataTransfer.types.includes('Files')) {
+                            return;
+                        }
+
+                        dragDepth.current = Math.max(0, dragDepth.current - 1);
+
+                        if (dragDepth.current === 0) {
+                            setDraggingFiles(false);
+                        }
+                    }}
+                    onDrop={(event) => {
+                        if (!event.dataTransfer.types.includes('Files')) {
+                            return;
+                        }
+
+                        event.preventDefault();
+                        event.stopPropagation();
+                        dragDepth.current = 0;
+                        setDraggingFiles(false);
+                        addFiles(event.dataTransfer.files);
+                    }}
+                    className={`relative flex min-h-0 min-w-0 flex-1 flex-col bg-background ${previewOpen && editedArticle ? 'border-b lg:border-b-0' : 'w-full'}`}
+                >
+                    {draggingFiles && (
+                        <div
+                            className="pointer-events-none absolute inset-3 z-50 flex items-center justify-center rounded-2xl border-2 border-dashed border-primary bg-background/95 p-6 text-center"
+                            role="status"
+                            aria-live="polite"
+                        >
+                            <div className="space-y-3">
+                                <Paperclip className="mx-auto size-10 text-primary" />
+                                <p className="text-lg font-semibold">
+                                    {conversationReadOnly
+                                        ? 'Percakapan ini hanya dapat dibaca'
+                                        : busy || processingFiles
+                                          ? 'Tunggu proses selesai sebelum menambahkan file'
+                                          : 'Lepaskan file untuk melampirkan'}
                                 </p>
+                                <p className="text-sm text-muted-foreground">
+                                    Maksimum 5 file · 20 MB per file
+                                </p>
+                                {!conversationReadOnly &&
+                                    !busy &&
+                                    !processingFiles && (
+                                        <p className="text-sm text-muted-foreground">
+                                            Tambahkan instruksi, lalu kirim
+                                            untuk mulai memproses.
+                                        </p>
+                                    )}
                             </div>
                         </div>
-                        <div className="flex gap-2">
-                            <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                onClick={() => router.visit('/admin/news')}
-                                title="Kembali ke daftar berita"
-                            >
-                                <ArrowLeft />
-                            </Button>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => router.visit('/admin/documents')}
-                            >
-                                <Archive /> Dokumen
-                            </Button>
-                        </div>
-                    </header>
+                    )}
+                    <WorkspaceActions
+                        canOpenPreview={Boolean(editedArticle && !previewOpen)}
+                        onOpenPreview={() => setPreviewOpen(true)}
+                        onOpenHistory={() => router.visit('/admin/news')}
+                        onOpenDocuments={() => router.visit('/admin/documents')}
+                    />
                     <MessageScrollerProvider
                         autoScroll
                         defaultScrollPosition="end"
                     >
                         <MessageScroller className="min-h-0 flex-1">
-                            <MessageScrollerViewport className="px-5 py-5">
-                                <MessageScrollerContent className="gap-4">
+                            <MessageScrollerViewport
+                                className={`px-5 pt-32 ${conversationStarted ? 'pb-56' : 'pb-28'} ${previewOpen && editedArticle ? '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden' : ''}`}
+                            >
+                                <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-4">
+                                    {conversationReadOnly && (
+                                        <MessageScrollerItem messageId="read-only">
+                                            <p className="rounded-lg border p-3 text-sm">
+                                                Berita sudah terbit. Percakapan
+                                                ini hanya dapat dibaca. Mulai
+                                                percakapan baru untuk perubahan.
+                                            </p>
+                                        </MessageScrollerItem>
+                                    )}
                                     <MessageScrollerItem messageId="welcome">
-                                        <div className="max-w-[88%] rounded-xl border bg-muted/50 p-4 text-sm leading-6">
-                                            Pilih informasi atau dokumen
-                                            tersimpan, atau lampirkan hingga
-                                            lima file baru. Saya akan memeriksa
-                                            kelengkapan sebelum membuat draf.
-                                        </div>
+                                        {!conversationStarted ? (
+                                            <AssistantEmptyState />
+                                        ) : (
+                                            <AssistantConversationIntro />
+                                        )}
                                     </MessageScrollerItem>
-                                    {(newsSession?.messages ?? []).map(
-                                        (message) => (
+                                    {(newsSession?.messages ?? [])
+                                        .filter(
+                                            (message) =>
+                                                message.intent !==
+                                                'queued_request',
+                                        )
+                                        .map((message) => (
                                             <MessageScrollerItem
                                                 key={message.id}
                                                 messageId={`history-${message.id}`}
                                             >
-                                                <div
-                                                    className={
-                                                        message.role === 'user'
-                                                            ? 'ml-auto max-w-[88%] rounded-xl bg-primary p-4 text-sm text-primary-foreground'
-                                                            : 'max-w-[88%] rounded-xl border bg-muted/50 p-4 text-sm leading-6'
+                                                <CategoryProposalCard
+                                                    readOnly={
+                                                        conversationReadOnly
                                                     }
-                                                >
-                                                    {message.content}
-                                                </div>
+                                                    message={message}
+                                                    categories={categories}
+                                                />
+                                                <ChatMessage
+                                                    message={message}
+                                                    documents={documents}
+                                                />
+                                                {message.id ===
+                                                    draftMessageId && draftCard}
+                                                {processingFiles &&
+                                                    message.id ===
+                                                        extractionMessageId && (
+                                                        <DocumentProcessingStatus
+                                                            documents={documents.filter(
+                                                                (doc) =>
+                                                                    (
+                                                                        (message
+                                                                            .payload
+                                                                            ?.document_ids ??
+                                                                            []) as number[]
+                                                                    ).includes(
+                                                                        doc.id,
+                                                                    ),
+                                                            )}
+                                                        />
+                                                    )}
+                                                {Array.isArray(
+                                                    message.payload
+                                                        ?.historical_sources,
+                                                ) &&
+                                                    message.payload
+                                                        .historical_sources
+                                                        .length > 0 && (
+                                                        <details className="mt-2 rounded-lg border p-3 text-sm">
+                                                            <summary>
+                                                                Konteks
+                                                                terdahulu (
+                                                                {
+                                                                    message
+                                                                        .payload
+                                                                        .historical_sources
+                                                                        .length
+                                                                }
+                                                                )
+                                                            </summary>
+                                                            {message.payload.historical_sources.map(
+                                                                (source: {
+                                                                    source_id: string;
+                                                                    title: string;
+                                                                    content: string;
+                                                                }) => (
+                                                                    <div
+                                                                        key={
+                                                                            source.source_id
+                                                                        }
+                                                                        className="mt-2"
+                                                                    >
+                                                                        <p className="font-medium">
+                                                                            {
+                                                                                source.title
+                                                                            }{' '}
+                                                                            ·{' '}
+                                                                            {
+                                                                                source.source_id
+                                                                            }
+                                                                        </p>
+                                                                        <p className="whitespace-pre-wrap text-muted-foreground">
+                                                                            {
+                                                                                source.content
+                                                                            }
+                                                                        </p>
+                                                                    </div>
+                                                                ),
+                                                            )}
+                                                        </details>
+                                                    )}
                                             </MessageScrollerItem>
-                                        ),
-                                    )}
-                                    {hasSources && (
-                                        <MessageScrollerItem messageId="sources">
-                                            <div className="ml-auto max-w-[88%] rounded-xl bg-primary p-4 text-sm text-primary-foreground">
-                                                Gunakan {informationIds.length}{' '}
-                                                informasi dan{' '}
-                                                {documentIds.length} dokumen
-                                                yang saya setujui.
-                                            </div>
+                                        ))}
+                                    {!busy &&
+                                        (newsSession?.runs ?? [])
+                                            .filter(
+                                                (run) =>
+                                                    run.user_message_id ===
+                                                    [
+                                                        ...(newsSession?.messages ??
+                                                            []),
+                                                    ]
+                                                        .reverse()
+                                                        .find(
+                                                            (message) =>
+                                                                message.role ===
+                                                                'user',
+                                                        )?.id,
+                                            )
+                                            .slice(-1)
+                                            .map((run) => (
+                                                <MessageScrollerItem
+                                                    key={`run-${run.id}`}
+                                                    messageId={`run-${run.id}`}
+                                                >
+                                                    <SavedAgentWorkTrace
+                                                        run={run}
+                                                    />
+                                                </MessageScrollerItem>
+                                            ))}
+                                    {pendingUserMessage && (
+                                        <MessageScrollerItem messageId="pending-user-message">
+                                            <PendingUserMessage
+                                                attachments={
+                                                    pendingUserMessage.attachments
+                                                }
+                                                informationAttachments={
+                                                    pendingUserMessage.informationAttachments
+                                                }
+                                            >
+                                                {pendingUserMessage.content}
+                                            </PendingUserMessage>
                                         </MessageScrollerItem>
                                     )}
-                                    {processingFiles && (
-                                        <MessageScrollerItem
-                                            messageId="processing-files"
-                                            scrollAnchor
-                                        >
-                                            <div className="max-w-[88%] rounded-xl border bg-muted/50 p-4 text-sm leading-6">
-                                                <div className="flex items-center gap-2 font-medium">
-                                                    <LoaderCircle className="size-4 animate-spin text-primary" />
-                                                    Dokumen sedang diproses
-                                                </div>
-                                                <p className="mt-1 text-muted-foreground">
-                                                    Anda boleh meninggalkan
-                                                    halaman ini. Pemrosesan akan
-                                                    dilanjutkan oleh antrean dan
-                                                    percakapan dapat dibuka
-                                                    kembali dari daftar draf.
-                                                </p>
-                                            </div>
-                                        </MessageScrollerItem>
-                                    )}
+                                    {processingFiles &&
+                                        !extractionMessageId && (
+                                            <MessageScrollerItem
+                                                messageId="processing-files"
+                                                scrollAnchor
+                                            >
+                                                <DocumentProcessingStatus
+                                                    documents={documents.filter(
+                                                        (doc) =>
+                                                            newsSession?.selected_document_ids.includes(
+                                                                doc.id,
+                                                            ),
+                                                    )}
+                                                />
+                                            </MessageScrollerItem>
+                                        )}
+                                    {!conversationReadOnly &&
+                                        reviewingExtraction &&
+                                        !processingFiles && (
+                                            <MessageScrollerItem
+                                                messageId="extracted-information-review"
+                                                scrollAnchor
+                                            >
+                                                <ExtractedInformationReview
+                                                    items={pendingInformation}
+                                                    onFinished={
+                                                        continueAfterInformationReview
+                                                    }
+                                                />
+                                            </MessageScrollerItem>
+                                        )}
                                     {busy && !processingFiles && (
                                         <MessageScrollerItem
                                             messageId="generation-progress"
                                             scrollAnchor
                                         >
-                                            <Collapsible
-                                                open={showProgressSteps}
-                                                onOpenChange={
-                                                    setShowProgressSteps
+                                            <AgentWorkTrace
+                                                elapsedSeconds={elapsedSeconds}
+                                                events={liveEvents}
+                                                connectionMessage={
+                                                    progressMessage
                                                 }
-                                                className="max-w-[92%] rounded-xl border bg-card p-4"
-                                            >
-                                                <div className="flex items-center gap-3">
-                                                    <span className="relative flex size-3">
-                                                        <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-50" />
-                                                        <span className="relative inline-flex size-3 rounded-full bg-primary" />
-                                                    </span>
-                                                    <div className="min-w-0 flex-1">
-                                                        <p className="text-sm font-medium">
-                                                            {
-                                                                generationStages[
-                                                                    activeStage
-                                                                ]
-                                                            }
-                                                        </p>
-                                                        <p className="text-xs text-muted-foreground">
-                                                            {elapsedSeconds}s
-                                                            berlalu
-                                                        </p>
-                                                    </div>
-                                                    <CollapsibleTrigger asChild>
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="sm"
-                                                        >
-                                                            {showProgressSteps ? (
-                                                                <ChevronDown />
-                                                            ) : (
-                                                                <ChevronRight />
-                                                            )}
-                                                            Lihat langkah
-                                                        </Button>
-                                                    </CollapsibleTrigger>
-                                                </div>
-                                                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted">
-                                                    <div
-                                                        className="h-full rounded-full bg-primary transition-all duration-500"
-                                                        style={{
-                                                            width: `${((activeStage + 1) / generationStages.length) * 100}%`,
-                                                        }}
-                                                    />
-                                                </div>
-                                                <CollapsibleContent className="mt-3 space-y-2 border-t pt-3">
-                                                    {generationStages.map(
-                                                        (stage, index) => (
-                                                            <div
-                                                                key={stage}
-                                                                className="flex items-center gap-2 text-xs"
-                                                            >
-                                                                <span
-                                                                    className={`size-2 rounded-full ${index <= activeStage ? 'bg-primary' : 'bg-muted'}`}
-                                                                />
-                                                                <span
-                                                                    className={
-                                                                        index <=
-                                                                        activeStage
-                                                                            ? 'text-foreground'
-                                                                            : 'text-muted-foreground'
-                                                                    }
-                                                                >
-                                                                    {stage}
-                                                                </span>
-                                                            </div>
-                                                        ),
-                                                    )}
-                                                </CollapsibleContent>
-                                            </Collapsible>
+                                                hasSources={hasSources}
+                                                hasFiles={files.length > 0}
+                                            />
                                         </MessageScrollerItem>
                                     )}
-                                    {!errors.guidance &&
-                                        displayedUserFacts.length > 0 && (
-                                            <MessageScrollerItem messageId="clarification-answer">
-                                                <div className="ml-auto max-w-[88%] rounded-xl bg-primary px-4 py-3 text-sm text-primary-foreground">
-                                                    Saya memilih:{' '}
-                                                    {displayedUserFacts
-                                                        .map(
-                                                            (fact) =>
-                                                                fact.value,
-                                                        )
-                                                        .join(', ')}
-                                                    . Silakan buat draf
-                                                    berdasarkan pilihan ini.
+                                    {!conversationReadOnly &&
+                                        questions.length > 0 && (
+                                            <MessageScrollerItem
+                                                messageId="clarification-round"
+                                                scrollAnchor
+                                            >
+                                                <div className="max-w-[94%] space-y-3">
+                                                    <p className="text-sm leading-6 text-muted-foreground">
+                                                        Jawab pertanyaan penting
+                                                        ini bersama-sama.
+                                                        Setelah itu, AI langsung
+                                                        membuat draf tanpa
+                                                        pertanyaan tambahan.
+                                                    </p>
+                                                    <Card className="gap-3 border-border bg-card py-4 shadow-none">
+                                                        <CardHeader className="gap-2 px-4">
+                                                            <div className="flex items-start justify-between gap-3">
+                                                                <CardTitle className="text-sm leading-6">
+                                                                    Harap
+                                                                    tentukan:
+                                                                </CardTitle>
+                                                                <Badge
+                                                                    variant="outline"
+                                                                    className="shrink-0 text-[10px]"
+                                                                >
+                                                                    {
+                                                                        questions.length
+                                                                    }{' '}
+                                                                    pertanyaan
+                                                                </Badge>
+                                                            </div>
+                                                        </CardHeader>
+                                                        <CardContent className="space-y-3 px-4">
+                                                            {questions.map(
+                                                                (
+                                                                    question,
+                                                                    questionIndex,
+                                                                ) => {
+                                                                    const selectionType =
+                                                                        question.selection_type ??
+                                                                        'single';
+                                                                    const selectedValues =
+                                                                        (
+                                                                            answers[
+                                                                                question
+                                                                                    .field
+                                                                            ] ??
+                                                                            ''
+                                                                        )
+                                                                            .split(
+                                                                                selectionType ===
+                                                                                    'ranked'
+                                                                                    ? ' > '
+                                                                                    : ', ',
+                                                                            )
+                                                                            .filter(
+                                                                                Boolean,
+                                                                            );
+
+                                                                    return (
+                                                                        <div
+                                                                            key={
+                                                                                question.field
+                                                                            }
+                                                                            className="space-y-3 rounded-xl border border-border p-3"
+                                                                        >
+                                                                            <div className="space-y-1">
+                                                                                <p className="text-xs font-medium text-primary">
+                                                                                    {questionIndex +
+                                                                                        1}
+
+                                                                                    .
+                                                                                </p>
+                                                                                <p className="text-sm leading-6 font-medium">
+                                                                                    {
+                                                                                        question.question
+                                                                                    }
+                                                                                </p>
+                                                                                {question.reason && (
+                                                                                    <p className="text-xs leading-5 text-muted-foreground">
+                                                                                        {
+                                                                                            question.reason
+                                                                                        }
+                                                                                    </p>
+                                                                                )}
+                                                                            </div>
+                                                                            {question.sources?.map(
+                                                                                (
+                                                                                    source,
+                                                                                ) => (
+                                                                                    <a
+                                                                                        key={
+                                                                                            source.url
+                                                                                        }
+                                                                                        href={
+                                                                                            source.url
+                                                                                        }
+                                                                                        target="_blank"
+                                                                                        rel="noreferrer"
+                                                                                        className="block rounded-lg border p-3 transition-colors hover:border-primary/50 hover:bg-muted/40"
+                                                                                    >
+                                                                                        <span className="line-clamp-1 text-sm font-medium">
+                                                                                            {
+                                                                                                source.title
+                                                                                            }
+                                                                                        </span>
+                                                                                        <span className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
+                                                                                            {
+                                                                                                source.snippet
+                                                                                            }
+                                                                                        </span>
+                                                                                    </a>
+                                                                                ),
+                                                                            )}
+                                                                            {question
+                                                                                .options
+                                                                                ?.length ? (
+                                                                                <div className="grid gap-2">
+                                                                                    {question.options.map(
+                                                                                        (
+                                                                                            option,
+                                                                                            optionIndex,
+                                                                                        ) => {
+                                                                                            const selected =
+                                                                                                selectedValues.includes(
+                                                                                                    option,
+                                                                                                );
+
+                                                                                            return (
+                                                                                                <Button
+                                                                                                    key={
+                                                                                                        option
+                                                                                                    }
+                                                                                                    type="button"
+                                                                                                    variant={
+                                                                                                        selected
+                                                                                                            ? 'default'
+                                                                                                            : 'outline'
+                                                                                                    }
+                                                                                                    className="h-auto justify-start px-4 py-3 text-left whitespace-normal"
+                                                                                                    disabled={
+                                                                                                        busy
+                                                                                                    }
+                                                                                                    onClick={() => {
+                                                                                                        const next =
+                                                                                                            selectionType ===
+                                                                                                            'single'
+                                                                                                                ? [
+                                                                                                                      option,
+                                                                                                                  ]
+                                                                                                                : selected
+                                                                                                                  ? selectedValues.filter(
+                                                                                                                        (
+                                                                                                                            value,
+                                                                                                                        ) =>
+                                                                                                                            value !==
+                                                                                                                            option,
+                                                                                                                    )
+                                                                                                                  : [
+                                                                                                                        ...selectedValues,
+                                                                                                                        option,
+                                                                                                                    ];
+                                                                                                        setAnswers(
+                                                                                                            (
+                                                                                                                current,
+                                                                                                            ) => ({
+                                                                                                                ...current,
+                                                                                                                [question.field]:
+                                                                                                                    next.join(
+                                                                                                                        selectionType ===
+                                                                                                                            'ranked'
+                                                                                                                            ? ' > '
+                                                                                                                            : ', ',
+                                                                                                                    ),
+                                                                                                            }),
+                                                                                                        );
+                                                                                                    }}
+                                                                                                >
+                                                                                                    {selectionType ===
+                                                                                                        'ranked' &&
+                                                                                                        selected && (
+                                                                                                            <Badge variant="secondary">
+                                                                                                                {selectedValues.indexOf(
+                                                                                                                    option,
+                                                                                                                ) +
+                                                                                                                    1}
+                                                                                                            </Badge>
+                                                                                                        )}
+                                                                                                    <span>
+                                                                                                        {optionIndex +
+                                                                                                            1}
+
+                                                                                                        .{' '}
+                                                                                                        {
+                                                                                                            option
+                                                                                                        }
+                                                                                                    </span>
+                                                                                                </Button>
+                                                                                            );
+                                                                                        },
+                                                                                    )}
+                                                                                    <Input
+                                                                                        value={
+                                                                                            question.options.includes(
+                                                                                                answers[
+                                                                                                    question
+                                                                                                        .field
+                                                                                                ] ??
+                                                                                                    '',
+                                                                                            )
+                                                                                                ? ''
+                                                                                                : (answers[
+                                                                                                      question
+                                                                                                          .field
+                                                                                                  ] ??
+                                                                                                  '')
+                                                                                        }
+                                                                                        onChange={(
+                                                                                            event,
+                                                                                        ) =>
+                                                                                            setAnswers(
+                                                                                                (
+                                                                                                    current,
+                                                                                                ) => ({
+                                                                                                    ...current,
+                                                                                                    [question.field]:
+                                                                                                        event
+                                                                                                            .target
+                                                                                                            .value,
+                                                                                                }),
+                                                                                            )
+                                                                                        }
+                                                                                        placeholder="Atau ketik jawaban sendiri…"
+                                                                                    />
+                                                                                </div>
+                                                                            ) : (
+                                                                                <Input
+                                                                                    value={
+                                                                                        answers[
+                                                                                            question
+                                                                                                .field
+                                                                                        ] ??
+                                                                                        ''
+                                                                                    }
+                                                                                    onChange={(
+                                                                                        event,
+                                                                                    ) =>
+                                                                                        setAnswers(
+                                                                                            (
+                                                                                                current,
+                                                                                            ) => ({
+                                                                                                ...current,
+                                                                                                [question.field]:
+                                                                                                    event
+                                                                                                        .target
+                                                                                                        .value,
+                                                                                            }),
+                                                                                        )
+                                                                                    }
+                                                                                    placeholder="Ketik jawaban Anda…"
+                                                                                />
+                                                                            )}
+                                                                        </div>
+                                                                    );
+                                                                },
+                                                            )}
+                                                            <Button
+                                                                type="button"
+                                                                className="w-full"
+                                                                disabled={
+                                                                    busy ||
+                                                                    !allQuestionsAnswered
+                                                                }
+                                                                onClick={() =>
+                                                                    submit()
+                                                                }
+                                                            >
+                                                                {busy ? (
+                                                                    <LoaderCircle className="animate-spin" />
+                                                                ) : (
+                                                                    <ArrowUp />
+                                                                )}
+                                                                Gunakan jawaban
+                                                                dan buat draf
+                                                            </Button>
+                                                        </CardContent>
+                                                    </Card>
                                                 </div>
                                             </MessageScrollerItem>
                                         )}
-                                    {questions.length > 0 && (
-                                        <MessageScrollerItem
-                                            messageId="clarification-round"
-                                            scrollAnchor
-                                        >
-                                            <div className="max-w-[94%] space-y-3">
-                                                <p className="text-sm leading-6 text-muted-foreground">
-                                                    Jawab pertanyaan penting ini
-                                                    bersama-sama. Setelah itu,
-                                                    AI langsung membuat draf
-                                                    tanpa pertanyaan tambahan.
-                                                </p>
-                                                <Card className="gap-3 border-border bg-card py-4 shadow-none">
-                                                    <CardHeader className="gap-2 px-4">
-                                                        <div className="flex items-start justify-between gap-3">
-                                                            <CardTitle className="text-sm leading-6">
-                                                                Harap tentukan:
-                                                            </CardTitle>
-                                                            <Badge
-                                                                variant="outline"
-                                                                className="shrink-0 text-[10px]"
-                                                            >
-                                                                {
-                                                                    questions.length
-                                                                }{' '}
-                                                                pertanyaan
-                                                            </Badge>
-                                                        </div>
-                                                    </CardHeader>
-                                                    <CardContent className="space-y-3 px-4">
-                                                        {questions.map(
-                                                            (
-                                                                question,
-                                                                questionIndex,
-                                                            ) => {
-                                                                const selectionType =
-                                                                    question.selection_type ??
-                                                                    'single';
-                                                                const selectedValues =
-                                                                    (
-                                                                        answers[
-                                                                            question
-                                                                                .field
-                                                                        ] ?? ''
-                                                                    )
-                                                                        .split(
-                                                                            selectionType ===
-                                                                                'ranked'
-                                                                                ? ' > '
-                                                                                : ', ',
-                                                                        )
-                                                                        .filter(
-                                                                            Boolean,
-                                                                        );
-
-                                                                return (
-                                                                    <div
-                                                                        key={
-                                                                            question.field
-                                                                        }
-                                                                        className="space-y-3 rounded-xl border border-border p-3"
-                                                                    >
-                                                                        <div className="space-y-1">
-                                                                            <p className="text-xs font-medium text-primary">
-                                                                                {questionIndex +
-                                                                                    1}
-
-                                                                                .
-                                                                            </p>
-                                                                            <p className="text-sm leading-6 font-medium">
-                                                                                {
-                                                                                    question.question
-                                                                                }
-                                                                            </p>
-                                                                            {question.reason && (
-                                                                                <p className="text-xs leading-5 text-muted-foreground">
-                                                                                    {
-                                                                                        question.reason
-                                                                                    }
-                                                                                </p>
-                                                                            )}
-                                                                        </div>
-                                                                        {question.sources?.map(
-                                                                            (
-                                                                                source,
-                                                                            ) => (
-                                                                                <a
-                                                                                    key={
-                                                                                        source.url
-                                                                                    }
-                                                                                    href={
-                                                                                        source.url
-                                                                                    }
-                                                                                    target="_blank"
-                                                                                    rel="noreferrer"
-                                                                                    className="block rounded-lg border p-3 transition-colors hover:border-primary/50 hover:bg-muted/40"
-                                                                                >
-                                                                                    <span className="line-clamp-1 text-sm font-medium">
-                                                                                        {
-                                                                                            source.title
-                                                                                        }
-                                                                                    </span>
-                                                                                    <span className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
-                                                                                        {
-                                                                                            source.snippet
-                                                                                        }
-                                                                                    </span>
-                                                                                </a>
-                                                                            ),
-                                                                        )}
-                                                                        {question
-                                                                            .options
-                                                                            ?.length ? (
-                                                                            <div className="grid gap-2">
-                                                                                {question.options.map(
-                                                                                    (
-                                                                                        option,
-                                                                                        optionIndex,
-                                                                                    ) => {
-                                                                                        const selected =
-                                                                                            selectedValues.includes(
-                                                                                                option,
-                                                                                            );
-
-                                                                                        return (
-                                                                                            <Button
-                                                                                                key={
-                                                                                                    option
-                                                                                                }
-                                                                                                type="button"
-                                                                                                variant={
-                                                                                                    selected
-                                                                                                        ? 'default'
-                                                                                                        : 'outline'
-                                                                                                }
-                                                                                                className="h-auto justify-start px-4 py-3 text-left whitespace-normal"
-                                                                                                disabled={
-                                                                                                    busy
-                                                                                                }
-                                                                                                onClick={() => {
-                                                                                                    const next =
-                                                                                                        selectionType ===
-                                                                                                        'single'
-                                                                                                            ? [
-                                                                                                                  option,
-                                                                                                              ]
-                                                                                                            : selected
-                                                                                                              ? selectedValues.filter(
-                                                                                                                    (
-                                                                                                                        value,
-                                                                                                                    ) =>
-                                                                                                                        value !==
-                                                                                                                        option,
-                                                                                                                )
-                                                                                                              : [
-                                                                                                                    ...selectedValues,
-                                                                                                                    option,
-                                                                                                                ];
-                                                                                                    setAnswers(
-                                                                                                        (
-                                                                                                            current,
-                                                                                                        ) => ({
-                                                                                                            ...current,
-                                                                                                            [question.field]:
-                                                                                                                next.join(
-                                                                                                                    selectionType ===
-                                                                                                                        'ranked'
-                                                                                                                        ? ' > '
-                                                                                                                        : ', ',
-                                                                                                                ),
-                                                                                                        }),
-                                                                                                    );
-                                                                                                }}
-                                                                                            >
-                                                                                                {selectionType ===
-                                                                                                    'ranked' &&
-                                                                                                    selected && (
-                                                                                                        <Badge variant="secondary">
-                                                                                                            {selectedValues.indexOf(
-                                                                                                                option,
-                                                                                                            ) +
-                                                                                                                1}
-                                                                                                        </Badge>
-                                                                                                    )}
-                                                                                                <span>
-                                                                                                    {optionIndex +
-                                                                                                        1}
-
-                                                                                                    .{' '}
-                                                                                                    {
-                                                                                                        option
-                                                                                                    }
-                                                                                                </span>
-                                                                                            </Button>
-                                                                                        );
-                                                                                    },
-                                                                                )}
-                                                                            </div>
-                                                                        ) : (
-                                                                            <Input
-                                                                                value={
-                                                                                    answers[
-                                                                                        question
-                                                                                            .field
-                                                                                    ] ??
-                                                                                    ''
-                                                                                }
-                                                                                onChange={(
-                                                                                    event,
-                                                                                ) =>
-                                                                                    setAnswers(
-                                                                                        (
-                                                                                            current,
-                                                                                        ) => ({
-                                                                                            ...current,
-                                                                                            [question.field]:
-                                                                                                event
-                                                                                                    .target
-                                                                                                    .value,
-                                                                                        }),
-                                                                                    )
-                                                                                }
-                                                                                placeholder="Ketik jawaban Anda…"
-                                                                            />
-                                                                        )}
-                                                                    </div>
-                                                                );
-                                                            },
-                                                        )}
-                                                        <Button
-                                                            type="button"
-                                                            className="w-full"
-                                                            disabled={
-                                                                busy ||
-                                                                !allQuestionsAnswered
-                                                            }
-                                                            onClick={() =>
-                                                                submit()
-                                                            }
-                                                        >
-                                                            {busy ? (
-                                                                <LoaderCircle className="animate-spin" />
-                                                            ) : (
-                                                                <Send />
-                                                            )}
-                                                            Gunakan jawaban dan
-                                                            buat draf
-                                                        </Button>
-                                                    </CardContent>
-                                                </Card>
-                                            </div>
-                                        </MessageScrollerItem>
-                                    )}
                                     {recommendations.length > 0 && (
                                         <MessageScrollerItem messageId="recommendations">
                                             <Card className="max-w-[92%] gap-3 py-4 shadow-none">
@@ -1081,24 +1778,13 @@ export default function NewsCreatorAgent({
                                             </Card>
                                         </MessageScrollerItem>
                                     )}
-                                    {generatedArticle && !errors.guidance && (
-                                        <MessageScrollerItem
-                                            messageId="done"
-                                            scrollAnchor
-                                        >
-                                            <div className="max-w-[88%] rounded-xl border border-success-border bg-success-bg p-4 text-sm text-success-text">
-                                                Draf telah dibuat. Tinjau
-                                                artikel dan bukti sebelum
-                                                publikasi.
-                                            </div>
-                                        </MessageScrollerItem>
-                                    )}
+                                    {!draftMessageId && draftCard}
                                     {errors.guidance && (
                                         <MessageScrollerItem
                                             messageId="prompt-guidance"
                                             scrollAnchor
                                         >
-                                            <div className="max-w-[92%] rounded-xl border border-primary/30 bg-primary/5 p-4 text-sm leading-6">
+                                            <div className="max-w-2xl text-sm leading-7 text-foreground">
                                                 <p className="font-medium text-primary">
                                                     Saya memerlukan fakta, bukan
                                                     hanya topik.
@@ -1123,728 +1809,678 @@ export default function NewsCreatorAgent({
                             <MessageScrollerButton />
                         </MessageScroller>
                     </MessageScrollerProvider>
-                    <div className="shrink-0 space-y-3 border-t bg-background p-4">
-                        <div className="flex gap-2 overflow-x-auto pb-1">
-                            {actions.map((action) => (
-                                <Button
-                                    key={action}
-                                    variant="outline"
-                                    size="sm"
-                                    className="rounded-full"
-                                    onClick={() => handleQuickAction(action)}
-                                >
-                                    {action}
-                                </Button>
-                            ))}
-                            {prompt.trim() && (
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="rounded-full"
-                                    disabled={findingRelated}
-                                    onClick={findRelated}
-                                >
-                                    {findingRelated ? (
-                                        <LoaderCircle className="animate-spin" />
-                                    ) : (
-                                        <Sparkles />
-                                    )}
-                                    Cari informasi terkait
-                                </Button>
-                            )}
-                        </div>
-                        {(files.length > 0 || hasSources) && (
-                            <div className="flex flex-wrap gap-2">
-                                {files.map((file, index) => (
-                                    <Badge
-                                        key={`${file.name}-${index}`}
-                                        variant="secondary"
-                                        className="gap-1 py-1.5"
-                                    >
-                                        <Paperclip className="size-3" />
-                                        {file.name}
-                                        <button
-                                            type="button"
-                                            onClick={() =>
-                                                setFiles((current) =>
-                                                    current.filter(
-                                                        (_, position) =>
-                                                            position !== index,
-                                                    ),
-                                                )
-                                            }
-                                        >
-                                            <X className="size-3" />
-                                        </button>
-                                    </Badge>
-                                ))}
-                                {informationIds.length > 0 && (
-                                    <Badge variant="secondary">
-                                        {informationIds.length} informasi
-                                    </Badge>
-                                )}
-                                {documentIds.length > 0 && (
-                                    <Badge variant="secondary">
-                                        {documentIds.length} dokumen
-                                    </Badge>
-                                )}
-                            </div>
-                        )}
-                        <div className="rounded-xl border bg-background p-2 shadow-sm focus-within:ring-2 focus-within:ring-ring/30">
-                            <Textarea
-                                value={prompt}
-                                onChange={(event) =>
-                                    setPrompt(event.target.value)
-                                }
-                                placeholder="Jelaskan berita yang ingin dibuat atau tambahkan arahan editorial…"
-                                className="min-h-20 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0"
-                            />
-                            <div className="flex items-center justify-between border-t pt-2">
-                                <div className="flex gap-1">
-                                    <input
-                                        ref={fileInput}
-                                        type="file"
-                                        multiple
-                                        className="hidden"
-                                        accept=".pdf,.docx,.xlsx,.xlsm,.csv,.txt,.jpg,.jpeg,.png"
-                                        onChange={(event) => {
-                                            addFiles(event.target.files);
-                                            event.target.value = '';
-                                        }}
-                                    />
-                                    <Button
-                                        variant="ghost"
-                                        size="icon-sm"
-                                        onClick={() =>
-                                            fileInput.current?.click()
-                                        }
-                                        title="Unggah file"
-                                    >
-                                        <Paperclip />
-                                    </Button>
-                                    <Dialog
-                                        open={picker}
-                                        onOpenChange={setPicker}
-                                    >
-                                        <DialogTrigger asChild>
+                    <div
+                        className={`pointer-events-none absolute inset-x-0 z-20 px-4 ${conversationReadOnly ? 'hidden' : ''} ${conversationStarted ? 'bottom-0 bg-gradient-to-t from-background via-background/95 to-transparent pt-12 pb-3' : 'top-[53%] pt-4'}`}
+                    >
+                        <div className="pointer-events-auto mx-auto w-full max-w-4xl space-y-2">
+                            {questions.length === 0 && (
+                                <>
+                                    <div className="flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                                        {actions.map((action) => (
                                             <Button
-                                                variant="ghost"
-                                                size="icon-sm"
-                                                title="Pilih sumber"
-                                            >
-                                                <FolderSearch />
-                                            </Button>
-                                        </DialogTrigger>
-                                        <DialogContent className="max-h-[80vh] sm:max-w-2xl">
-                                            <DialogHeader>
-                                                <DialogTitle>
-                                                    Pilih sumber yang disetujui
-                                                </DialogTitle>
-                                                <DialogDescription>
-                                                    Hanya sumber terpilih yang
-                                                    dipakai untuk membuat
-                                                    berita.
-                                                </DialogDescription>
-                                            </DialogHeader>
-                                            <Input
-                                                value={query}
-                                                onChange={(event) =>
-                                                    setQuery(event.target.value)
+                                                key={action}
+                                                variant="outline"
+                                                size="sm"
+                                                className="rounded-full"
+                                                onClick={() =>
+                                                    handleQuickAction(action)
                                                 }
-                                                placeholder="Cari sumber…"
-                                            />
-                                            <Tabs defaultValue="information">
-                                                <TabsList>
-                                                    <TabsTrigger value="information">
-                                                        Informasi
-                                                    </TabsTrigger>
-                                                    <TabsTrigger value="documents">
-                                                        Dokumen
-                                                    </TabsTrigger>
-                                                    <TabsTrigger value="manual">
-                                                        Fakta manual
-                                                    </TabsTrigger>
-                                                </TabsList>
-                                                <TabsContent
-                                                    value="information"
-                                                    className="max-h-[48vh] space-y-2 overflow-y-auto"
+                                            >
+                                                {action}
+                                            </Button>
+                                        ))}
+                                        {prompt.trim() && (
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                className="rounded-full"
+                                                disabled={findingRelated}
+                                                onClick={findRelated}
+                                            >
+                                                {findingRelated ? (
+                                                    <LoaderCircle className="animate-spin" />
+                                                ) : (
+                                                    <Sparkles />
+                                                )}
+                                                Cari informasi terkait
+                                            </Button>
+                                        )}
+                                    </div>
+                                    {(workflowMode ||
+                                        files.length > 0 ||
+                                        hasSources) && (
+                                        <Collapsible
+                                            open={attachmentsOpen}
+                                            onOpenChange={setAttachmentsOpen}
+                                        >
+                                            <CollapsibleTrigger asChild>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="max-w-full"
                                                 >
-                                                    {shownInformation.map(
-                                                        (item) => (
-                                                            <label
-                                                                key={item.id}
-                                                                className="flex cursor-pointer gap-3 rounded-lg border p-3 hover:bg-muted/50"
+                                                    <Paperclip className="size-4" />
+                                                    {files.length +
+                                                        informationIds.length +
+                                                        documentIds.length}{' '}
+                                                    sumber terlampir{' '}
+                                                    {attachmentsOpen ? (
+                                                        <ChevronDown className="size-4" />
+                                                    ) : (
+                                                        <ChevronRight className="size-4" />
+                                                    )}
+                                                </Button>
+                                            </CollapsibleTrigger>
+                                            <CollapsibleContent className="max-h-40 overflow-y-auto">
+                                                <div className="flex flex-wrap gap-2 py-2">
+                                                    {workflowMode && (
+                                                        <Badge
+                                                            variant="outline"
+                                                            className="gap-1.5 border-primary/30 bg-primary/5 py-1.5 text-primary"
+                                                        >
+                                                            {workflowMode ===
+                                                            'news'
+                                                                ? 'Buat berita'
+                                                                : workflowMode ===
+                                                                    'extract'
+                                                                  ? 'Ekstrak informasi'
+                                                                  : 'Cari sumber'}
+                                                            <button
+                                                                type="button"
+                                                                aria-label="Hapus mode"
+                                                                onClick={() =>
+                                                                    setWorkflowMode(
+                                                                        null,
+                                                                    )
+                                                                }
                                                             >
-                                                                <Checkbox
-                                                                    checked={informationIds.includes(
-                                                                        item.id,
-                                                                    )}
-                                                                    onCheckedChange={() =>
-                                                                        toggle(
-                                                                            informationIds,
-                                                                            item.id,
-                                                                            setInformationIds,
+                                                                <X className="size-3" />
+                                                            </button>
+                                                        </Badge>
+                                                    )}
+                                                    {files.map(
+                                                        (file, index) => (
+                                                            <Badge
+                                                                key={`${file.name}-${index}`}
+                                                                variant="secondary"
+                                                                className="gap-1 py-1.5"
+                                                            >
+                                                                <Paperclip className="size-3" />
+                                                                <span className="max-w-40 truncate">
+                                                                    {file.name}
+                                                                </span>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() =>
+                                                                        setFiles(
+                                                                            (
+                                                                                current,
+                                                                            ) =>
+                                                                                current.filter(
+                                                                                    (
+                                                                                        _,
+                                                                                        position,
+                                                                                    ) =>
+                                                                                        position !==
+                                                                                        index,
+                                                                                ),
                                                                         )
                                                                     }
-                                                                />
-                                                                <span>
-                                                                    <span className="block text-sm font-medium">
-                                                                        {
-                                                                            item.title
-                                                                        }
-                                                                    </span>
-                                                                    <span className="line-clamp-2 text-xs text-muted-foreground">
-                                                                        {
-                                                                            item.summary
-                                                                        }
-                                                                    </span>
-                                                                    <span className="text-xs text-primary">
-                                                                        {
-                                                                            item
-                                                                                .document
-                                                                                .original_name
-                                                                        }
-                                                                    </span>
-                                                                </span>
-                                                            </label>
+                                                                >
+                                                                    <X className="size-3" />
+                                                                </button>
+                                                            </Badge>
                                                         ),
                                                     )}
-                                                </TabsContent>
-                                                <TabsContent
-                                                    value="documents"
-                                                    className="max-h-[48vh] space-y-2 overflow-y-auto"
-                                                >
-                                                    {documents.map(
-                                                        (document) => (
-                                                            <label
-                                                                key={
-                                                                    document.id
-                                                                }
-                                                                className="flex cursor-pointer items-center gap-3 rounded-lg border p-3 hover:bg-muted/50"
+                                                    {informationIds.map(
+                                                        (id) => {
+                                                            const information =
+                                                                informationItems.find(
+                                                                    (item) =>
+                                                                        item.id ===
+                                                                        id,
+                                                                );
+
+                                                            return (
+                                                                <Badge
+                                                                    key={`information-${id}`}
+                                                                    variant="secondary"
+                                                                    className="gap-1 py-1.5"
+                                                                >
+                                                                    <FolderSearch className="size-3" />
+                                                                    <span className="max-w-48 truncate">
+                                                                        {information?.title ??
+                                                                            `Informasi #${id}`}
+                                                                    </span>
+                                                                    <button
+                                                                        type="button"
+                                                                        aria-label="Hapus informasi"
+                                                                        onClick={() =>
+                                                                            toggle(
+                                                                                informationIds,
+                                                                                id,
+                                                                                setInformationIds,
+                                                                            )
+                                                                        }
+                                                                    >
+                                                                        <X className="size-3" />
+                                                                    </button>
+                                                                </Badge>
+                                                            );
+                                                        },
+                                                    )}
+                                                    {documentIds.map((id) => {
+                                                        const document =
+                                                            documents.find(
+                                                                (item) =>
+                                                                    item.id ===
+                                                                    id,
+                                                            );
+
+                                                        return (
+                                                            <Badge
+                                                                key={`document-${id}`}
+                                                                variant="secondary"
+                                                                className="gap-1 py-1.5"
                                                             >
-                                                                <Checkbox
-                                                                    checked={documentIds.includes(
-                                                                        document.id,
-                                                                    )}
-                                                                    onCheckedChange={() =>
+                                                                <FileText className="size-3" />
+                                                                <span className="max-w-48 truncate">
+                                                                    {document?.original_name ??
+                                                                        `Dokumen #${id}`}
+                                                                </span>
+                                                                <button
+                                                                    type="button"
+                                                                    aria-label="Hapus dokumen"
+                                                                    onClick={() =>
                                                                         toggle(
                                                                             documentIds,
-                                                                            document.id,
+                                                                            id,
                                                                             setDocumentIds,
                                                                         )
                                                                     }
-                                                                />
-                                                                <FileText className="size-4" />
-                                                                <span className="text-sm font-medium">
-                                                                    {
-                                                                        document.original_name
-                                                                    }
-                                                                </span>
-                                                            </label>
-                                                        ),
-                                                    )}
-                                                </TabsContent>
-                                                <TabsContent value="manual">
-                                                    <div className="space-y-2 rounded-lg border p-3">
-                                                        <p className="text-sm font-medium">
-                                                            Fakta yang diberikan
-                                                            moderator
-                                                        </p>
-                                                        <p className="text-xs text-muted-foreground">
-                                                            Fakta ini akan
-                                                            ditandai sebagai
-                                                            user-provided dan
-                                                            tidak dianggap
-                                                            berasal dari
-                                                            dokumen.
-                                                        </p>
-                                                        <Textarea
-                                                            value={manualFact}
-                                                            onChange={(event) =>
-                                                                setManualFact(
-                                                                    event.target
-                                                                        .value,
-                                                                )
-                                                            }
-                                                            placeholder="Contoh: Kegiatan akan berlangsung pada 20 September 2026."
-                                                        />
-                                                    </div>
-                                                </TabsContent>
-                                            </Tabs>
-                                            <Button
-                                                onClick={() => setPicker(false)}
-                                            >
-                                                Gunakan sumber terpilih
-                                            </Button>
-                                        </DialogContent>
-                                    </Dialog>
-                                </div>
-                                <Button
-                                    size="icon"
-                                    disabled={
-                                        busy ||
-                                        processingFiles ||
-                                        (!files.length &&
-                                            !hasSources &&
-                                            !newsSession &&
-                                            !prompt.trim() &&
-                                            !manualFact.trim())
-                                    }
-                                    onClick={() => submit()}
-                                >
-                                    {busy ? (
-                                        <LoaderCircle className="animate-spin" />
-                                    ) : (
-                                        <Send />
+                                                                >
+                                                                    <X className="size-3" />
+                                                                </button>
+                                                            </Badge>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </CollapsibleContent>
+                                        </Collapsible>
                                     )}
-                                </Button>
-                            </div>
-                        </div>
-                        {(errors.document ||
-                            errors.documents ||
-                            errors.generation) && (
-                            <p className="text-sm text-danger-text">
-                                {errors.document ||
-                                    errors.documents ||
-                                    errors.generation}
-                            </p>
-                        )}
-                        <p className="text-xs text-muted-foreground">
-                            Maksimum 5 file baru · dokumen, spreadsheet, teks,
-                            dan gambar OCR
-                        </p>
-                    </div>
-                </section>
-                <section className="flex min-h-0 flex-1 flex-col bg-background">
-                    {editedArticle ? (
-                        <>
-                            <header className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4">
-                                <div>
-                                    <div className="flex items-center gap-2">
-                                        <h2 className="font-semibold">
-                                            Pratinjau berita
-                                        </h2>
-                                        <Badge variant="secondary">
-                                            DRAF AI
-                                        </Badge>
-                                        {editedArticle.quality && (
-                                            <Badge
-                                                variant={
-                                                    editedArticle.quality
-                                                        .publish_blocked
-                                                        ? 'destructive'
-                                                        : 'outline'
-                                                }
+                                    <div
+                                        className={`grid items-center gap-1 rounded-2xl border bg-card p-1.5 shadow-lg focus-within:ring-2 focus-within:ring-ring/30 ${composerMultiline ? 'grid-cols-[1fr_auto]' : 'grid-cols-[auto_1fr_auto]'}`}
+                                    >
+                                        <Textarea
+                                            ref={composerInput}
+                                            value={prompt}
+                                            rows={1}
+                                            onChange={(event) => {
+                                                setPrompt(event.target.value);
+                                                resizeComposer(
+                                                    event.currentTarget,
+                                                );
+                                            }}
+                                            placeholder="Tulis instruksi atau seret file ke percakapan…"
+                                            className={`min-h-9 resize-none rounded-none border-0 bg-transparent px-3 py-1.5 leading-6 shadow-none focus-visible:border-transparent focus-visible:ring-0 dark:bg-transparent ${composerMultiline ? 'col-span-2 col-start-1 row-start-1' : 'col-start-2 row-start-1'}`}
+                                        />
+                                        <div className="contents">
+                                            <div
+                                                className={`flex items-center gap-1 ${composerMultiline ? 'col-start-1 row-start-2' : 'col-start-1 row-start-1'}`}
                                             >
-                                                Kualitas{' '}
-                                                {editedArticle.quality.overall_score.toFixed(
-                                                    1,
+                                                <input
+                                                    ref={fileInput}
+                                                    type="file"
+                                                    multiple
+                                                    className="hidden"
+                                                    accept=".pdf,.docx,.xlsx,.xlsm,.csv,.txt,.jpg,.jpeg,.png"
+                                                    onChange={(event) => {
+                                                        addFiles(
+                                                            event.target.files,
+                                                        );
+                                                        event.target.value = '';
+                                                    }}
+                                                />
+                                                <DropdownMenu>
+                                                    <DropdownMenuTrigger
+                                                        asChild
+                                                    >
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="rounded-full"
+                                                            title="Tambahkan sumber"
+                                                            aria-label="Tambahkan sumber"
+                                                        >
+                                                            <Plus />
+                                                        </Button>
+                                                    </DropdownMenuTrigger>
+                                                    <DropdownMenuContent
+                                                        side="top"
+                                                        align="start"
+                                                        className="w-56"
+                                                    >
+                                                        <DropdownMenuItem
+                                                            onSelect={() => {
+                                                                setWorkflowMode(
+                                                                    'extract',
+                                                                );
+                                                                fileInput.current?.click();
+                                                            }}
+                                                        >
+                                                            <Paperclip /> Unggah
+                                                            file
+                                                        </DropdownMenuItem>
+                                                        <DropdownMenuItem
+                                                            onSelect={() =>
+                                                                setPicker(true)
+                                                            }
+                                                        >
+                                                            <FolderSearch />{' '}
+                                                            Pilih sumber
+                                                        </DropdownMenuItem>
+                                                    </DropdownMenuContent>
+                                                </DropdownMenu>
+                                                {picker && (
+                                                    <SourcePicker
+                                                        information={
+                                                            informationItems
+                                                        }
+                                                        documents={documents}
+                                                        informationIds={
+                                                            informationIds
+                                                        }
+                                                        documentIds={
+                                                            documentIds
+                                                        }
+                                                        pendingInformation={
+                                                            pendingInformation
+                                                        }
+                                                        onClose={() =>
+                                                            setPicker(false)
+                                                        }
+                                                        onApply={(
+                                                            info,
+                                                            docs,
+                                                        ) => {
+                                                            setInformationIds(
+                                                                info,
+                                                            );
+                                                            setDocumentIds(
+                                                                docs,
+                                                            );
+                                                            setPicker(false);
+                                                        }}
+                                                    />
                                                 )}
-                                                %
-                                            </Badge>
-                                        )}
-                                    </div>
-                                    <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
-                                        <span className="flex items-center gap-1">
-                                            <Clock3 className="size-3" />
-                                            Terakhir dibuat{' '}
-                                            {editedArticle.updated_at
-                                                ? new Date(
-                                                      editedArticle.updated_at,
-                                                  ).toLocaleString('id-ID')
-                                                : 'baru saja'}
-                                        </span>
-                                        <span>
-                                            Versi {editedArticle.version ?? 1}
-                                        </span>
-                                    </div>
-                                </div>
-                                <div className="flex gap-2">
-                                    {editMode ? (
-                                        <>
-                                            <Button
-                                                variant="outline"
-                                                onClick={() => {
-                                                    setEditedArticle(
-                                                        generatedArticle ??
-                                                            null,
-                                                    );
-                                                    setEditMode(false);
-                                                }}
-                                            >
-                                                Batal
-                                            </Button>
-                                            <Button onClick={saveDraft}>
-                                                <Save /> Simpan perubahan
-                                            </Button>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Button
-                                                variant="outline"
-                                                onClick={() =>
-                                                    setEditMode(true)
-                                                }
-                                            >
-                                                <Edit3 /> Edit
-                                            </Button>
-                                            {!editedArticle.reviewed_at && (
-                                                <Button
-                                                    variant="secondary"
-                                                    onClick={markReviewed}
-                                                >
-                                                    Tandai sudah ditinjau
-                                                </Button>
-                                            )}
-                                            <AlertDialog>
-                                                <AlertDialogTrigger asChild>
+
+                                                {(composerOverflowing ||
+                                                    composerExpanded) && (
                                                     <Button
-                                                        disabled={
-                                                            !editedArticle.reviewed_at ||
-                                                            Boolean(
-                                                                editedArticle
-                                                                    .quality
-                                                                    ?.publish_blocked,
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="icon-sm"
+                                                        title={
+                                                            composerExpanded
+                                                                ? 'Ciutkan kotak pesan'
+                                                                : 'Perbesar kotak pesan'
+                                                        }
+                                                        aria-label={
+                                                            composerExpanded
+                                                                ? 'Ciutkan kotak pesan'
+                                                                : 'Perbesar kotak pesan'
+                                                        }
+                                                        onClick={() =>
+                                                            setComposerExpanded(
+                                                                (current) =>
+                                                                    !current,
                                                             )
                                                         }
                                                     >
-                                                        Publikasikan
+                                                        {composerExpanded ? (
+                                                            <Minimize2 />
+                                                        ) : (
+                                                            <Maximize2 />
+                                                        )}
                                                     </Button>
-                                                </AlertDialogTrigger>
-                                                <AlertDialogContent>
-                                                    <AlertDialogHeader>
-                                                        <AlertDialogTitle>
-                                                            Publikasikan berita
-                                                            ini?
-                                                        </AlertDialogTitle>
-                                                        <AlertDialogDescription>
-                                                            Anda mengonfirmasi
-                                                            bahwa fakta, sumber,
-                                                            dan versi artikel
-                                                            ini telah ditinjau.
-                                                            Tindakan ini tidak
-                                                            dilakukan otomatis
-                                                            oleh AI.
-                                                        </AlertDialogDescription>
-                                                    </AlertDialogHeader>
-                                                    <AlertDialogFooter>
-                                                        <AlertDialogCancel>
-                                                            Kembali meninjau
-                                                        </AlertDialogCancel>
-                                                        <AlertDialogAction
-                                                            onClick={
-                                                                publishDraft
-                                                            }
-                                                        >
-                                                            Ya, publikasikan
-                                                        </AlertDialogAction>
-                                                    </AlertDialogFooter>
-                                                </AlertDialogContent>
-                                            </AlertDialog>
-                                        </>
-                                    )}
-                                </div>
-                            </header>
-                            {editMode && (
-                                <div className="flex flex-wrap items-center gap-1 border-b bg-card px-5 py-2">
-                                    {[
-                                        ['bold', Bold],
-                                        ['italic', Italic],
-                                        ['underline', Underline],
-                                        ['justifyLeft', AlignLeft],
-                                        ['justifyCenter', AlignCenter],
-                                        ['justifyRight', AlignRight],
-                                        ['insertUnorderedList', List],
-                                        ['insertOrderedList', ListOrdered],
-                                        ['undo', Undo2],
-                                        ['redo', Redo2],
-                                    ].map(([command, Icon]) => (
-                                        <Button
-                                            key={command as string}
-                                            type="button"
-                                            variant="ghost"
-                                            size="icon-sm"
-                                            onMouseDown={(event) =>
-                                                event.preventDefault()
-                                            }
-                                            onClick={() =>
-                                                editorCommand(command as string)
-                                            }
-                                        >
-                                            <Icon className="size-4" />
-                                        </Button>
-                                    ))}
-                                    <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="sm"
-                                        disabled
-                                        title="Penyisipan gambar akan menggunakan pustaka media"
-                                    >
-                                        <ImagePlus /> Gambar
-                                    </Button>
-                                </div>
-                            )}
-                            <div className="min-h-0 flex-1 overflow-y-auto p-5 lg:p-8">
-                                <article className="mx-auto max-w-3xl rounded-xl border bg-card p-6 shadow-sm md:p-10">
-                                    <input
-                                        ref={newsImageInput}
-                                        type="file"
-                                        accept="image/jpeg,image/png,image/webp"
-                                        className="hidden"
-                                        onChange={(event) => {
-                                            uploadNewsImage(
-                                                event.target.files?.[0],
-                                            );
-                                            event.target.value = '';
-                                        }}
-                                    />
-                                    <button
-                                        type="button"
-                                        className="relative mb-6 flex aspect-[16/7] w-full items-center justify-center overflow-hidden rounded-xl border border-dashed bg-muted/30 text-sm text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
-                                        disabled={!editMode}
-                                        onClick={() =>
-                                            newsImageInput.current?.click()
-                                        }
-                                    >
-                                        {editedArticle.image ? (
-                                            <>
-                                                <img
-                                                    src={editedArticle.image}
-                                                    alt="Gambar berita"
-                                                    className="absolute inset-0 size-full object-cover"
-                                                />
-                                                {editMode && (
-                                                    <span className="absolute inset-0 flex items-center justify-center bg-background/70 opacity-0 transition-opacity hover:opacity-100">
-                                                        <ImagePlus className="mr-2 size-5" />
-                                                        Ganti gambar
-                                                    </span>
                                                 )}
-                                            </>
-                                        ) : (
-                                            <>
-                                                <ImagePlus className="mr-2 size-5" />
-                                                Unggah gambar berita
-                                            </>
-                                        )}
-                                    </button>
-                                    <div className="mb-5 flex flex-wrap gap-2">
-                                        {editedArticle.category && (
-                                            <Badge>
-                                                {editedArticle.category}
-                                            </Badge>
-                                        )}
-                                        {editedArticle.labels.map((label) => (
-                                            <Badge
-                                                key={label}
-                                                variant="secondary"
-                                            >
-                                                {label}
-                                            </Badge>
-                                        ))}
-                                    </div>
-                                    {editMode ? (
-                                        <Input
-                                            value={editedArticle.headline}
-                                            onChange={(event) =>
-                                                setEditedArticle({
-                                                    ...editedArticle,
-                                                    headline:
-                                                        event.target.value,
-                                                })
-                                            }
-                                            className="h-auto border-0 px-0 text-3xl leading-tight font-semibold shadow-none focus-visible:ring-0"
-                                        />
-                                    ) : (
-                                        <h1 className="text-3xl leading-tight font-semibold">
-                                            {editedArticle.headline}
-                                        </h1>
-                                    )}
-                                    <p className="mt-3 text-xs text-muted-foreground">
-                                        Oleh Moderator ApaKhabar · Versi{' '}
-                                        {editedArticle.version ?? 1}
-                                    </p>
-                                    <div className="my-6 h-px bg-border" />
-                                    <div className="space-y-5 leading-8">
-                                        {[
-                                            editedArticle.lead,
-                                            ...editedArticle.body,
-                                        ].map((paragraph, index) =>
-                                            editMode ? (
-                                                <div
-                                                    key={index}
-                                                    contentEditable
-                                                    suppressContentEditableWarning
-                                                    className={`${index === 0 ? 'text-lg font-medium' : ''} rounded-md outline-none focus:ring-2 focus:ring-ring/30`}
-                                                    onBlur={(event) => {
-                                                        const value =
-                                                            event.currentTarget
-                                                                .textContent ??
-                                                            '';
-
-                                                        if (index === 0) {
-                                                            setEditedArticle({
-                                                                ...editedArticle,
-                                                                lead: value,
-                                                            });
-                                                        } else {
-                                                            const body = [
-                                                                ...editedArticle.body,
-                                                            ];
-                                                            body[index - 1] =
-                                                                value;
-                                                            setEditedArticle({
-                                                                ...editedArticle,
-                                                                body,
-                                                            });
-                                                        }
-                                                    }}
-                                                >
-                                                    {paragraph}
-                                                </div>
-                                            ) : (
-                                                <p
-                                                    key={index}
-                                                    className={
-                                                        index === 0
-                                                            ? 'text-lg font-medium'
-                                                            : ''
-                                                    }
-                                                >
-                                                    {paragraph}
-                                                    {editedArticle
-                                                        .selected_sources
-                                                        .length > 0 && (
-                                                        <sup className="ml-1 text-primary">
-                                                            [
-                                                            {(index %
-                                                                editedArticle
-                                                                    .selected_sources
-                                                                    .length) +
-                                                                1}
-                                                            ]
-                                                        </sup>
-                                                    )}
-                                                </p>
-                                            ),
-                                        )}
-                                    </div>
-                                    <Collapsible
-                                        open={sourcesOpen}
-                                        onOpenChange={setSourcesOpen}
-                                        className="mt-8 border-t pt-6"
-                                    >
-                                        <CollapsibleTrigger asChild>
+                                            </div>
                                             <Button
-                                                variant="ghost"
-                                                className="w-full justify-between"
-                                            >
-                                                Sumber digunakan (
-                                                {
-                                                    editedArticle
-                                                        .selected_sources.length
+                                                size="icon"
+                                                className={`rounded-full ${composerMultiline ? 'col-start-2 row-start-2' : 'col-start-3 row-start-1'}`}
+                                                disabled={
+                                                    busy ||
+                                                    processingFiles ||
+                                                    (!files.length &&
+                                                        !hasSources &&
+                                                        !newsSession &&
+                                                        !prompt.trim() &&
+                                                        !manualFact.trim())
                                                 }
-                                                )
-                                                {sourcesOpen ? (
-                                                    <ChevronDown />
+                                                onClick={() => submit()}
+                                            >
+                                                {busy ? (
+                                                    <LoaderCircle className="animate-spin" />
                                                 ) : (
-                                                    <ChevronRight />
+                                                    <ArrowUp />
                                                 )}
                                             </Button>
-                                        </CollapsibleTrigger>
-                                        <CollapsibleContent className="mt-3 space-y-2">
-                                            {editedArticle.selected_sources.map(
-                                                (source, sourceIndex) => (
-                                                    <Collapsible
-                                                        key={source.id}
-                                                        className="rounded-lg border bg-muted/20 p-3"
-                                                    >
-                                                        <CollapsibleTrigger className="flex w-full items-center gap-3 text-left">
-                                                            <FileText className="size-4 text-primary" />
-                                                            <span className="min-w-0 flex-1">
-                                                                <span className="block truncate text-sm font-medium">
-                                                                    {sourceIndex +
-                                                                        1}
-                                                                    .{' '}
-                                                                    {
-                                                                        source.document
-                                                                    }
-                                                                </span>
-                                                                <span className="text-xs text-muted-foreground">
-                                                                    {source.evidence
-                                                                        .map(
-                                                                            (
-                                                                                item,
-                                                                            ) =>
-                                                                                item.source,
-                                                                        )
-                                                                        .join(
-                                                                            ', ',
-                                                                        ) ||
-                                                                        source.title}
-                                                                </span>
-                                                            </span>
-                                                            <ChevronDown className="size-4" />
-                                                        </CollapsibleTrigger>
-                                                        <CollapsibleContent className="mt-3 space-y-2 border-t pt-3">
-                                                            {source.evidence.map(
-                                                                (
-                                                                    evidence,
-                                                                    index,
-                                                                ) => (
-                                                                    <p
-                                                                        key={
-                                                                            index
-                                                                        }
-                                                                        className="text-xs leading-5 text-muted-foreground"
-                                                                    >
-                                                                        <strong>
-                                                                            {
-                                                                                evidence.source
-                                                                            }
-                                                                        </strong>
-                                                                        : “
-                                                                        {
-                                                                            evidence.quote
-                                                                        }
-                                                                        ”
-                                                                    </p>
-                                                                ),
-                                                            )}
-                                                        </CollapsibleContent>
-                                                    </Collapsible>
-                                                ),
-                                            )}
-                                        </CollapsibleContent>
-                                    </Collapsible>
-                                </article>
-                            </div>
-                        </>
-                    ) : (
-                        <div className="flex min-h-full flex-1 items-center justify-center p-5">
-                            <div className="max-w-md text-center">
-                                <div className="mx-auto mb-5 flex size-16 items-center justify-center rounded-2xl border bg-card text-primary shadow-sm">
-                                    <Sparkles className="size-7" />
+                                        </div>
+                                    </div>
+                                    {(errors.document ||
+                                        errors.documents ||
+                                        errors.generation) && (
+                                        <p className="text-sm text-danger-text">
+                                            {errors.document ||
+                                                errors.documents ||
+                                                errors.generation}
+                                        </p>
+                                    )}
+                                    <p className="text-xs text-muted-foreground">
+                                        Maksimum 5 file baru · dokumen,
+                                        spreadsheet, teks, dan gambar OCR
+                                    </p>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </section>
+                {editedArticle && previewOpen && (
+                    <PreviewFrame
+                        onClose={() => setPreviewOpen(false)}
+                        width={previewWidth}
+                        onResizeStart={(event) => {
+                            event.preventDefault();
+                            setResizingPreview(true);
+                        }}
+                    >
+                        <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border/50 bg-card/80 px-5 py-4 backdrop-blur-xl">
+                            <div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <h2 className="font-semibold">
+                                        Pratinjau berita
+                                    </h2>
+                                    <Badge variant="secondary">DRAF AI</Badge>
+                                    <QualityScoreBadge
+                                        quality={editedArticle.quality}
+                                    />
                                 </div>
-                                <h2 className="text-xl font-semibold">
-                                    Draf berita akan muncul di sini
-                                </h2>
-                                <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                                    Tambahkan arahan, unggah hingga lima file,
-                                    atau pilih informasi dan dokumen tersimpan.
-                                </p>
+                                <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
+                                    <span className="flex items-center gap-1">
+                                        <Clock3 className="size-3" />
+                                        Terakhir dibuat{' '}
+                                        {editedArticle.updated_at
+                                            ? new Date(
+                                                  editedArticle.updated_at,
+                                              ).toLocaleString('id-ID')
+                                            : 'baru saja'}
+                                    </span>
+                                    <span>
+                                        Versi {editedArticle.version ?? 1}
+                                    </span>
+                                </div>
+                            </div>
+                            <div className="flex gap-2">
+                                {editMode || draftDirty ? (
+                                    <>
+                                        <Button
+                                            variant="outline"
+                                            onClick={() => {
+                                                setEditedArticle(
+                                                    generatedArticle ?? null,
+                                                );
+                                                setEditMode(false);
+                                            }}
+                                        >
+                                            Batal
+                                        </Button>
+                                        <Button onClick={saveDraft}>
+                                            <Save /> Simpan perubahan
+                                        </Button>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Button
+                                            variant="outline"
+                                            disabled={conversationReadOnly}
+                                            onClick={() => setEditMode(true)}
+                                        >
+                                            <Edit3 /> Edit
+                                        </Button>
+                                        <Button
+                                            disabled={
+                                                conversationReadOnly ||
+                                                publishing ||
+                                                Boolean(
+                                                    editedArticle.quality
+                                                        ?.publish_blocked,
+                                                )
+                                            }
+                                            onClick={publishDraft}
+                                        >
+                                            Publikasikan
+                                        </Button>
+                                    </>
+                                )}
                                 <Button
-                                    variant="outline"
-                                    className="mt-5"
-                                    onClick={() => setPicker(true)}
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => setPreviewOpen(false)}
+                                    title="Tutup pratinjau"
+                                    aria-label="Tutup pratinjau"
                                 >
-                                    <FolderSearch />
-                                    Pilih sumber
+                                    <PanelRightClose />
                                 </Button>
                             </div>
+                        </header>
+                        <div className="min-h-0 flex-1 overflow-y-auto bg-muted/25 p-5 lg:p-8">
+                            <article className="mx-auto max-w-3xl rounded-2xl bg-background p-6 shadow-lg ring-1 ring-border/50 md:p-10">
+                                <input
+                                    ref={newsImageInput}
+                                    type="file"
+                                    accept="image/jpeg,image/png,image/webp"
+                                    className="hidden"
+                                    onChange={(event) => {
+                                        uploadNewsImage(
+                                            event.target.files?.[0],
+                                        );
+                                        event.target.value = '';
+                                    }}
+                                />
+                                <button
+                                    type="button"
+                                    className="relative mb-6 flex aspect-[16/7] w-full items-center justify-center overflow-hidden rounded-xl border border-dashed bg-muted/30 text-sm text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
+                                    disabled={!editMode}
+                                    onClick={() =>
+                                        newsImageInput.current?.click()
+                                    }
+                                >
+                                    {editedArticle.image ? (
+                                        <>
+                                            <img
+                                                src={editedArticle.image}
+                                                alt="Gambar berita"
+                                                className="absolute inset-0 size-full object-cover"
+                                            />
+                                            {editMode && (
+                                                <span className="absolute inset-0 flex items-center justify-center bg-background/70 opacity-0 transition-opacity hover:opacity-100">
+                                                    <ImagePlus className="mr-2 size-5" />
+                                                    Ganti gambar
+                                                </span>
+                                            )}
+                                        </>
+                                    ) : (
+                                        <>
+                                            <ImagePlus className="mr-2 size-5" />
+                                            Unggah gambar berita
+                                        </>
+                                    )}
+                                </button>
+                                <div className="mb-5 flex flex-wrap gap-2">
+                                    {editedArticle.category && (
+                                        <Badge>{editedArticle.category}</Badge>
+                                    )}
+                                    {editedArticle.labels.map((label) => (
+                                        <Badge key={label} variant="secondary">
+                                            {label}
+                                        </Badge>
+                                    ))}
+                                </div>
+                                {editMode ? (
+                                    <Input
+                                        value={editedArticle.headline}
+                                        onChange={(event) =>
+                                            setEditedArticle({
+                                                ...editedArticle,
+                                                headline: event.target.value,
+                                            })
+                                        }
+                                        className="h-auto border-0 px-0 text-3xl leading-tight font-semibold shadow-none focus-visible:ring-0"
+                                    />
+                                ) : (
+                                    <h1 className="text-3xl leading-tight font-semibold">
+                                        {editedArticle.headline}
+                                    </h1>
+                                )}
+                                <p className="mt-3 text-xs text-muted-foreground">
+                                    Oleh Moderator ApaKhabar · Versi{' '}
+                                    {editedArticle.version ?? 1}
+                                </p>
+                                <div className="my-6 h-px bg-border" />
+                                <p
+                                    className="mb-3 text-xs text-muted-foreground"
+                                    aria-live="polite"
+                                >
+                                    {wordCount} kata · Maksimal 250 kata untuk
+                                    draf AI
+                                </p>
+                                {editMode ? (
+                                    <Textarea
+                                        aria-label="Isi berita"
+                                        value={articleContent}
+                                        onChange={(event) =>
+                                            setEditedArticle({
+                                                ...editedArticle,
+                                                lead: '',
+                                                body: [event.target.value],
+                                            })
+                                        }
+                                        className="min-h-[50dvh] resize-y border-0 px-0 text-base leading-8 shadow-none"
+                                    />
+                                ) : (
+                                    <div className="leading-8 break-words whitespace-pre-wrap">
+                                        {articleContent}
+                                    </div>
+                                )}
+                                <Collapsible
+                                    open={sourcesOpen}
+                                    onOpenChange={setSourcesOpen}
+                                    className="mt-8 border-t pt-6"
+                                >
+                                    <CollapsibleTrigger asChild>
+                                        <Button
+                                            variant="ghost"
+                                            className="w-full justify-between"
+                                        >
+                                            Sumber digunakan (
+                                            {documentSources.length} dokumen ·{' '}
+                                            {documentSources.reduce(
+                                                (count, group) =>
+                                                    count +
+                                                    group.information.length,
+                                                0,
+                                            )}{' '}
+                                            informasi)
+                                            {sourcesOpen ? (
+                                                <ChevronDown />
+                                            ) : (
+                                                <ChevronRight />
+                                            )}
+                                        </Button>
+                                    </CollapsibleTrigger>
+                                    <CollapsibleContent className="mt-3 space-y-2">
+                                        {documentSources.map((group, index) => (
+                                            <Collapsible
+                                                key={group.key}
+                                                className="rounded-lg border bg-muted/20 p-3"
+                                            >
+                                                <CollapsibleTrigger className="flex w-full items-center gap-3 text-left">
+                                                    <FileText className="size-4 shrink-0 text-primary" />
+                                                    <span className="min-w-0 flex-1">
+                                                        <span className="block text-sm font-medium break-words">
+                                                            {index + 1}.{' '}
+                                                            {group.document}
+                                                        </span>
+                                                        <span className="text-xs text-muted-foreground">
+                                                            {
+                                                                group
+                                                                    .information
+                                                                    .length
+                                                            }{' '}
+                                                            informasi
+                                                        </span>
+                                                    </span>
+                                                    <ChevronDown className="size-4 shrink-0" />
+                                                </CollapsibleTrigger>
+                                                <CollapsibleContent className="mt-3 space-y-3 border-t pt-3">
+                                                    {group.information.map(
+                                                        (source) => (
+                                                            <div
+                                                                key={source.id}
+                                                                className="space-y-1"
+                                                            >
+                                                                <p className="text-sm font-medium">
+                                                                    {
+                                                                        source.title
+                                                                    }
+                                                                </p>
+                                                                {source.evidence
+                                                                    .length ===
+                                                                    0 && (
+                                                                    <p className="text-xs text-muted-foreground">
+                                                                        Kutipan
+                                                                        bukti
+                                                                        belum
+                                                                        tersedia.
+                                                                    </p>
+                                                                )}
+                                                                {source.evidence.map(
+                                                                    (
+                                                                        evidence,
+                                                                        evidenceIndex,
+                                                                    ) => (
+                                                                        <p
+                                                                            key={
+                                                                                evidenceIndex
+                                                                            }
+                                                                            className="text-xs leading-5 break-words text-muted-foreground"
+                                                                        >
+                                                                            <strong>
+                                                                                {
+                                                                                    evidence.source
+                                                                                }
+                                                                            </strong>
+                                                                            : “
+                                                                            {
+                                                                                evidence.quote
+                                                                            }
+                                                                            ”
+                                                                        </p>
+                                                                    ),
+                                                                )}
+                                                            </div>
+                                                        ),
+                                                    )}
+                                                </CollapsibleContent>
+                                            </Collapsible>
+                                        ))}
+                                    </CollapsibleContent>
+                                </Collapsible>
+                            </article>
                         </div>
-                    )}
-                </section>
+                    </PreviewFrame>
+                )}
             </div>
         </>
     );

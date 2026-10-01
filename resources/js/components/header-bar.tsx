@@ -1,6 +1,6 @@
-import { WebsiteLanguage } from '@/components/website-language';
 import { Link, usePage } from '@inertiajs/react';
 import { Bell, LayoutDashboard, LogIn, LogOut, Menu, Palette, Shield, UserPlus, UserCircle } from 'lucide-react';
+import { WebsiteLanguage } from '@/components/website-language';
 import { useInitials } from '@/hooks/use-initials';
 import { login, register } from '@/routes';
 import adminRoutes from '@/routes/admin';
