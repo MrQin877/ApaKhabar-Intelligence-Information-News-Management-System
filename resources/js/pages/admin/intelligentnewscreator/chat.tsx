@@ -49,10 +49,8 @@ import type {
     Recommendation,
 } from '@/components/intelligent-news/types';
 import { WorkspaceActions } from '@/components/intelligent-news/workspace-actions';
-import {
-    PublishNewsDialog,
-    type PublishPlatformId,
-} from '@/components/publish-news-dialog';
+import { PublishNewsDialog } from '@/components/publish-news-dialog';
+import type { PublishPlatformId } from '@/components/publish-news-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -80,7 +78,9 @@ import {
 
 import { Textarea } from '@/components/ui/textarea';
 import AppLayout from '@/layouts/app-layout';
+import { assistantTurnAnchors } from '@/lib/assistant-turns';
 import { csrfPost } from '@/lib/csrf-request';
+import { groupDocumentSources } from '@/lib/group-document-sources';
 import type { BreadcrumbItem } from '@/types';
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -120,8 +120,10 @@ export default function NewsCreatorAgent({
         const preventFileNavigation = (event: DragEvent) => {
             if (event.dataTransfer?.types.includes('Files')) {
                 event.preventDefault();
-                if (event.type === 'dragover')
+
+                if (event.type === 'dragover') {
                     event.dataTransfer.dropEffect = 'none';
+                }
             }
         };
         const resetDrag = () => {
@@ -133,6 +135,7 @@ export default function NewsCreatorAgent({
         window.addEventListener('drop', resetDrag);
         window.addEventListener('dragend', resetDrag);
         window.addEventListener('blur', resetDrag);
+
         return () => {
             window.removeEventListener('dragover', preventFileNavigation);
             window.removeEventListener('drop', preventFileNavigation);
@@ -430,6 +433,9 @@ export default function NewsCreatorAgent({
               .filter(Boolean)
               .join('\n\n')
         : '';
+    const documentSources = groupDocumentSources(
+        editedArticle?.selected_sources ?? [],
+    );
     const wordCount = articleContent
         .trim()
         .split(/\s+/u)
@@ -455,6 +461,88 @@ export default function NewsCreatorAgent({
     const allQuestionsAnswered =
         questions.length > 0 &&
         questions.every((question) => Boolean(answers[question.field]?.trim()));
+    const { draftMessageId, extractionMessageId } = assistantTurnAnchors(
+        newsSession?.messages ?? [],
+    );
+    const draftCard = generatedArticle && !errors.guidance && (
+        <>
+            <Card className="max-w-[94%] gap-3 border-success-border bg-success-bg py-4 shadow-sm">
+                <CardHeader className="gap-2 px-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <Badge>Draf AI</Badge>
+                        <QualityScoreBadge quality={generatedArticle.quality} />
+                        {generatedArticle.category && (
+                            <Badge variant="outline">
+                                {generatedArticle.category}
+                            </Badge>
+                        )}
+                    </div>
+                    <CardTitle className="text-base leading-6 text-foreground">
+                        {generatedArticle.headline}
+                    </CardTitle>
+                    <p className="line-clamp-3 text-sm leading-6 text-muted-foreground">
+                        {generatedArticle.lead}
+                    </p>
+                </CardHeader>
+                <CardContent className="space-y-3 px-4">
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                        <span>
+                            ±
+                            {Math.max(
+                                1,
+                                Math.ceil(
+                                    (generatedArticle.body
+                                        .join(' ')
+                                        .split(/\s+/).length +
+                                        generatedArticle.lead.split(/\s+/)
+                                            .length) /
+                                        200,
+                                ),
+                            )}{' '}
+                            menit baca
+                        </span>
+                        <span>
+                            {generatedArticle.selected_sources.length} sumber
+                        </span>
+                        <span>Versi {generatedArticle.version ?? 1}</span>
+                    </div>
+                    {generatedArticle.warnings.length > 0 && (
+                        <div className="rounded-lg border border-warning-border bg-warning-bg p-3 text-xs leading-5 text-warning-text">
+                            {generatedArticle.warnings[0]}
+                        </div>
+                    )}
+                    {generatedArticle.quality && (
+                        <QualityScoreBreakdown
+                            quality={generatedArticle.quality}
+                        />
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                                setEditMode(false);
+                                setPreviewOpen(true);
+                            }}
+                        >
+                            Pratinjau
+                        </Button>
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={conversationReadOnly}
+                            onClick={() => {
+                                setEditMode(true);
+                                setPreviewOpen(true);
+                            }}
+                        >
+                            <Edit3 /> Edit
+                        </Button>
+                    </div>
+                </CardContent>
+            </Card>
+        </>
+    );
     const processingFiles = newsSession?.status === 'processing_files';
     const reviewingExtraction = pendingInformation.length > 0;
     const hasSources = informationIds.length > 0 || documentIds.length > 0;
@@ -575,10 +663,12 @@ export default function NewsCreatorAgent({
             (file) =>
                 !/\.(pdf|docx|xlsx|xlsm|csv|txt|jpe?g|png)$/i.test(file.name),
         );
+
         if (unsupported) {
             window.alert(
                 `${unsupported.name}: format tidak didukung. Gunakan PDF, Word (.docx), Excel (.xlsx/.xlsm), CSV, TXT, JPG, atau PNG.`,
             );
+
             return;
         }
 
@@ -782,7 +872,8 @@ export default function NewsCreatorAgent({
             session_id: newsSession.id,
             information_ids: approvedIds,
             document_ids: [],
-            prompt: null,
+            prompt: newsSession.prompt,
+            draft_id: editedArticle?.draft_id ?? null,
             answers: {},
             tone: 'formal',
         });
@@ -831,6 +922,7 @@ export default function NewsCreatorAgent({
         ) {
             return;
         }
+
         setPublishError('');
         setPublishOpen(true);
     }
@@ -847,6 +939,7 @@ export default function NewsCreatorAgent({
         ) {
             return;
         }
+
         setPublishing(true);
         router.post(
             `/admin/news/drafts/${editedArticle.draft_id}/publish`,
@@ -1048,13 +1141,19 @@ export default function NewsCreatorAgent({
                 <SessionPanel sessions={sessions} current={newsSession?.id} />
                 <section
                     onDragEnter={(event) => {
-                        if (!event.dataTransfer.types.includes('Files')) return;
+                        if (!event.dataTransfer.types.includes('Files')) {
+                            return;
+                        }
+
                         event.preventDefault();
                         dragDepth.current += 1;
                         setDraggingFiles(true);
                     }}
                     onDragOver={(event) => {
-                        if (!event.dataTransfer.types.includes('Files')) return;
+                        if (!event.dataTransfer.types.includes('Files')) {
+                            return;
+                        }
+
                         event.preventDefault();
                         event.stopPropagation();
                         event.dataTransfer.dropEffect =
@@ -1063,12 +1162,21 @@ export default function NewsCreatorAgent({
                                 : 'copy';
                     }}
                     onDragLeave={(event) => {
-                        if (!event.dataTransfer.types.includes('Files')) return;
+                        if (!event.dataTransfer.types.includes('Files')) {
+                            return;
+                        }
+
                         dragDepth.current = Math.max(0, dragDepth.current - 1);
-                        if (dragDepth.current === 0) setDraggingFiles(false);
+
+                        if (dragDepth.current === 0) {
+                            setDraggingFiles(false);
+                        }
                     }}
                     onDrop={(event) => {
-                        if (!event.dataTransfer.types.includes('Files')) return;
+                        if (!event.dataTransfer.types.includes('Files')) {
+                            return;
+                        }
+
                         event.preventDefault();
                         event.stopPropagation();
                         dragDepth.current = 0;
@@ -1159,6 +1267,75 @@ export default function NewsCreatorAgent({
                                                     message={message}
                                                     documents={documents}
                                                 />
+                                                {message.id ===
+                                                    draftMessageId && draftCard}
+                                                {processingFiles &&
+                                                    message.id ===
+                                                        extractionMessageId && (
+                                                        <DocumentProcessingStatus
+                                                            documents={documents.filter(
+                                                                (doc) =>
+                                                                    (
+                                                                        (message
+                                                                            .payload
+                                                                            ?.document_ids ??
+                                                                            []) as number[]
+                                                                    ).includes(
+                                                                        doc.id,
+                                                                    ),
+                                                            )}
+                                                        />
+                                                    )}
+                                                {Array.isArray(
+                                                    message.payload
+                                                        ?.historical_sources,
+                                                ) &&
+                                                    message.payload
+                                                        .historical_sources
+                                                        .length > 0 && (
+                                                        <details className="mt-2 rounded-lg border p-3 text-sm">
+                                                            <summary>
+                                                                Konteks
+                                                                terdahulu (
+                                                                {
+                                                                    message
+                                                                        .payload
+                                                                        .historical_sources
+                                                                        .length
+                                                                }
+                                                                )
+                                                            </summary>
+                                                            {message.payload.historical_sources.map(
+                                                                (source: {
+                                                                    source_id: string;
+                                                                    title: string;
+                                                                    content: string;
+                                                                }) => (
+                                                                    <div
+                                                                        key={
+                                                                            source.source_id
+                                                                        }
+                                                                        className="mt-2"
+                                                                    >
+                                                                        <p className="font-medium">
+                                                                            {
+                                                                                source.title
+                                                                            }{' '}
+                                                                            ·{' '}
+                                                                            {
+                                                                                source.source_id
+                                                                            }
+                                                                        </p>
+                                                                        <p className="whitespace-pre-wrap text-muted-foreground">
+                                                                            {
+                                                                                source.content
+                                                                            }
+                                                                        </p>
+                                                                    </div>
+                                                                ),
+                                                            )}
+                                                        </details>
+                                                    )}
                                             </MessageScrollerItem>
                                         ))}
                                     {!busy &&
@@ -1202,21 +1379,22 @@ export default function NewsCreatorAgent({
                                             </PendingUserMessage>
                                         </MessageScrollerItem>
                                     )}
-                                    {processingFiles && (
-                                        <MessageScrollerItem
-                                            messageId="processing-files"
-                                            scrollAnchor
-                                        >
-                                            <DocumentProcessingStatus
-                                                documents={documents.filter(
-                                                    (doc) =>
-                                                        newsSession?.selected_document_ids.includes(
-                                                            doc.id,
-                                                        ),
-                                                )}
-                                            />
-                                        </MessageScrollerItem>
-                                    )}
+                                    {processingFiles &&
+                                        !extractionMessageId && (
+                                            <MessageScrollerItem
+                                                messageId="processing-files"
+                                                scrollAnchor
+                                            >
+                                                <DocumentProcessingStatus
+                                                    documents={documents.filter(
+                                                        (doc) =>
+                                                            newsSession?.selected_document_ids.includes(
+                                                                doc.id,
+                                                            ),
+                                                    )}
+                                                />
+                                            </MessageScrollerItem>
+                                        )}
                                     {!conversationReadOnly &&
                                         reviewingExtraction &&
                                         !processingFiles && (
@@ -1600,128 +1778,7 @@ export default function NewsCreatorAgent({
                                             </Card>
                                         </MessageScrollerItem>
                                     )}
-                                    {generatedArticle && !errors.guidance && (
-                                        <MessageScrollerItem
-                                            messageId="done"
-                                            scrollAnchor
-                                        >
-                                            <Card className="max-w-[94%] gap-3 border-success-border bg-success-bg py-4 shadow-sm">
-                                                <CardHeader className="gap-2 px-4">
-                                                    <div className="flex flex-wrap items-center gap-2">
-                                                        <Badge>Draf AI</Badge>
-                                                        <QualityScoreBadge
-                                                            quality={
-                                                                generatedArticle.quality
-                                                            }
-                                                        />
-                                                        {generatedArticle.category && (
-                                                            <Badge variant="outline">
-                                                                {
-                                                                    generatedArticle.category
-                                                                }
-                                                            </Badge>
-                                                        )}
-                                                    </div>
-                                                    <CardTitle className="text-base leading-6 text-foreground">
-                                                        {
-                                                            generatedArticle.headline
-                                                        }
-                                                    </CardTitle>
-                                                    <p className="line-clamp-3 text-sm leading-6 text-muted-foreground">
-                                                        {generatedArticle.lead}
-                                                    </p>
-                                                </CardHeader>
-                                                <CardContent className="space-y-3 px-4">
-                                                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                                                        <span>
-                                                            ±
-                                                            {Math.max(
-                                                                1,
-                                                                Math.ceil(
-                                                                    (generatedArticle.body
-                                                                        .join(
-                                                                            ' ',
-                                                                        )
-                                                                        .split(
-                                                                            /\s+/,
-                                                                        )
-                                                                        .length +
-                                                                        generatedArticle.lead.split(
-                                                                            /\s+/,
-                                                                        )
-                                                                            .length) /
-                                                                        200,
-                                                                ),
-                                                            )}{' '}
-                                                            menit baca
-                                                        </span>
-                                                        <span>
-                                                            {
-                                                                generatedArticle
-                                                                    .selected_sources
-                                                                    .length
-                                                            }{' '}
-                                                            sumber
-                                                        </span>
-                                                        <span>
-                                                            Versi{' '}
-                                                            {generatedArticle.version ??
-                                                                1}
-                                                        </span>
-                                                    </div>
-                                                    {generatedArticle.warnings
-                                                        .length > 0 && (
-                                                        <div className="rounded-lg border border-warning-border bg-warning-bg p-3 text-xs leading-5 text-warning-text">
-                                                            {
-                                                                generatedArticle
-                                                                    .warnings[0]
-                                                            }
-                                                        </div>
-                                                    )}
-                                                    {generatedArticle.quality && (
-                                                        <QualityScoreBreakdown
-                                                            quality={
-                                                                generatedArticle.quality
-                                                            }
-                                                        />
-                                                    )}
-                                                    <div className="flex flex-wrap gap-2">
-                                                        <Button
-                                                            size="sm"
-                                                            variant="outline"
-                                                            onClick={() => {
-                                                                setEditMode(
-                                                                    false,
-                                                                );
-                                                                setPreviewOpen(
-                                                                    true,
-                                                                );
-                                                            }}
-                                                        >
-                                                            Pratinjau
-                                                        </Button>
-                                                        <Button
-                                                            size="sm"
-                                                            variant="outline"
-                                                            disabled={
-                                                                conversationReadOnly
-                                                            }
-                                                            onClick={() => {
-                                                                setEditMode(
-                                                                    true,
-                                                                );
-                                                                setPreviewOpen(
-                                                                    true,
-                                                                );
-                                                            }}
-                                                        >
-                                                            <Edit3 /> Edit
-                                                        </Button>
-                                                    </div>
-                                                </CardContent>
-                                            </Card>
-                                        </MessageScrollerItem>
-                                    )}
+                                    {!draftMessageId && draftCard}
                                     {errors.guidance && (
                                         <MessageScrollerItem
                                             messageId="prompt-guidance"
@@ -2295,7 +2352,8 @@ export default function NewsCreatorAgent({
                                     className="mb-3 text-xs text-muted-foreground"
                                     aria-live="polite"
                                 >
-                                    {wordCount} kata · Isi berita
+                                    {wordCount} kata · Maksimal 250 kata untuk
+                                    draf AI
                                 </p>
                                 {editMode ? (
                                     <Textarea
@@ -2326,11 +2384,14 @@ export default function NewsCreatorAgent({
                                             className="w-full justify-between"
                                         >
                                             Sumber digunakan (
-                                            {
-                                                editedArticle.selected_sources
-                                                    .length
-                                            }
-                                            )
+                                            {documentSources.length} dokumen ·{' '}
+                                            {documentSources.reduce(
+                                                (count, group) =>
+                                                    count +
+                                                    group.information.length,
+                                                0,
+                                            )}{' '}
+                                            informasi)
                                             {sourcesOpen ? (
                                                 <ChevronDown />
                                             ) : (
@@ -2339,66 +2400,81 @@ export default function NewsCreatorAgent({
                                         </Button>
                                     </CollapsibleTrigger>
                                     <CollapsibleContent className="mt-3 space-y-2">
-                                        {editedArticle.selected_sources.map(
-                                            (source, sourceIndex) => (
-                                                <Collapsible
-                                                    key={source.id}
-                                                    className="rounded-lg border bg-muted/20 p-3"
-                                                >
-                                                    <CollapsibleTrigger className="flex w-full items-center gap-3 text-left">
-                                                        <FileText className="size-4 text-primary" />
-                                                        <span className="min-w-0 flex-1">
-                                                            <span className="block truncate text-sm font-medium">
-                                                                {sourceIndex +
-                                                                    1}
-                                                                .{' '}
-                                                                {
-                                                                    source.document
-                                                                }
-                                                            </span>
-                                                            <span className="text-xs text-muted-foreground">
-                                                                {source.evidence
-                                                                    .map(
-                                                                        (
-                                                                            item,
-                                                                        ) =>
-                                                                            item.source,
-                                                                    )
-                                                                    .join(
-                                                                        ', ',
-                                                                    ) ||
-                                                                    source.title}
-                                                            </span>
+                                        {documentSources.map((group, index) => (
+                                            <Collapsible
+                                                key={group.key}
+                                                className="rounded-lg border bg-muted/20 p-3"
+                                            >
+                                                <CollapsibleTrigger className="flex w-full items-center gap-3 text-left">
+                                                    <FileText className="size-4 shrink-0 text-primary" />
+                                                    <span className="min-w-0 flex-1">
+                                                        <span className="block text-sm font-medium break-words">
+                                                            {index + 1}.{' '}
+                                                            {group.document}
                                                         </span>
-                                                        <ChevronDown className="size-4" />
-                                                    </CollapsibleTrigger>
-                                                    <CollapsibleContent className="mt-3 space-y-2 border-t pt-3">
-                                                        {source.evidence.map(
-                                                            (
-                                                                evidence,
-                                                                index,
-                                                            ) => (
-                                                                <p
-                                                                    key={index}
-                                                                    className="text-xs leading-5 text-muted-foreground"
-                                                                >
-                                                                    <strong>
-                                                                        {
-                                                                            evidence.source
-                                                                        }
-                                                                    </strong>
-                                                                    : “
+                                                        <span className="text-xs text-muted-foreground">
+                                                            {
+                                                                group
+                                                                    .information
+                                                                    .length
+                                                            }{' '}
+                                                            informasi
+                                                        </span>
+                                                    </span>
+                                                    <ChevronDown className="size-4 shrink-0" />
+                                                </CollapsibleTrigger>
+                                                <CollapsibleContent className="mt-3 space-y-3 border-t pt-3">
+                                                    {group.information.map(
+                                                        (source) => (
+                                                            <div
+                                                                key={source.id}
+                                                                className="space-y-1"
+                                                            >
+                                                                <p className="text-sm font-medium">
                                                                     {
-                                                                        evidence.quote
+                                                                        source.title
                                                                     }
-                                                                    ”
                                                                 </p>
-                                                            ),
-                                                        )}
-                                                    </CollapsibleContent>
-                                                </Collapsible>
-                                            ),
-                                        )}
+                                                                {source.evidence
+                                                                    .length ===
+                                                                    0 && (
+                                                                    <p className="text-xs text-muted-foreground">
+                                                                        Kutipan
+                                                                        bukti
+                                                                        belum
+                                                                        tersedia.
+                                                                    </p>
+                                                                )}
+                                                                {source.evidence.map(
+                                                                    (
+                                                                        evidence,
+                                                                        evidenceIndex,
+                                                                    ) => (
+                                                                        <p
+                                                                            key={
+                                                                                evidenceIndex
+                                                                            }
+                                                                            className="text-xs leading-5 break-words text-muted-foreground"
+                                                                        >
+                                                                            <strong>
+                                                                                {
+                                                                                    evidence.source
+                                                                                }
+                                                                            </strong>
+                                                                            : “
+                                                                            {
+                                                                                evidence.quote
+                                                                            }
+                                                                            ”
+                                                                        </p>
+                                                                    ),
+                                                                )}
+                                                            </div>
+                                                        ),
+                                                    )}
+                                                </CollapsibleContent>
+                                            </Collapsible>
+                                        ))}
                                     </CollapsibleContent>
                                 </Collapsible>
                             </article>

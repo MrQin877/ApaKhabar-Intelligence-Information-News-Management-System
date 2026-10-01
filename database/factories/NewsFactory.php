@@ -15,10 +15,9 @@ class NewsFactory extends Factory
             'title'       => fake()->sentence(),
             'content'     => fake()->paragraphs(3, true),
             'excerpt'     => fake()->sentence(),
-            'category'    => fake()->randomElement(['Pengumuman', 'Darurat', 'Berita']),
+            'category_id' => \App\Models\NewsCategory::firstOrCreate(['name' => 'Pengumuman'])->getKey(),
             'image'       => null,
-            'date'        => now()->toDateString(),
-            'views'       => 0,
+            'view'       => 0,
             'likes_count' => 0,
         ];
     }

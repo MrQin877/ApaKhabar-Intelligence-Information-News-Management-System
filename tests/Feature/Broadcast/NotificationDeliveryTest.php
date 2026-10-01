@@ -42,17 +42,16 @@ use App\Models\Notification;
 use App\Models\User;
 use App\Services\SmsService;
 use Illuminate\Support\Facades\Http;
-use Mockery;
 
 // ── Shared setup ────────────────────────────────────────────────
 beforeEach(function () {
     $this->moderator = User::factory()->create([
-        'role'     => 'moderator',
+        'roleID' => \App\Models\UserRole::firstOrCreate(['name' => 'moderator'])->getKey(),
         'password' => bcrypt('Password123!'),
     ]);
 
     $this->villager = User::factory()->create([
-        'role'     => 'villager',
+        'roleID' => \App\Models\UserRole::firstOrCreate(['name' => 'villager'])->getKey(),
         'password' => bcrypt('Password123!'),
     ]);
 });
@@ -201,7 +200,7 @@ test('TC-NOTIF-07: villager can mark a notification as read', function () {
     $token = $loginResponse->json('token');
 
     $response = $this->withHeader('Authorization', "Bearer {$token}")
-                     ->patchJson("/api/notifications/{$notification->id}/read");
+                     ->patchJson("/api/notifications/{$notification->getKey()}/read");
 
     $response->assertStatus(200);
 

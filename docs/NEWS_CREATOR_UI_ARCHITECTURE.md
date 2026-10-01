@@ -42,3 +42,5 @@ Async submission returns a request ID for polling. Ownership-checked Laravel end
 ## Document preview
 
 `NewsCreatorController.previewDocument()` serves supported direct previews or asks the AI Service to normalize office/spreadsheet files for a readable preview. This is a content preview, not a full Microsoft Office layout renderer. Failed conversion provides a download path. Preview access is checked server-side, independently of the visible library controls.
+
+The latest draft card is anchored to its generating assistant message rather than appended after every subsequent upload. Extraction progress uses the matching upload response's document IDs, not all documents attached to the conversation. `tests/js/assistant-turns.test.mjs` covers second-upload anchoring and reconstruction after reload. Automatically retrieved context appears in expandable source details; the draft preview identifies the 250-word generated-content limit.

@@ -11,27 +11,19 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        php-version: ['8.2'] 
+        php-version: ['8.4'] 
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
-
-      - name: Start MongoDB with Replica Set
-        run: |
-          docker run -d --name mongodb \
-            -p 27017:27017 \
-            mongo:7 mongod --replSet rs0 --bind_ip_all
-          sleep 5
-          docker exec mongodb mongosh --eval "rs.initiate({_id:'rs0', members:[{_id:0, host:'localhost:27017'}]})"
-          sleep 2
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php-version }}
           tools: composer:v2
-          coverage: xdebug
+          extensions: mongodb, pdo_sqlite
+          coverage: none
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -39,7 +31,7 @@ jobs:
           node-version: '22'
 
       - name: Install Node Dependencies
-        run: npm i
+        run: npm ci
 
       - name: Install Dependencies
         run: composer install --no-interaction --prefer-dist --optimize-autoloader
@@ -47,9 +39,7 @@ jobs:
       - name: Setup Environment
         run: |
           cp .env.example .env
-          echo "DB_CONNECTION=mongodb" >> .env
-          echo "DB_URI=mongodb://localhost:27017/?replicaSet=rs0&directConnection=true" >> .env
-          echo "DB_DATABASE=apakahbar_test" >> .env
+          # PHPUnit uses isolated in-memory SQLite (see phpunit.xml).
 
       - name: Generate Application Key
         run: php artisan key:generate

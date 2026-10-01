@@ -96,6 +96,7 @@ class NewsCreatorController extends Controller
                     ]),
                     'selected_sources' => $draft->informationSources->map(fn ($item) => [
                         'id' => $item->id,
+                        'document_id' => $item->document_id,
                         'title' => $item->title,
                         'document' => $item->document->original_name,
                         'evidence' => $item->evidence,

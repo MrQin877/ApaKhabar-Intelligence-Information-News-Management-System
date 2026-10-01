@@ -37,6 +37,7 @@ export function QualityScoreBadge({
     if (quality.quality_label === 'evaluation_unavailable') {
         return <Badge variant="destructive">Evaluasi belum tersedia</Badge>;
     }
+
     return (
         <Badge variant={quality.publish_blocked ? 'destructive' : 'outline'}>
             {quality.evaluation_version === 'separate-judge-v1'

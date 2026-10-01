@@ -140,6 +140,8 @@ class NewsGenerationService
             ]);
         }
 
+        $historicalSources = app(RelatedEditorialContext::class)->find($userId, $effectivePrompt, $items);
+
         if (! $session) {
             $session = IntelligentNewsSession::create([
                 'created_by' => $userId,
@@ -172,6 +174,7 @@ class NewsGenerationService
             'payload' => [
                 'information_ids' => $informationIds->all(),
                 'document_ids' => $documentIds->values()->all(),
+                'historical_sources' => $historicalSources,
                 'answers' => $validated['answers'] ?? [],
                 // Freeze the exact approved evidence used by this turn, not mutable library records.
                 'information_attachments' => $items->map(fn ($item) => [
@@ -227,7 +230,10 @@ class NewsGenerationService
             ? 'Memeriksa informasi dan dokumen yang telah disetujui moderator.'
             : 'Memeriksa fakta yang tersedia dalam prompt dan percakapan.', 'source_check');
 
+        $runEvent('context_search', 'Mencari konteks terdahulu', count($historicalSources).' sumber terkait ditemukan dari informasi disetujui dan berita terbit.', 'related_context');
+
         $payload = [
+            'historical_sources' => $historicalSources,
             'information' => [
                 'information' => $items->map(fn ($item) => [
                     'information_id' => (string) $item->id,
@@ -266,6 +272,7 @@ class NewsGenerationService
                 $payload = [
                     'owner_id' => (string) $userId,
                     'eligible_information_ids' => $items->pluck('id')->map(fn ($id) => (string) $id)->all(),
+                    'historical_sources' => $historicalSources,
                     'answers' => $factualAnswers->map(fn ($value, $field) => ['field' => $field, 'value' => $value])->values()->all(),
                     'approved_web_source_ids' => $submittedAnswers
                         ->filter(fn ($value, $field) => str_starts_with($field, 'web_source:') && $value === 'Setujui')
@@ -466,7 +473,7 @@ class NewsGenerationService
             'role' => 'assistant',
             'intent' => 'generate_news',
             'content' => $article['headline'],
-            'payload' => ['article' => $article, 'quality' => $result['quality'] ?? null],
+            'payload' => ['article' => $article, 'quality' => $result['quality'] ?? null, 'historical_sources' => $historicalSources],
             'draft_version_id' => $draftVersion->id,
         ]);
         $proposal = $article['category_proposal'] ?? null;

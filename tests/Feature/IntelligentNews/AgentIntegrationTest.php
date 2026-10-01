@@ -345,3 +345,22 @@ test('generation rereads only selected owner approved original files', function 
         && json_encode($request['original_documents']) === json_encode((object) [(string) $source->id => $normalized]));
     Http::assertSentCount(2);
 });
+
+test('generation automatically attaches relevant approved history without manual selection', function () {
+    $user = User::factory()->create(['roleID' => UserRole::firstOrCreate(['name' => 'admin'])->getKey()]);
+    $current = approvedAgentSource($user);
+    $current->update(['title' => 'Pelatihan foto produk UMKM 2026']);
+    $history = approvedAgentSource($user);
+    $history->update(['title' => 'Pelatihan foto produk UMKM 2025', 'summary' => 'Sebanyak 22 peserta hadir pada 2025.']);
+    Http::fake(['*/news/generate' => Http::response([
+        'status' => 'awaiting_answers', 'article' => null,
+        'completeness' => ['missing' => [], 'conflicts' => []],
+    ])]);
+    $this->actingAs($user)->post(route('admin.assistant.generate'), [
+        'information_ids' => [$current->id], 'prompt' => 'Buat pengumuman pelatihan ini',
+    ])->assertSessionHasNoErrors();
+    Http::assertSent(fn ($request) => str_ends_with($request->url(), '/news/generate')
+        && $request['historical_sources'][0]['source_id'] === 'history:information:'.$history->id);
+    expect(IntelligentNewsMessage::where('role', 'user')->first()->payload['historical_sources'][0]['source_id'])
+        ->toBe('history:information:'.$history->id);
+});

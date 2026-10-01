@@ -4,7 +4,7 @@ ApaKhabar's Laravel application provides the public news website, an admin/moder
 
 ## Technology and boundaries
 
-- Laravel 12 / PHP 8.2+, Inertia 2, React 19, TypeScript, Tailwind CSS 4, Radix/shadcn-style components, and Vite 7.
+- Laravel 12 / PHP 8.4.1+ (required by the committed dependency lockfile), Inertia 2, React 19, TypeScript, Tailwind CSS 4, Radix/shadcn-style components, and Vite 7.
 - Eloquent application persistence; database connections are configured in `config/database.php` (default MySQL).
 - Laravel queue workers for document processing and generation; scheduler for stalled-document recovery and expiry archiving.
 - FastAPI AI Service over server-to-server HTTP. Generation, judge, and embedding models run outside this repository.

@@ -1,7 +1,6 @@
 <?php
 
 use App\Models\Notification as NotificationModel;
-use App\Models\PersonalAccessToken;
 use App\Models\User;
 
 test('guests are redirected to the login page', function () {
@@ -11,8 +10,7 @@ test('guests are redirected to the login page', function () {
 
 test('admin users are redirected to admin dashboard', function () {
     $user = User::factory()->create([
-        'email_verified_at' => now(),
-        'role' => 'admin',
+        'roleID' => \App\Models\UserRole::firstOrCreate(['name' => 'admin'])->getKey(),
     ]);
     $this->actingAs($user);
 
@@ -22,8 +20,7 @@ test('admin users are redirected to admin dashboard', function () {
 
 test('api notifications return json for authenticated mobile clients', function () {
     $user = User::factory()->create([
-        'role' => 'villager',
-        'email_verified_at' => now(),
+        'roleID' => \App\Models\UserRole::firstOrCreate(['name' => 'villager'])->getKey(),
     ]);
 
     NotificationModel::create([
@@ -38,16 +35,8 @@ test('api notifications return json for authenticated mobile clients', function 
         ],
     ]);
 
-    $plainToken = 'mobile-test-token';
-    $token = PersonalAccessToken::create([
-        'tokenable_id' => $user->getKey(),
-        'tokenable_type' => User::class,
-        'name' => 'mobile',
-        'token' => hash('sha256', $plainToken),
-        'abilities' => ['*'],
-    ]);
-
-    $response = $this->withHeader('Authorization', 'Bearer ' . $token->getKey() . '|' . $plainToken)
+    $token = $user->createToken('mobile')->plainTextToken;
+    $response = $this->withHeader('Authorization', 'Bearer '.$token)
         ->getJson('/api/notifications');
 
     $response->assertOk()
