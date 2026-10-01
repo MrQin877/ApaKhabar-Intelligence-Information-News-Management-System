@@ -63,6 +63,7 @@ export function PublishNewsDialog({
     onSelectionChange,
     processing,
     contentReady = true,
+    requireReviewConfirmation = false,
     error,
     onPublish,
     onPreparePreview,
@@ -75,6 +76,7 @@ export function PublishNewsDialog({
     onSelectionChange: (selected: PublishPlatformId[]) => void;
     processing: boolean;
     contentReady?: boolean;
+    requireReviewConfirmation?: boolean;
     error?: string;
     onPublish: (token: string) => void;
     onPreparePreview: () => Promise<PublicationPreviewData>;
@@ -83,6 +85,9 @@ export function PublishNewsDialog({
         PublishPlatform[] | null
     >(null);
     const [showPreview, setShowPreview] = useState(false);
+    const [reviewConfirmation, setReviewConfirmation] = useState<string | null>(
+        null,
+    );
     const [preview, setPreview] = useState<PublicationPreviewData | null>(null);
     const [preparing, setPreparing] = useState(false);
     const [previewError, setPreviewError] = useState('');
@@ -127,6 +132,14 @@ export function PublishNewsDialog({
         )
         .map((platform) => platform.id);
     const selection = selected;
+    const reviewKey = preview?.token
+        ? `${preview.token}:${selection.join(',')}`
+        : null;
+    const confirmingReview =
+        requireReviewConfirmation &&
+        showPreview &&
+        reviewKey !== null &&
+        reviewConfirmation === reviewKey;
     const issues = selection.flatMap((id) => {
         const platform = platforms.find((item) => item.id === id);
 
@@ -145,6 +158,7 @@ export function PublishNewsDialog({
         ];
     });
     async function prepare() {
+        setReviewConfirmation(null);
         setPreparing(true);
         setPreviewError('');
         setPreview(null);
@@ -152,6 +166,11 @@ export function PublishNewsDialog({
 
         try {
             const data = await onPreparePreview();
+
+            if (typeof data.token !== 'string' || !data.token.trim()) {
+                throw new Error('Pratinjau belum siap. Silakan coba lagi.');
+            }
+
             setPreview(data);
             setActive(selection[0]);
             setShowPreview(true);
@@ -174,6 +193,7 @@ export function PublishNewsDialog({
             onOpenChange={(next) => {
                 if (!locked) {
                     setShowPreview(false);
+                    setReviewConfirmation(null);
                     onOpenChange(next);
                 }
             }}
@@ -530,17 +550,30 @@ export function PublishNewsDialog({
                         )}
                     </div>
                 )}
-                <DialogFooter className="sticky bottom-0 z-10 shrink-0 border-t bg-background px-6 py-3 sm:justify-between sm:px-7">
+                <DialogFooter className="sticky bottom-0 z-10 shrink-0 border-t bg-background px-6 py-3 sm:flex-wrap sm:justify-between sm:px-7">
+                    {confirmingReview && (
+                        <div role="status" className="w-full basis-full">
+                            <p className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-4 text-sm leading-6 text-amber-800 dark:text-amber-200">
+                                Dengan menerbitkan, Anda menyetujui fakta,
+                                sumber, dan versi draf yang telah Anda tinjau.
+                                Berita dikirim ke platform yang dipilih.
+                            </p>
+                        </div>
+                    )}
                     <Button
                         type="button"
                         variant="outline"
                         className="min-h-11"
                         disabled={locked}
                         onClick={() => {
-                            if (showPreview) {
+                            if (confirmingReview) {
+                                setReviewConfirmation(null);
+                            } else if (showPreview) {
                                 setShowPreview(false);
+                                setReviewConfirmation(null);
                             } else {
                                 setShowPreview(false);
+                                setReviewConfirmation(null);
                                 onOpenChange(false);
                             }
                         }}
@@ -553,7 +586,8 @@ export function PublishNewsDialog({
                             locked ||
                             !contentReady ||
                             !selection.length ||
-                            (showPreview && issues.length > 0)
+                            (showPreview &&
+                                (!preview?.token?.trim() || issues.length > 0))
                         }
                         onClick={() => {
                             if (locked || !contentReady || !selection.length) {
@@ -566,9 +600,20 @@ export function PublishNewsDialog({
                                 return;
                             }
 
-                            if (preview && !issues.length) {
-                                onPublish(preview.token);
+                            if (!preview?.token?.trim() || issues.length) {
+                                return;
                             }
+
+                            if (
+                                requireReviewConfirmation &&
+                                !confirmingReview
+                            ) {
+                                setReviewConfirmation(reviewKey);
+
+                                return;
+                            }
+
+                            onPublish(preview.token);
                         }}
                         className="h-auto min-h-11 bg-brand-600 whitespace-normal text-white hover:bg-brand-700"
                     >
@@ -581,9 +626,11 @@ export function PublishNewsDialog({
                             ? 'Menyiapkan pratinjau...'
                             : processing
                               ? 'Menerbitkan...'
-                              : showPreview
-                                ? 'Terbitkan Sekarang'
-                                : 'Lihat Pratinjau'}
+                              : confirmingReview
+                                ? 'Ya, Terbitkan'
+                                : showPreview
+                                  ? 'Terbitkan Sekarang'
+                                  : 'Lihat Pratinjau'}
                     </Button>
                 </DialogFooter>
             </DialogContent>

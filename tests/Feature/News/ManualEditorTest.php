@@ -263,8 +263,8 @@ test('removing lainnya safely uncategorizes news and drafts without changing oth
     expect(NewsCategory::find($other->getKey()))->toBeNull()
         ->and(News::sole()->category_id)->toBeNull()
         ->and(News::sole()->content)->toBe($before)
-        ->and(IntelligentNewsDraft::where('headline', 'Berita kegiatan warga')->whereNotNull('category_id')->count())->toBe(0)
-        ->and(IntelligentNewsDraft::where('headline', 'Berita pendidikan')->sole()->category_id)->toBe($keep->getKey());
+        ->and(IntelligentNewsDraft::where('title', 'Berita kegiatan warga')->whereNotNull('category_id')->count())->toBe(0)
+        ->and(IntelligentNewsDraft::where('title', 'Berita pendidikan')->sole()->category_id)->toBe($keep->getKey());
     $this->get('/admin/categories')->assertInertia(fn (Assert $page) => $page->where('categories', fn ($categories) => collect($categories)->every(fn ($category) => trim(mb_strtolower($category['name'])) !== 'lainnya')));
 });
 

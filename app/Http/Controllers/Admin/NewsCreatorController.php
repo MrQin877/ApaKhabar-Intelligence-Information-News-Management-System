@@ -13,6 +13,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\GenerateIntelligentNews;
 use App\Jobs\ProcessIntelligenceDocument;
 use App\Models\AiQualityEvaluation;
 use App\Models\IntelligenceDocument;
@@ -21,12 +22,15 @@ use App\Models\IntelligenceInformation;
 use App\Models\IntelligentNewsDraft;
 use App\Models\IntelligentNewsDraftVersion;
 use App\Models\IntelligentNewsMessage;
+use App\Models\IntelligentNewsRun;
+use App\Models\IntelligentNewsRunEvent;
 use App\Models\IntelligentNewsSession;
 use App\Models\NewsCategory;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -241,6 +245,40 @@ class NewsCreatorController extends Controller
         ProcessIntelligenceDocument::dispatch($document->id)->onQueue('documents');
 
         return back()->with('success', 'Dokumen dimasukkan kembali ke antrean.');
+    }
+
+    public function agentProgress(Request $request, string $requestId): JsonResponse
+    {
+        $job = Cache::get(
+            GenerateIntelligentNews::cacheKey($request->user()->getKey(), $requestId),
+        );
+        if ($job && in_array($job['status'], ['queued', 'completed', 'failed'], true)) {
+            return response()->json($job);
+        }
+        $event = IntelligentNewsRunEvent::query()
+            ->where('event_type', 'agent_run')
+            ->where('payload->client_request_id', $requestId)
+            ->whereIn('run_id', IntelligentNewsRun::query()->whereIn('session_id',
+                IntelligentNewsSession::query()->where('created_by', $request->user()->getKey())->select('id')
+            )->select('id'))->latest('id')->first();
+        if (! $event) {
+            abort_unless($job, 404);
+
+            return response()->json($job);
+        }
+        $message = IntelligentNewsMessage::find(
+            IntelligentNewsRun::whereKey($event->run_id)->value('user_message_id'),
+        );
+        try {
+            $response = $this->aiClient()->timeout(5)->get(
+                rtrim(config('services.apakhabar_ai.url'), '/').'/agent/runs/'.rawurlencode($event->payload['agent_run_id']),
+                ['owner_id' => (string) $request->user()->getKey()],
+            )->throw()->json();
+
+            return response()->json(['status' => $job ? 'running' : $response['status'], 'events' => $response['events'] ?? [], 'message' => $message]);
+        } catch (\Throwable $exception) {
+            return response()->json(['status' => 'unavailable', 'events' => []], 503);
+        }
     }
 
     public function generate(Request $request): RedirectResponse

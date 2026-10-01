@@ -10,6 +10,7 @@ use App\Services\InstagramService;
 use App\Services\News\MetaConnections;
 use App\Services\NewsImageCropService;
 use App\Services\PublicationPreviewFiles;
+use App\Support\ArticleText;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Exceptions;
@@ -231,4 +232,29 @@ test('preview processing failures are reported with a safe message', function ()
     $this->travel(3)->hours();
     $this->artisan('news:cleanup-publication-previews')->assertSuccessful();
     expect(Storage::disk('public')->allFiles('news-images/previews'))->toBe([]);
+});
+
+test('canonical AI drafts publish the full lead and body with every platform crop', function () {
+    $preview = $this->postJson('/admin/news/manual/preview', cropArticle())->assertOk()->json();
+    $draft = IntelligentNewsDraft::create([
+        'created_by' => auth()->id(), 'creation_method' => 'ai', 'status' => 'draft',
+        'title' => 'Berita AI', 'content' => "Pembuka berita lengkap.\n\nIsi berita warga selengkapnya.",
+        'labels' => [], 'sources_used' => [], 'warnings' => [],
+        'excerpt' => 'Ringkasan', 'image_variants' => $preview['images'], 'image_crops' => cropSettings(),
+        'reviewed_at' => now(), 'version' => 1,
+    ]);
+    $caption = ArticleText::post($draft->title, $draft->content);
+    $this->mock(MetaConnections::class)->shouldReceive('platforms')->andReturn(array_map(
+        fn ($id) => ['id' => $id, 'name' => $id, 'status' => 'connected'], ['website', 'facebook', 'instagram']
+    ));
+    $facebook = $this->mock(FacebookPublishingService::class);
+    $facebook->shouldReceive('configured')->andReturn(true);
+    $facebook->shouldReceive('publish')->once()->withArgs(fn ($url, $text) => $url === $preview['images']['facebook'] && $text === $caption)->andReturn('fb-ai');
+    $this->mock(InstagramService::class)->shouldReceive('publish')->once()->withArgs(fn ($url, $text, $context, $cropped) => $url === $preview['images']['instagram'] && $text === $caption && $cropped)->andReturn('ig-ai');
+    $this->postJson('/admin/news/drafts/'.$draft->id.'/publish', ['platforms' => ['website', 'facebook', 'instagram'], 'version' => 1])
+        ->assertOk()->assertJsonPath('success', true);
+    expect(News::sole()->content)->toBe($draft->content)
+        ->and(News::sole()->title)->toBe($draft->title)
+        ->and(News::sole()->excerpt)->toBe('Pembuka berita lengkap.')
+        ->and(News::sole()->image)->toBe($preview['images']['website']);
 });
