@@ -308,7 +308,7 @@ test('disconnect requires confirmation removes credentials and overrides environ
     $credentials = app(MetaCredentials::class)->forPlatform($platform);
     expect($credentials['token'])->toBeNull()->and($credentials['status'])->toBe('disconnected');
     $this->getJson('/admin/social/connections')->assertJsonPath('platforms.'.($platform === 'facebook' ? 1 : 2).'.status', 'disconnected');
-    $this->postJson('/admin/news/manual', ['headline' => 'News', 'summary' => 'Summary', 'content' => '<p>Content about village activities today.</p>',
+    $this->postJson('/admin/news/manual', ['headline' => 'News', 'content' => '<p>Content about village activities today.</p>',
         'content_format' => 'html', 'intent' => 'publish', 'platforms' => [$platform]])->assertUnprocessable()->assertJsonValidationErrors('platforms');
     Http::assertNothingSent();
 })->with(['facebook', 'instagram']);

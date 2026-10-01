@@ -6,6 +6,7 @@ use App\Models\Comment;
 use App\Models\Like;
 use App\Models\News;
 use App\Models\User;
+use App\Support\ArticleText;
 
 class NewsService
 {
@@ -21,7 +22,7 @@ class NewsService
             return [
                 'id' => (string) $item->getKey(),
                 'title' => $item->title,
-                'excerpt' => $item->excerpt ?? '',
+                'preview' => ArticleText::preview($item->content),
                 'body' => $item->content ?? '',
                 'image' => $item->image ?? 'https://placehold.co/600x400',
                 'date' => optional($item->created_at)->format('d F Y') ?? '-',
@@ -56,7 +57,6 @@ class NewsService
         return [
             'id' => (string) $news->getKey(),
             'title' => $news->title,
-            'excerpt' => $news->excerpt ?? '',
             'content' => $news->content,
             'body' => $news->content,
             'image' => $news->image ?? 'https://placehold.co/800x400',

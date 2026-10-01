@@ -5,14 +5,12 @@ namespace App\Http\Controllers\News;
 use App\Http\Controllers\Controller;
 use App\Services\News\NewsService;
 use App\Support\NewsImageUrl;
-use Inertia\Inertia;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
 
 class NewsController extends Controller
 {
-    public function __construct(protected NewsService $newsService)
-    {
-    }
+    public function __construct(protected NewsService $newsService) {}
 
     public function index(Request $request)
     {
@@ -27,7 +25,7 @@ class NewsController extends Controller
             'newsList' => collect($news)->map(fn ($item) => [
                 'id' => $item['id'],
                 'title' => $item['title'],
-                'excerpt' => $item['excerpt'],
+                'preview' => $item['preview'],
                 'image' => NewsImageUrl::forWeb($item['image']),
                 'date' => $item['date'],
                 'category' => $item['category'],
@@ -52,7 +50,6 @@ class NewsController extends Controller
             'news' => [
                 'id' => $news['id'],
                 'title' => $news['title'],
-                'excerpt' => $news['excerpt'],
                 'content' => $news['content'],
                 'image' => NewsImageUrl::forWeb($news['image']),
                 'date' => $news['date'],

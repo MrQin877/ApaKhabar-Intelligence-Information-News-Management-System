@@ -14,6 +14,11 @@ import {
     Send,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import {
+    PublicationIndicators,
+    RetryPublicationDialog,
+} from '@/components/news-publication';
+import type { PublicationResults } from '@/components/news-publication';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -39,11 +44,15 @@ type Status = 'draft' | 'active' | 'archived';
 type ViewMode = 'card' | 'list';
 
 interface WorkspaceItem {
+    publication_results?: PublicationResults;
+    retry_url?: string | null;
+    view_url?: string | null;
+    published_at?: string | null;
     key: string;
     id: number;
     record_type: 'draft' | 'session' | 'news';
     title: string;
-    summary: string;
+    preview: string;
     status: Status;
     creation_method: 'manual' | 'ai';
     category: string | null;
@@ -71,6 +80,10 @@ const statusNames: Record<Status, string> = {
 };
 
 function ItemActions({ item }: { item: WorkspaceItem }) {
+    const [retryOpen, setRetryOpen] = useState(false);
+    const published =
+        item.record_type === 'news' ||
+        Object.keys(item.publication_results ?? {}).length > 0;
     const changeArchiveState = () => {
         const action = item.status === 'archived' ? 'restore' : 'archive';
         router.post(
@@ -81,50 +94,76 @@ function ItemActions({ item }: { item: WorkspaceItem }) {
     };
 
     return (
-        <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-                <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="Tindakan berita"
-                >
-                    <MoreHorizontal />
-                </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-                <DropdownMenuItem asChild>
-                    <Link href={item.resume_url}>
-                        <FilePenLine />
-                        {item.record_type === 'session'
-                            ? 'Lanjutkan percakapan'
-                            : 'Buka'}
-                    </Link>
-                </DropdownMenuItem>
-                {item.can_publish && (
-                    <DropdownMenuItem
-                        onSelect={() =>
-                            item.creation_method === 'ai'
-                                ? router.visit(item.resume_url)
-                                : router.post(
-                                      `/admin/news/drafts/${item.id}/publish`,
-                                  )
-                        }
+        <>
+            <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                    <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="Tindakan berita"
                     >
-                        <Send /> Publikasikan
+                        <MoreHorizontal />
+                    </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                        asChild
+                        disabled={published && !item.view_url}
+                    >
+                        <Link
+                            href={
+                                published
+                                    ? (item.view_url ?? '#')
+                                    : item.resume_url
+                            }
+                        >
+                            <FilePenLine />
+                            {published
+                                ? 'View'
+                                : item.record_type === 'session'
+                                  ? 'Lanjutkan percakapan'
+                                  : 'Buka'}
+                        </Link>
                     </DropdownMenuItem>
-                )}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={changeArchiveState}>
-                    {item.status === 'archived' ? <RotateCcw /> : <Archive />}
-                    {item.status === 'archived' ? 'Pulihkan' : 'Arsipkan'}
-                </DropdownMenuItem>
-            </DropdownMenuContent>
-        </DropdownMenu>
+                    {item.retry_url && (
+                        <DropdownMenuItem onSelect={() => setRetryOpen(true)}>
+                            <RotateCcw /> Ulang
+                        </DropdownMenuItem>
+                    )}
+                    {item.can_publish && (
+                        <DropdownMenuItem
+                            onSelect={() =>
+                                router.visit(item.resume_url)
+                            }
+                        >
+                            <Send /> Tinjau dan publikasikan
+                        </DropdownMenuItem>
+                    )}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onSelect={changeArchiveState}>
+                        {item.status === 'archived' ? (
+                            <RotateCcw />
+                        ) : (
+                            <Archive />
+                        )}
+                        {item.status === 'archived' ? 'Pulihkan' : 'Arsip'}
+                    </DropdownMenuItem>
+                </DropdownMenuContent>
+            </DropdownMenu>
+            {item.retry_url && (
+                <RetryPublicationDialog
+                    open={retryOpen}
+                    onOpenChange={setRetryOpen}
+                    url={item.retry_url}
+                    results={item.publication_results ?? {}}
+                />
+            )}
+        </>
     );
 }
 
 export default function NewsWorkspace({ items, counts }: Props) {
-    const [status, setStatus] = useState<Status>('draft');
+    const [status, setStatus] = useState<Status>('active');
     const [view, setView] = useState<ViewMode>('card');
     const [search, setSearch] = useState('');
     const filtered = useMemo(() => {
@@ -134,7 +173,7 @@ export default function NewsWorkspace({ items, counts }: Props) {
             (item) =>
                 item.status === status &&
                 (!query ||
-                    [item.title, item.summary, item.category]
+                    [item.title, item.preview, item.category]
                         .filter(Boolean)
                         .join(' ')
                         .toLocaleLowerCase('id')
@@ -144,7 +183,7 @@ export default function NewsWorkspace({ items, counts }: Props) {
 
     return (
         <>
-            <Head title="Manajemen Berita" />
+            <Head title="Daftar Berita" />
             <div className="min-h-full bg-background p-4 text-foreground md:p-6">
                 <div className="mx-auto flex max-w-7xl flex-col gap-6">
                     <header className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
@@ -155,7 +194,7 @@ export default function NewsWorkspace({ items, counts }: Props) {
                                 </div>
                                 <div>
                                     <h1 className="text-2xl font-semibold">
-                                        Manajemen Berita
+                                        Daftar Berita
                                     </h1>
                                     <p className="text-sm text-muted-foreground">
                                         Kelola draf manual, percakapan AI, dan
@@ -328,26 +367,24 @@ export default function NewsWorkspace({ items, counts }: Props) {
                                             {item.title}
                                         </Link>
                                         <p className="line-clamp-3 text-sm leading-6 text-muted-foreground">
-                                            {item.summary}
+                                            {item.preview}
                                         </p>
                                     </CardContent>
-                                    <CardFooter className="justify-between border-t px-5 pt-4 text-xs text-muted-foreground">
+                                    <CardFooter className="mt-auto flex-wrap justify-between gap-3 border-t px-5 pt-4 text-xs text-muted-foreground">
                                         <span>
-                                            {item.updated_at
+                                            {(item.published_at ??
+                                            item.updated_at)
                                                 ? new Date(
-                                                      item.updated_at,
+                                                      (item.published_at ??
+                                                          item.updated_at)!,
                                                   ).toLocaleDateString('id-ID')
                                                 : '-'}
                                         </span>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            asChild
-                                        >
-                                            <Link href={item.resume_url}>
-                                                Buka
-                                            </Link>
-                                        </Button>
+                                        <PublicationIndicators
+                                            results={
+                                                item.publication_results ?? {}
+                                            }
+                                        />
                                     </CardFooter>
                                 </Card>
                             ))}
@@ -374,7 +411,7 @@ export default function NewsWorkspace({ items, counts }: Props) {
                                             {item.title}
                                         </Link>
                                         <p className="truncate text-sm text-muted-foreground">
-                                            {item.summary}
+                                            {item.preview}
                                         </p>
                                     </div>
                                     <Badge

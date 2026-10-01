@@ -36,7 +36,7 @@ class ArticleHtml
                     continue;
                 }
                 $content = $this->children($child);
-                if (! in_array($tag, ['p', 'div', 'br', 'strong', 'b', 'em', 'i', 'u', 'ul', 'ol', 'li', 'blockquote'], true)) {
+                if (! in_array($tag, ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'div', 'br', 'strong', 'b', 'em', 'i', 'u', 'ul', 'ol', 'li', 'blockquote'], true)) {
                     $result .= $content;
 
                     continue;

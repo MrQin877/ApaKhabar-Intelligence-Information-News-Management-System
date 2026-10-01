@@ -9,7 +9,7 @@ interface NewsItem {
     date: string;
     category: string;
     image: string;
-    excerpt: string;
+    preview: string;
 }
 
 interface Props {
@@ -36,8 +36,14 @@ export default function Welcome({
     }, []);
 
     const timeRemaining = breakingSentAt
-    ? Math.max(0, 24 - Math.floor((now - new Date(breakingSentAt).getTime()) / 3600000))
-    : 0
+        ? Math.max(
+              0,
+              24 -
+                  Math.floor(
+                      (now - new Date(breakingSentAt).getTime()) / 3600000,
+                  ),
+          )
+        : 0;
 
     return (
         <>
@@ -50,12 +56,11 @@ export default function Welcome({
             </Head>
 
             <div className="min-h-screen bg-background text-foreground">
-
                 <HeaderBar />
 
                 {/* ── Darurat Broadcast Bar — shows 24 hours only ── */}
                 {breakingNews && timeRemaining > 0 && (
-                    <div className="border-b border-danger-border/50 bg-danger-bg py-2 overflow-hidden">
+                    <div className="overflow-hidden border-b border-danger-border/50 bg-danger-bg py-2">
                         <div
                             style={{
                                 display: 'inline-flex',
@@ -78,57 +83,54 @@ export default function Welcome({
                                 {/* Message */}
                                 {breakingMessage && (
                                     <>
-                                        <span className="text-danger-text">—</span>
+                                        <span className="text-danger-text">
+                                            —
+                                        </span>
                                         <span className="text-sm text-danger-text">
                                             {breakingMessage}
                                         </span>
                                     </>
                                 )}
-
                             </span>
                         </div>
                     </div>
                 )}
 
-                <main className="mx-auto max-w-7xl px-16 md:px-24 pt-26 pb-8">
-
+                <main className="mx-auto max-w-7xl px-16 pt-26 pb-8 md:px-24">
                     {/* ── Featured News ── */}
                     {featuredNews ? (
                         // Fade-slide-up on mount
-                        <div className="animate-fade-slide-up mb-8 flex flex-col items-stretch overflow-hidden rounded-md bg-card md:flex-row
-                                        transition-transform duration-300 hover:-translate-y-1 hover:shadow-lg">
+                        <div className="mb-8 flex animate-fade-slide-up flex-col items-stretch overflow-hidden rounded-md bg-card transition-transform duration-300 hover:-translate-y-1 hover:shadow-lg md:flex-row">
                             {/* Image zoom on hover — wrap with overflow-hidden + group */}
-                            <div className="group w-full md:w-1/2 overflow-hidden rounded-t-md md:rounded-t-none md:rounded-l-md">
+                            <div className="group w-full overflow-hidden rounded-t-md md:w-1/2 md:rounded-t-none md:rounded-l-md">
                                 <img
-                                    src={featuredNews.image || 'https://placehold.co/600x400'}
+                                    src={
+                                        featuredNews.image ||
+                                        'https://placehold.co/600x400'
+                                    }
                                     alt={featuredNews.title}
-                                    className="w-full object-cover max-h-72 h-full
-                                               transition-transform duration-500 group-hover:scale-105"
+                                    className="h-full max-h-72 w-full object-cover transition-transform duration-500 group-hover:scale-105"
                                 />
                             </div>
-                            <div className="w-full md:w-1/2 flex flex-col justify-start pt-4 pb-6 px-6">
-                                <div className="flex items-center gap-2 mb-3">
+                            <div className="flex w-full flex-col justify-start px-6 pt-4 pb-6 md:w-1/2">
+                                <div className="mb-3 flex items-center gap-2">
                                     <span className="text-xs text-muted-foreground">
                                         {featuredNews.date}
                                     </span>
-                                    <Badge className="bg-brand-100 text-brand-800 hover:bg-brand-100 text-xs dark:bg-brand-900/40 dark:text-brand-300">
+                                    <Badge className="bg-brand-100 text-xs text-brand-800 hover:bg-brand-100 dark:bg-brand-900/40 dark:text-brand-300">
                                         {featuredNews.category}
                                     </Badge>
                                 </div>
-                                <h2 className="text-xl font-bold mb-3 leading-snug text-card-foreground text-justify">
+                                <h2 className="mb-3 text-justify text-xl leading-snug font-bold text-card-foreground">
                                     {featuredNews.title}
                                 </h2>
-                                <p className="text-sm text-muted-foreground mb-4 leading-relaxed text-justify">
-                                    {featuredNews.excerpt}
+                                <p className="mb-4 text-justify text-sm leading-relaxed text-muted-foreground">
+                                    {featuredNews.preview}
                                 </p>
                                 {/* Underline draw on hover */}
                                 <Link
                                     href={`/news/${featuredNews.id}`}
-                                    className="text-sm font-medium text-card-foreground mt-auto
-                                               relative w-fit after:absolute after:bottom-0 after:left-0
-                                               after:h-px after:w-0 after:bg-current
-                                               after:transition-[width] after:duration-300
-                                               hover:after:w-full"
+                                    className="relative mt-auto w-fit text-sm font-medium text-card-foreground after:absolute after:bottom-0 after:left-0 after:h-px after:w-0 after:bg-current after:transition-[width] after:duration-300 hover:after:w-full"
                                 >
                                     Baca Selengkapnya →
                                 </Link>
@@ -136,61 +138,60 @@ export default function Welcome({
                         </div>
                     ) : (
                         /* Skeleton for featured */
-                        <div className="mb-8 flex flex-col md:flex-row overflow-hidden rounded-md">
-                            <div className="w-full md:w-1/2 h-72 animate-shimmer rounded-t-md md:rounded-t-none md:rounded-l-md" />
-                            <div className="w-full md:w-1/2 flex flex-col gap-3 p-6">
-                                <div className="h-3 w-24 animate-shimmer rounded" />
-                                <div className="h-5 w-full animate-shimmer rounded" />
-                                <div className="h-5 w-3/4 animate-shimmer rounded" />
-                                <div className="h-3 w-full animate-shimmer rounded mt-2" />
-                                <div className="h-3 w-5/6 animate-shimmer rounded" />
+                        <div className="mb-8 flex flex-col overflow-hidden rounded-md md:flex-row">
+                            <div className="animate-shimmer h-72 w-full rounded-t-md md:w-1/2 md:rounded-t-none md:rounded-l-md" />
+                            <div className="flex w-full flex-col gap-3 p-6 md:w-1/2">
+                                <div className="animate-shimmer h-3 w-24 rounded" />
+                                <div className="animate-shimmer h-5 w-full rounded" />
+                                <div className="animate-shimmer h-5 w-3/4 rounded" />
+                                <div className="animate-shimmer mt-2 h-3 w-full rounded" />
+                                <div className="animate-shimmer h-3 w-5/6 rounded" />
                             </div>
                         </div>
                     )}
 
                     {/* ── News Grid ── */}
                     {newsList.length > 0 ? (
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch">
+                        <div className="grid grid-cols-1 items-stretch gap-6 md:grid-cols-3">
                             {newsList.map((news, index) => (
                                 // Staggered fade-slide-up per card
                                 <div
                                     key={news.id}
-                                    className="animate-fade-slide-up h-full flex flex-col overflow-hidden rounded-md bg-card
-                                               transition-transform duration-300 hover:-translate-y-1 hover:shadow-md"
-                                    style={{ animationDelay: `${index * 100}ms` }}
+                                    className="flex h-full animate-fade-slide-up flex-col overflow-hidden rounded-md bg-card transition-transform duration-300 hover:-translate-y-1 hover:shadow-md"
+                                    style={{
+                                        animationDelay: `${index * 100}ms`,
+                                    }}
                                 >
                                     {/* Image zoom — same group trick */}
-                                    <div className="group overflow-hidden rounded-t-md flex-shrink-0">
+                                    <div className="group flex-shrink-0 overflow-hidden rounded-t-md">
                                         <img
-                                            src={news.image || 'https://placehold.co/400x300'}
+                                            src={
+                                                news.image ||
+                                                'https://placehold.co/400x300'
+                                            }
                                             alt={news.title}
-                                            className="w-full h-48 object-cover
-                                                       transition-transform duration-500 group-hover:scale-105"
+                                            className="h-48 w-full object-cover transition-transform duration-500 group-hover:scale-105"
                                         />
                                     </div>
-                                    <div className="flex flex-col flex-1 px-0 pt-3 pb-4">
-                                        <div className="flex items-center gap-2 mb-2">
+                                    <div className="flex flex-1 flex-col px-0 pt-3 pb-4">
+                                        <div className="mb-2 flex items-center gap-2">
                                             <span className="text-xs text-muted-foreground">
                                                 {news.date}
                                             </span>
-                                            <Badge className="bg-brand-100 text-brand-800 hover:bg-brand-100 text-xs dark:bg-brand-900/40 dark:text-brand-300">
+                                            <Badge className="bg-brand-100 text-xs text-brand-800 hover:bg-brand-100 dark:bg-brand-900/40 dark:text-brand-300">
                                                 {news.category}
                                             </Badge>
                                         </div>
-                                        <h3 className="text-lg font-bold mb-3 leading-snug text-card-foreground text-justify">
+                                        <h3 className="mb-3 text-justify text-lg leading-snug font-bold text-card-foreground">
                                             {news.title}
                                         </h3>
-                                        <p className="text-sm text-muted-foreground leading-relaxed text-justify">
-                                            {news.excerpt}
+                                        <p className="text-justify text-sm leading-relaxed text-muted-foreground">
+                                            {news.preview}
                                         </p>
                                         {/* Underline draw on hover */}
                                         <Link
                                             href={`/news/${news.id}`}
-                                            className="text-sm font-medium text-card-foreground mt-auto pt-4
-                                                       relative w-fit after:absolute after:bottom-0 after:left-0
-                                                       after:h-px after:w-0 after:bg-current
-                                                       after:transition-[width] after:duration-300
-                                                       hover:after:w-full"
+                                            className="relative mt-auto w-fit pt-4 text-sm font-medium text-card-foreground after:absolute after:bottom-0 after:left-0 after:h-px after:w-0 after:bg-current after:transition-[width] after:duration-300 hover:after:w-full"
                                         >
                                             Baca Selengkapnya →
                                         </Link>
@@ -200,20 +201,22 @@ export default function Welcome({
                         </div>
                     ) : (
                         /* Skeleton grid when no news yet */
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
                             {[...Array(3)].map((_, i) => (
-                                <div key={i} className="flex flex-col gap-3 overflow-hidden rounded-md">
-                                    <div className="h-48 w-full animate-shimmer rounded-t-md" />
-                                    <div className="h-3 w-20 animate-shimmer rounded" />
-                                    <div className="h-4 w-full animate-shimmer rounded" />
-                                    <div className="h-4 w-4/5 animate-shimmer rounded" />
-                                    <div className="h-3 w-full animate-shimmer rounded" />
-                                    <div className="h-3 w-3/4 animate-shimmer rounded" />
+                                <div
+                                    key={i}
+                                    className="flex flex-col gap-3 overflow-hidden rounded-md"
+                                >
+                                    <div className="animate-shimmer h-48 w-full rounded-t-md" />
+                                    <div className="animate-shimmer h-3 w-20 rounded" />
+                                    <div className="animate-shimmer h-4 w-full rounded" />
+                                    <div className="animate-shimmer h-4 w-4/5 rounded" />
+                                    <div className="animate-shimmer h-3 w-full rounded" />
+                                    <div className="animate-shimmer h-3 w-3/4 rounded" />
                                 </div>
                             ))}
                         </div>
                     )}
-
                 </main>
             </div>
         </>

@@ -24,7 +24,7 @@ Proposed table structure
 - phones: phone, phone_otp, phone_otp_expires_at, phone_verified_at, userID
 - personal_access_tokens: tokenID, tokenable_id, tokenable_type, name, token,
 	abilities, expires_at
-- news: postID, title, content, image, likes_count, view, excerpt,
+- news: postID, title, content, image, likes_count, view,
 	category_id
 - news_categories: categoryID, name, description
 - comments: commentID, content, newsID, userID, parentID

@@ -48,6 +48,7 @@ class MetaConnectionController extends Controller
         return Inertia::render('settings/integration', [
             'platforms' => array_slice($meta->platforms($request->user()->getKey()), 1),
             'connectionMessage' => $request->session()->get('connection_message'),
+            'connectionPlatform' => $request->session()->get('connection_platform'),
             'selection' => $selection ? [
                 'ticket' => $pending, 'platform' => $selection['platform'],
                 'pages' => array_map(fn ($page) => [
@@ -158,6 +159,7 @@ class MetaConnectionController extends Controller
         }
 
         return redirect()->route('integration.edit')->with('connection_message', $message)
+            ->with('connection_platform', $platform)
             ->header('Cache-Control', 'no-store')->header('Referrer-Policy', 'no-referrer');
     }
 
@@ -228,6 +230,7 @@ class MetaConnectionController extends Controller
 
         return redirect()->route('integration.edit')->with('connection_message',
             'Silakan hubungkan kembali Instagram melalui Meta untuk melanjutkan.')
+            ->with('connection_platform', 'instagram')
             ->header('Cache-Control', 'no-store')->header('Referrer-Policy', 'no-referrer');
     }
 }

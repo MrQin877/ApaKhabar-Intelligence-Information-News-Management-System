@@ -90,8 +90,7 @@ test('TC-NEWS-03: news homepage can be filtered by category', function () {
     $response->assertStatus(200);
 
     // Verify the correct Inertia page component is rendered
-    $response->assertInertia(fn (Assert $page) =>
-        $page->component('welcome')
+    $response->assertInertia(fn (Assert $page) => $page->component('welcome')
     );
 });
 

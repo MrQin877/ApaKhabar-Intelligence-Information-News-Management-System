@@ -1,6 +1,8 @@
 import { Head } from '@inertiajs/react';
-import { LoaderCircle } from 'lucide-react';
-import { useState } from 'react';
+import { Info, LoaderCircle } from 'lucide-react';
+import { useCallback, useState } from 'react';
+import { FeedbackToast } from '@/components/feedback-toast';
+import type { Feedback } from '@/components/feedback-toast';
 import Heading from '@/components/heading';
 import type { PublishPlatform } from '@/components/publish-news-dialog';
 import { Button } from '@/components/ui/button';
@@ -21,30 +23,68 @@ type Selection = {
     pages: { id: string; name: string; account_name: string }[];
 } | null;
 
+function connectionFailure(error: unknown): string {
+    const message = error instanceof Error ? error.message : '';
+
+    if (/kedaluwarsa|expired|csrf|419/i.test(message)) {
+        return 'Sesi atau pilihan akun sudah kedaluwarsa. Muat ulang halaman, lalu hubungkan kembali akun Anda.';
+    }
+
+    if (/belum dikonfigurasi/i.test(message)) {
+        return 'Pengaturan koneksi belum lengkap. Silakan hubungi administrator.';
+    }
+
+    if (/tidak tersedia|izin/i.test(message)) {
+        return 'Akun atau Halaman tidak tersedia, atau izin aksesnya sudah berakhir. Pastikan Anda memiliki akses, lalu hubungkan kembali.';
+    }
+
+    if (error instanceof TypeError) {
+        return 'Tidak dapat menghubungi server. Periksa koneksi internet Anda, lalu coba lagi.';
+    }
+
+    return 'Koneksi belum dapat diperbarui. Silakan coba lagi. Jika masalah berlanjut, hubungi administrator.';
+}
+
 export default function Integration({
     platforms: initialPlatforms,
     selection: initialSelection,
     connectionMessage,
+    connectionPlatform,
 }: {
     platforms: PublishPlatform[];
     selection: Selection;
     connectionMessage: string | null;
+    connectionPlatform: 'facebook' | 'instagram' | null;
 }) {
     const [platforms, setPlatforms] = useState(initialPlatforms);
     const [selection, setSelection] = useState(initialSelection);
     const [pageId, setPageId] = useState('');
     const [disconnect, setDisconnect] = useState<PublishPlatform | null>(null);
     const [busy, setBusy] = useState(false);
-    const [message, setMessage] = useState(connectionMessage);
-    const [error, setError] = useState<string | null>(null);
+    const [feedback, setFeedback] = useState<
+        (Feedback & { platform: string }) | null
+    >(() =>
+        connectionMessage
+            ? {
+                  message: connectionMessage,
+                  platform:
+                      connectionPlatform ??
+                      initialSelection?.platform ??
+                      'facebook',
+                  variant: initialSelection ? 'info' : 'error',
+              }
+            : null,
+    );
+    const dismissFeedback = useCallback(() => setFeedback(null), []);
 
     async function update(
         path: string,
         payload: Record<string, string>,
-        success: string,
+        failure: string,
+        platform: string,
     ) {
         setBusy(true);
-        setError(null);
+        setFeedback(null);
 
         try {
             const result = await metaRequest<{ platforms: PublishPlatform[] }>(
@@ -54,26 +94,37 @@ export default function Integration({
             setPlatforms(result.platforms.filter((p) => p.id !== 'website'));
             setDisconnect(null);
             setSelection(null);
-            setMessage(success);
-        } catch {
-            setError('Koneksi tidak dapat diperbarui. Silakan coba lagi.');
+        } catch (error) {
+            setFeedback({
+                message: `${failure} ${connectionFailure(error)}`,
+                variant: 'error',
+                platform,
+            });
         } finally {
             setBusy(false);
         }
     }
 
     async function cancelSelection() {
+        const platform = selection?.platform ?? 'facebook';
         setBusy(true);
-        setError(null);
+        setFeedback(null);
 
         try {
             await metaRequest('/admin/social/meta/cancel', {});
             setSelection(null);
-            setMessage(
-                'Pemilihan dibatalkan. Koneksi sebelumnya tidak berubah.',
-            );
+            setFeedback({
+                message:
+                    'Pemilihan dibatalkan. Koneksi sebelumnya tidak berubah.',
+                variant: 'info',
+                platform,
+            });
         } catch {
-            setError('Pemilihan tidak dapat dibatalkan. Silakan coba lagi.');
+            setFeedback({
+                message: 'Pemilihan tidak dapat dibatalkan. Silakan coba lagi.',
+                variant: 'error',
+                platform,
+            });
         } finally {
             setBusy(false);
         }
@@ -83,7 +134,10 @@ export default function Integration({
         <SettingsWrapper
             title="Integrasi Media Sosial"
             breadcrumbs={[
-                { title: 'Integrasi Media Sosial', href: '/settings/integration' },
+                {
+                    title: 'Integrasi Media Sosial',
+                    href: '/settings/integration',
+                },
             ]}
         >
             <Head title="Integrasi Media Sosial" />
@@ -91,25 +145,39 @@ export default function Integration({
                 <Heading
                     variant="small"
                     title="Integrasi Media Sosial"
-                    description="Kelola akun Facebook dan Instagram untuk penerbitan berita."
+                    description="Hubungkan akun melalui Meta. Kata sandi Facebook dan Instagram hanya dimasukkan di situs resmi Meta."
                 />
-                <p className="text-sm text-muted-foreground">
-                    Hubungkan akun melalui Meta. Kata sandi Facebook dan
-                    Instagram hanya dimasukkan di situs resmi Meta.
-                </p>
-                {message && (
-                    <p
-                        role="status"
-                        className="rounded-lg border bg-muted/40 p-3 text-sm"
-                    >
-                        {message}
-                    </p>
-                )}
-                {error && (
-                    <p role="alert" className="text-sm text-destructive">
-                        {error}
-                    </p>
-                )}
+                <aside
+                    aria-label="Persyaratan akun media sosial"
+                    className="flex gap-3 rounded-lg border border-info-border bg-info-bg p-4 text-sm text-info-text"
+                >
+                    <Info
+                        className="mt-0.5 size-4 shrink-0 text-info-text"
+                        aria-hidden="true"
+                    />
+                    <div className="space-y-3 leading-relaxed">
+                        <div className="space-y-2">
+                            <p className="font-medium text-foreground">
+                                Sebelum menghubungkan akun:
+                            </p>
+                            <ul className="list-disc space-y-1.5 pl-5 text-foreground">
+                                <li>
+                                    Pastikan akun Facebook memiliki akses ke
+                                    Halaman Facebook yang dikelola.
+                                </li>
+                                <li>
+                                    Untuk Instagram, gunakan akun Profesional
+                                    (Bisnis atau Kreator) yang terhubung ke
+                                    Halaman Facebook tersebut.
+                                </li>
+                            </ul>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                            Jika persyaratan belum terpenuhi, proses koneksi
+                            atau penerbitan mungkin tidak berhasil.
+                        </p>
+                    </div>
+                </aside>
                 {platforms.map((platform) => {
                     const connected = platform.status === 'connected';
 
@@ -208,7 +276,7 @@ export default function Integration({
                                         variant="destructive"
                                         disabled={busy}
                                         onClick={() => {
-                                            setError(null);
+                                            setFeedback(null);
                                             setDisconnect(platform);
                                         }}
                                     >
@@ -216,6 +284,15 @@ export default function Integration({
                                     </Button>
                                 )}
                             </div>
+                            <FeedbackToast
+                                inline
+                                feedback={
+                                    feedback?.platform === platform.id
+                                        ? feedback
+                                        : null
+                                }
+                                onDismiss={dismissFeedback}
+                            />
                             {!platform.connect_url && (
                                 <p className="text-xs text-muted-foreground">
                                     Login Meta belum dikonfigurasi. Hubungi
@@ -270,11 +347,6 @@ export default function Integration({
                             </option>
                         ))}
                     </select>
-                    {error && (
-                        <p role="alert" className="text-sm text-destructive">
-                            {error}
-                        </p>
-                    )}
                     <DialogFooter>
                         <Button
                             variant="outline"
@@ -294,8 +366,9 @@ export default function Integration({
                                             page_id: pageId,
                                         },
                                         selection.platform === 'instagram'
-                                            ? 'Instagram terhubung.'
-                                            : 'Facebook terhubung.',
+                                            ? 'Gagal menghubungkan Instagram.'
+                                            : 'Gagal menghubungkan Facebook.',
+                                        selection.platform,
                                     );
                                 }
                             }}
@@ -325,11 +398,6 @@ export default function Integration({
                             dihubungkan kembali.
                         </DialogDescription>
                     </DialogHeader>
-                    {error && (
-                        <p role="alert" className="text-sm text-destructive">
-                            {error}
-                        </p>
-                    )}
                     <DialogFooter>
                         <Button
                             variant="outline"
@@ -346,7 +414,8 @@ export default function Integration({
                                     void update(
                                         `/admin/social/${disconnect.id}/disconnect`,
                                         { confirmed: '1' },
-                                        `${disconnect.name} disconnected.`,
+                                        `Gagal memutuskan koneksi ${disconnect.name}.`,
+                                        disconnect.id,
                                     );
                                 }
                             }}

@@ -10,19 +10,13 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
+import type { PublishResult } from '@/lib/manual-publish';
 
-type PublishResult = {
-    success: boolean;
-    attempt_id: string;
-    retry_url?: string;
-    completion_url?: string;
-    results: Record<string, { success: boolean; message: string }>;
-};
-
-export function PublishResultDialog() {
-    const { publishResult } = usePage<{
+export function PublishResultDialog({ result }: { result?: PublishResult }) {
+    const { publishResult: sharedResult } = usePage<{
         publishResult?: PublishResult | null;
     }>().props;
+    const publishResult = result ?? sharedResult;
     const [dismissed, setDismissed] = useState<string | null>(null);
 
     if (!publishResult) {
@@ -39,7 +33,7 @@ export function PublishResultDialog() {
     const close = () => {
         setDismissed(publishResult.attempt_id);
 
-        if (publishResult.success && publishResult.completion_url) {
+        if (publishResult.completion_url) {
             router.visit(publishResult.completion_url);
         }
     };
@@ -84,7 +78,9 @@ export function PublishResultDialog() {
                                     />
                                 )}
                                 {names[platform] ?? platform} —{' '}
-                                {result.success ? 'Berhasil diterbitkan' : 'Gagal'}
+                                {result.success
+                                    ? 'Berhasil diterbitkan'
+                                    : 'Gagal'}
                             </div>
                             {!result.success && (
                                 <p className="text-muted-foreground">
@@ -95,24 +91,27 @@ export function PublishResultDialog() {
                     ))}
                 </ul>
                 <DialogFooter>
-                    {!publishResult.success && (
-                        <Button
-                            onClick={() => {
-                                close();
+                    {!publishResult.success &&
+                        !publishResult.completion_url && (
+                            <Button
+                                onClick={() => {
+                                    close();
 
-                                if (publishResult.retry_url) {
-                                    router.visit(publishResult.retry_url);
-                                }
-                            }}
-                        >
-                            Coba Lagi
-                        </Button>
-                    )}
+                                    if (publishResult.retry_url) {
+                                        router.visit(publishResult.retry_url);
+                                    }
+                                }}
+                            >
+                                Coba Lagi
+                            </Button>
+                        )}
                     <Button
                         variant={publishResult.success ? 'default' : 'outline'}
                         onClick={close}
                     >
-                        Selesai
+                        {publishResult.completion_url
+                            ? 'Daftar Berita'
+                            : 'Selesai'}
                     </Button>
                 </DialogFooter>
             </DialogContent>

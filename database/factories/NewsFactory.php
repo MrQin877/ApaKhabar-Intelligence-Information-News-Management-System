@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Models\News;
+use App\Models\NewsCategory;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 class NewsFactory extends Factory
@@ -12,12 +13,14 @@ class NewsFactory extends Factory
     public function definition(): array
     {
         return [
-            'title'       => fake()->sentence(),
-            'content'     => fake()->paragraphs(3, true),
-            'excerpt'     => fake()->sentence(),
-            'category_id' => \App\Models\NewsCategory::firstOrCreate(['name' => 'Pengumuman'])->getKey(),
-            'image'       => null,
-            'view'       => 0,
+            'title' => fake()->sentence(),
+            'content' => fake()->paragraphs(3, true),
+            'excerpt' => fake()->sentence(),
+            'category_id' => NewsCategory::firstOrCreate([
+                'name' => 'Pengumuman',
+            ])->getKey(),
+            'image' => null,
+            'view' => 0,
             'likes_count' => 0,
         ];
     }

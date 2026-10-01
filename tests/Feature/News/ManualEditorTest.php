@@ -1,9 +1,12 @@
 <?php
 
+use App\Http\Controllers\Admin\NewsCreatorController;
 use App\Models\IntelligentNewsDraft;
 use App\Models\News;
+use App\Models\NewsCategory;
 use App\Models\User;
 use App\Models\UserRole;
+use App\Support\ArticleText;
 use App\Support\NewsImageUrl;
 use Illuminate\Http\Testing\File;
 use Illuminate\Http\UploadedFile;
@@ -19,8 +22,7 @@ function manualArticle(array $overrides = []): array
 {
     return array_replace([
         'headline' => 'Berita kegiatan warga',
-        'subheadline' => 'Kegiatan bersama',
-        'summary' => 'Ringkasan berita untuk warga.',
+
         'content' => '<p>Warga berkumpul untuk kegiatan bersama hari ini.</p>',
         'content_format' => 'html',
         'show_on_homepage' => false,
@@ -33,6 +35,21 @@ beforeEach(function () {
     config(['services.facebook.page_id' => null, 'services.facebook.page_access_token' => null]);
     config(['services.instagram.user_id' => null, 'services.instagram.access_token' => null, 'services.instagram.public_base_url' => null]);
     $this->actingAs(User::factory()->create(['roleID' => UserRole::firstOrCreate(['name' => 'admin'])->getKey()]));
+});
+
+test('news previews are generated from full content and website details keep the full article', function () {
+    $content = '<p>Kalimat pertama yang bermakna.</p><p>Kalimat kedua tetap tersedia di halaman berita.</p>';
+    $this->postJson('/admin/news/manual', manualArticle(['intent' => 'publish', 'content' => $content]))->assertOk();
+    $news = News::sole();
+    $this->get('/admin/news')->assertInertia(fn (Assert $page) => $page
+        ->where('items.0.preview', 'Kalimat pertama yang bermakna.'));
+    $this->get('/news/'.$news->getKey())->assertInertia(fn (Assert $page) => $page
+        ->where('news.content', $content));
+    $this->get('/news')->assertInertia(fn (Assert $page) => $page
+        ->where('newsList.0.preview', 'Kalimat pertama yang bermakna.'));
+    $news->update(['content' => '<p>Isi baru langsung mengubah pratinjau.</p>']);
+    $this->get('/admin/news')->assertInertia(fn (Assert $page) => $page
+        ->where('items.0.preview', 'Isi baru langsung mengubah pratinjau.'));
 });
 
 test('manual editor saves formatting and cover without publishing', function () {
@@ -81,6 +98,26 @@ test('multipart updates persist a replacement cover and invalidate prior review'
     expect($draft->fresh()->headline)->toBe('Judul diperbarui')
         ->and($draft->fresh()->show_on_homepage)->toBeTrue()
         ->and($draft->fresh()->reviewed_at)->toBeNull();
+});
+
+test('manual multipart publishing returns final JSON without a redirect or flashed dialog', function () {
+    $this->withHeader('Accept', 'application/json')
+        ->post('/admin/news/manual', manualArticle(['intent' => 'publish']))
+        ->assertOk()
+        ->assertJsonPath('success', true)
+        ->assertJsonPath('results.application.success', true)
+        ->assertJsonPath('completion_url', route('admin.news-workspace.index'))
+        ->assertSessionMissing('publishResult');
+    expect(News::count())->toBe(1);
+});
+
+test('manual JSON validation returns failed platform results without a stale flashed dialog', function () {
+    $this->postJson('/admin/news/manual', manualArticle(['intent' => 'publish', 'headline' => '']))
+        ->assertUnprocessable()
+        ->assertJsonPath('results.application.success', false)
+        ->assertJsonValidationErrors('headline')
+        ->assertSessionMissing('publishResult');
+    expect(News::count())->toBe(0);
 });
 
 test('manual editor rejects unsupported and oversized covers', function () {
@@ -185,4 +222,101 @@ test('website pages serve original LAN images from the browser origin without ch
         ->toBe('https://cdn.example.com/storage/news-images/cover.png');
     expect(NewsImageUrl::forWeb('https://res.cloudinary.com/demo/image/upload/cover.jpg'))
         ->toBe('https://res.cloudinary.com/demo/image/upload/cover.jpg');
+});
+
+test('publication preview sanitizes current content without creating a draft and publishing uses that snapshot', function () {
+    $content = '<h2>Agenda warga</h2><p><strong>Kegiatan bersama</strong> berlangsung hari ini.</p><script>alert(1)</script>';
+    $preview = $this->postJson('/admin/news/manual/preview', manualArticle(['content' => $content]))
+        ->assertOk()->assertJsonPath('title', 'Berita kegiatan warga')->json();
+    expect($preview['content'])->toContain('<h2>', '<strong>')->not->toContain('script', 'alert(1)')
+        ->and($preview['caption'])->toBe(ArticleText::post($preview['title'], $preview['content']))
+        ->and(IntelligentNewsDraft::count())->toBe(0)->and(News::count())->toBe(0);
+    $this->postJson('/admin/news/manual', [
+        'intent' => 'publish', 'platforms' => ['website'], 'preview_token' => $preview['token'],
+        'headline' => 'Unreviewed replacement', 'content' => 'Unreviewed replacement content',
+    ])->assertOk()->assertJsonPath('success', true);
+    expect(News::sole()->title)->toBe($preview['title'])
+        ->and(News::sole()->content)->toBe($preview['content']);
+});
+
+test('publication preview reports missing instagram media and rejects expired or foreign snapshots', function () {
+    $preview = $this->postJson('/admin/news/manual/preview', manualArticle())->assertOk()
+        ->assertJsonStructure(['issues' => ['instagram']])->json();
+    $this->postJson('/admin/news/manual', ['intent' => 'publish', 'platforms' => ['website'], 'preview_token' => 'expired'])
+        ->assertUnprocessable()->assertJsonValidationErrors('platforms');
+    $this->actingAs(User::factory()->create(['roleID' => UserRole::firstOrCreate(['name' => 'admin'])->getKey()]));
+    $this->postJson('/admin/news/manual', ['intent' => 'publish', 'platforms' => ['website'], 'preview_token' => $preview['token']])
+        ->assertUnprocessable()->assertJsonValidationErrors('platforms');
+    expect(News::count())->toBe(0)->and(IntelligentNewsDraft::count())->toBe(0);
+});
+
+test('removing lainnya safely uncategorizes news and drafts without changing other categories', function () {
+    $other = NewsCategory::create(['name' => ' Lainnya ', 'slug' => 'lainnya', 'is_default' => true]);
+    $keep = NewsCategory::create(['name' => 'Pendidikan', 'slug' => 'pendidikan']);
+    $this->postJson('/admin/news/manual', manualArticle(['intent' => 'publish', 'category_id' => $other->getKey()]))->assertOk();
+    $this->post('/admin/news/manual', manualArticle(['category_id' => $other->getKey()]))->assertSessionHasNoErrors();
+    $this->post('/admin/news/manual', manualArticle(['headline' => 'Berita pendidikan', 'category_id' => $keep->getKey()]))->assertSessionHasNoErrors();
+    $before = News::sole()->content;
+    $migration = require database_path('migrations/2026_10_01_000001_remove_lainnya_news_category.php');
+    $migration->up();
+    $migration->up();
+    expect(NewsCategory::find($other->getKey()))->toBeNull()
+        ->and(News::sole()->category_id)->toBeNull()
+        ->and(News::sole()->content)->toBe($before)
+        ->and(IntelligentNewsDraft::where('title', 'Berita kegiatan warga')->whereNotNull('category_id')->count())->toBe(0)
+        ->and(IntelligentNewsDraft::where('title', 'Berita pendidikan')->sole()->category_id)->toBe($keep->getKey());
+    $this->get('/admin/categories')->assertInertia(fn (Assert $page) => $page->where('categories', fn ($categories) => collect($categories)->every(fn ($category) => trim(mb_strtolower($category['name'])) !== 'lainnya')));
+});
+
+test('lainnya is not seeded or recreated through category management', function () {
+    expect(NewsCategory::whereRaw('LOWER(TRIM(name)) = ?', ['lainnya'])->exists())->toBeFalse();
+    $this->postJson('/admin/categories', ['name' => ' LAINNYA '])->assertUnprocessable()->assertJsonValidationErrors('name');
+});
+
+test('category activation controls selectors but never published news visibility', function () {
+    $category = NewsCategory::create(['name' => 'Lingkungan', 'slug' => 'lingkungan-status']);
+    $this->postJson('/admin/news/manual', manualArticle(['intent' => 'publish', 'category_id' => $category->getKey()]))->assertOk();
+    $news = News::sole();
+    $this->putJson('/admin/categories/'.$category->getKey(), ['name' => $category->name, 'status' => 'inactive'])
+        ->assertOk()->assertJsonPath('category.is_active', false)->assertJsonPath('category.status', 'inactive');
+    expect($category->fresh()->is_active)->toBeFalse();
+    $this->getJson('/api/categories')->assertJsonMissing(['name' => $category->name]);
+    $this->get('/')->assertInertia(fn (Assert $page) => $page->where('categories', fn ($items) => ! collect($items)->contains($category->name)));
+    $this->get('/admin/news/manual/create')->assertInertia(fn (Assert $page) => $page->where('categories', fn ($items) => ! collect($items)->contains('categoryID', $category->getKey())));
+    $this->get('/admin/categories')->assertInertia(fn (Assert $page) => $page->where('categories', fn ($items) => collect($items)->contains(fn ($item) => $item['id'] === $category->getKey() && $item['status'] === 'inactive')));
+    $this->get('/news/'.$news->getKey())->assertOk()->assertInertia(fn (Assert $page) => $page->where('news.category', $category->name));
+    expect($news->fresh()->status)->toBe('active')->and($news->fresh()->category_id)->toBe($category->getKey());
+    $this->postJson('/admin/news/manual/preview', manualArticle(['category_id' => $category->getKey()]))->assertUnprocessable()->assertJsonValidationErrors('category_id');
+    $this->putJson('/admin/categories/'.$category->getKey(), ['name' => $category->name, 'status' => 'active'])->assertOk();
+    $this->getJson('/api/categories')->assertJsonFragment(['name' => $category->name]);
+    $this->get('/admin/news/manual/create')->assertInertia(fn (Assert $page) => $page->where('categories', fn ($items) => collect($items)->contains('categoryID', $category->getKey())));
+});
+
+test('soft deleting an in-use category preserves news and draft relationships and permits a unique replacement slug', function () {
+    $category = NewsCategory::create(['name' => 'Pendidikan', 'slug' => 'pendidikan']);
+    $this->postJson('/admin/news/manual', manualArticle(['intent' => 'publish', 'category_id' => $category->getKey()]))->assertOk();
+    $this->post('/admin/news/manual', manualArticle(['category_id' => $category->getKey()]))->assertSessionHasNoErrors();
+    $news = News::sole();
+    $this->deleteJson('/admin/categories/'.$category->getKey())->assertNoContent();
+    $this->assertSoftDeleted('news_categories', ['categoryID' => $category->getKey()]);
+    expect($news->fresh()->categoryRecord->name)->toBe('Pendidikan')
+        ->and($news->fresh()->status)->toBe('active')
+        ->and(IntelligentNewsDraft::where('status', 'draft')->sole()->category->name)->toBe('Pendidikan');
+    $this->get('/news/'.$news->getKey())->assertOk()->assertInertia(fn (Assert $page) => $page->where('news.category', 'Pendidikan'));
+    $this->getJson('/api/categories')->assertJsonMissing(['name' => 'Pendidikan']);
+    $this->get('/admin/categories')->assertInertia(fn (Assert $page) => $page->where('categories', fn ($items) => ! collect($items)->contains('id', $category->getKey())));
+    $this->postJson('/admin/news/manual/preview', manualArticle(['category_id' => $category->getKey()]))->assertUnprocessable()->assertJsonValidationErrors('category_id');
+    $this->postJson('/admin/categories', ['name' => 'Pendidikan'])->assertCreated()->assertJsonPath('category.slug', 'pendidikan-2');
+});
+
+test('AI category resolution ignores inactive and deleted categories including when none remain', function () {
+    $inactive = NewsCategory::create(['name' => 'Pendidikan', 'slug' => 'pendidikan-ai', 'is_active' => false]);
+    $deleted = NewsCategory::create(['name' => 'Lingkungan', 'slug' => 'lingkungan-ai']);
+    $deleted->delete();
+    $active = NewsCategory::create(['name' => 'Pengumuman', 'slug' => 'pengumuman-ai']);
+    $method = new ReflectionMethod(NewsCreatorController::class, 'resolveCategoryId');
+    $controller = app(NewsCreatorController::class);
+    expect($method->invoke($controller, ['category' => $inactive->name]))->toBe($active->getKey());
+    $active->update(['is_active' => false]);
+    expect($method->invoke($controller, ['category' => $deleted->name]))->toBeNull();
 });
