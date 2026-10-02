@@ -87,6 +87,8 @@ class NewsCreatorController extends Controller
                     'sources_used' => $draft->sources_used,
                     'warnings' => $draft->warnings,
                     'image' => $draft->image,
+                    'image_crops' => $draft->image_crops,
+                    'image_variants' => $draft->image_variants,
                     'version' => $draft->version,
                     'reviewed_at' => $draft->reviewed_at?->toIso8601String(),
                     'updated_at' => $draft->updated_at?->toIso8601String(),
@@ -612,6 +614,8 @@ class NewsCreatorController extends Controller
 
         $draft->update([
             'image' => Storage::disk($disk)->url($path),
+            'image_crops' => null,
+            'image_variants' => null,
             'version' => $draft->version + 1,
             'reviewed_at' => null,
         ]);

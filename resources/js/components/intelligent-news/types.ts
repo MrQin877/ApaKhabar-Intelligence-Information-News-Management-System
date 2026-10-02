@@ -1,4 +1,5 @@
 import type { PublishPlatform } from '@/components/publish-news-dialog';
+import type { ImageCrops } from '@/lib/image-crops';
 import type { MetaAuthConfig } from '@/lib/meta-auth';
 import type { AssistantSessionSummary } from './session-panel';
 
@@ -132,6 +133,8 @@ export interface ArticleQuality {
 }
 
 export interface Article {
+    image_crops?: ImageCrops | null;
+    image_variants?: Record<string, string> | null;
     draft_id: number;
     headline: string;
     subheadline: string | null;
