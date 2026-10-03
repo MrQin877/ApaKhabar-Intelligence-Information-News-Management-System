@@ -1,3 +1,8 @@
+import type { PublishPlatform } from '@/components/publish-news-dialog';
+import type { ImageCrops } from '@/lib/image-crops';
+import type { MetaAuthConfig } from '@/lib/meta-auth';
+import type { AssistantSessionSummary } from './session-panel';
+
 export interface InformationItem {
     id: number;
     document_id: number;
@@ -128,6 +133,8 @@ export interface ArticleQuality {
 }
 
 export interface Article {
+    image_crops?: ImageCrops | null;
+    image_variants?: Record<string, string> | null;
     draft_id: number;
     headline: string;
     subheadline: string | null;
@@ -143,6 +150,7 @@ export interface Article {
     quality?: ArticleQuality | null;
     selected_sources: Array<{
         id: number;
+        document_id?: number;
         title: string;
         document: string;
         evidence: Evidence[];
@@ -159,10 +167,10 @@ export interface Recommendation {
 }
 
 export interface AssistantPageProps {
-    publishPlatforms: import('@/components/publish-news-dialog').PublishPlatform[];
-    metaAuth: import('@/lib/meta-auth').MetaAuthConfig;
+    publishPlatforms: PublishPlatform[];
+    metaAuth: MetaAuthConfig;
     conversationReadOnly?: boolean;
-    sessions?: import('./session-panel').AssistantSessionSummary[];
+    sessions?: AssistantSessionSummary[];
     categories?: { categoryID: number; name: string }[];
     informationItems: InformationItem[];
     pendingInformation?: PendingInformationItem[];

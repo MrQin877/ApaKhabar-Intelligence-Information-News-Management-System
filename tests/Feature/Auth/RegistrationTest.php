@@ -62,7 +62,7 @@ test('TC-REG-01: user can register with valid name email and password', function
 
     // Use User::where() instead of assertDatabaseHas()
     // because MongoDB uses a separate connection
-    $user = User::where('email', 'ahmad@gmail.com')->first();
+    $user = User::whereHas('emailRecord', fn ($query) => $query->where('email', 'ahmad@gmail.com'))->first();
     expect($user)->not->toBeNull();
 
     // Must be a redirect response after registration
@@ -82,7 +82,7 @@ test('TC-REG-02: registered user is stored in database with correct name and ema
         'password_confirmation' => 'Password123!',
     ]);
 
-    $user = User::where('email', 'siti@gmail.com')->first();
+    $user = User::whereHas('emailRecord', fn ($query) => $query->where('email', 'siti@gmail.com'))->first();
 
     expect($user)->not->toBeNull();
     expect($user->name)->toBe('Siti Aminah');
@@ -102,7 +102,7 @@ test('TC-REG-03: newly registered user is assigned villager role by default', fu
         'password_confirmation' => 'Password123!',
     ]);
 
-    $user = User::where('email', 'ali@gmail.com')->first();
+    $user = User::whereHas('emailRecord', fn ($query) => $query->where('email', 'ali@gmail.com'))->first();
 
     expect($user)->not->toBeNull();
     expect($user->role)->toBe('villager');
@@ -127,7 +127,7 @@ test('TC-REG-04: password is stored as bcrypt hash not plain text in database', 
         'password_confirmation' => 'Password123!',
     ]);
 
-    $user = User::where('email', 'zul@gmail.com')->first();
+    $user = User::whereHas('emailRecord', fn ($query) => $query->where('email', 'zul@gmail.com'))->first();
 
     expect($user)->not->toBeNull();
 
@@ -164,7 +164,7 @@ test('TC-REG-06: verification email process is triggered after successful regist
         'password_confirmation' => 'Password123!',
     ]);
 
-    $user = User::where('email', 'farah@gmail.com')->first();
+    $user = User::whereHas('emailRecord', fn ($query) => $query->where('email', 'farah@gmail.com'))->first();
 
     expect($user)->not->toBeNull();
 
@@ -183,7 +183,8 @@ test('TC-REG-06: verification email process is triggered after successful regist
 test('TC-REG-07: registration fails when email is already registered by another user', function () {
     $this->skipUnlessFortifyFeature(Features::registration());
 
-    User::factory()->create(['email' => 'taken@gmail.com']);
+    $existing = User::factory()->create();
+    $existing->emailRecord()->update(['email' => 'taken@gmail.com']);
 
     $response = $this->post(route('register.store'), [
         'name'                  => 'New User',

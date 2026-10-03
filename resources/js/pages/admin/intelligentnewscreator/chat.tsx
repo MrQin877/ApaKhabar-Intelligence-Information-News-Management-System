@@ -49,6 +49,8 @@ import type {
     Recommendation,
 } from '@/components/intelligent-news/types';
 import { WorkspaceActions } from '@/components/intelligent-news/workspace-actions';
+import { NewsImageCropDialog } from '@/components/news-image-crop-dialog';
+import type { PublicationPreviewData } from '@/components/publication-preview';
 import { PublishNewsDialog } from '@/components/publish-news-dialog';
 import type { PublishPlatformId } from '@/components/publish-news-dialog';
 import { Badge } from '@/components/ui/badge';
@@ -81,6 +83,7 @@ import AppLayout from '@/layouts/app-layout';
 import { assistantTurnAnchors } from '@/lib/assistant-turns';
 import { csrfPost } from '@/lib/csrf-request';
 import { groupDocumentSources } from '@/lib/group-document-sources';
+import { metaRequest } from '@/lib/meta-auth';
 import type { BreadcrumbItem } from '@/types';
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -419,6 +422,9 @@ export default function NewsCreatorAgent({
     const [findingRelated, setFindingRelated] = useState(false);
     const [elapsedSeconds, setElapsedSeconds] = useState(0);
     const [editMode, setEditMode] = useState(false);
+    const [cropOpen, setCropOpen] = useState(false);
+    const [imageSaving, setImageSaving] = useState(false);
+    const [imageError, setImageError] = useState('');
     const [publishOpen, setPublishOpen] = useState(false);
     const [publishing, setPublishing] = useState(false);
     const [selectedPlatforms, setSelectedPlatforms] = useState<
@@ -917,6 +923,7 @@ export default function NewsCreatorAgent({
             editMode ||
             draftDirty ||
             publishing ||
+            imageSaving ||
             !editedArticle ||
             editedArticle.quality?.publish_blocked
         ) {
@@ -927,12 +934,13 @@ export default function NewsCreatorAgent({
         setPublishOpen(true);
     }
 
-    function confirmPublish() {
+    function confirmPublish(previewToken: string) {
         if (
             conversationReadOnly ||
             editMode ||
             draftDirty ||
             publishing ||
+            imageSaving ||
             !editedArticle ||
             editedArticle.quality?.publish_blocked ||
             !selectedPlatforms.length
@@ -947,6 +955,7 @@ export default function NewsCreatorAgent({
                 platforms: selectedPlatforms,
                 version: editedArticle.version,
                 confirm_review: true,
+                preview_token: previewToken,
             },
             {
                 preserveScroll: true,
@@ -968,7 +977,17 @@ export default function NewsCreatorAgent({
         router.post(
             `/admin/ai-assistant/drafts/${editedArticle.draft_id}/image`,
             data,
-            { forceFormData: true },
+            {
+                forceFormData: true,
+                onStart: () => {
+                    setImageSaving(true);
+                    setImageError('');
+                },
+                onSuccess: () => setCropOpen(true),
+                onError: (errors) =>
+                    setImageError(Object.values(errors).join(' ')),
+                onFinish: () => setImageSaving(false),
+            },
         );
     }
     async function findRelated() {
@@ -1127,12 +1146,54 @@ export default function NewsCreatorAgent({
                 onSelectionChange={setSelectedPlatforms}
                 processing={publishing}
                 contentReady={
-                    !editMode && !draftDirty && Boolean(editedArticle)
+                    !editMode &&
+                    !draftDirty &&
+                    !imageSaving &&
+                    Boolean(editedArticle)
                 }
                 requireReviewConfirmation
                 error={publishError}
+                onPreparePreview={() =>
+                    metaRequest<PublicationPreviewData>(
+                        `/admin/news/drafts/${editedArticle!.draft_id}/preview`,
+                        { version: editedArticle!.version },
+                    )
+                }
                 onPublish={confirmPublish}
             />
+            {cropOpen && editedArticle?.image && (
+                <NewsImageCropDialog
+                    src={editedArticle.image}
+                    initial={editedArticle.image_crops ?? null}
+                    onClose={() => setCropOpen(false)}
+                    onReplace={() => {
+                        setCropOpen(false);
+                        newsImageInput.current?.click();
+                    }}
+                    onSave={(crops) => {
+                        setCropOpen(false);
+                        router.post(
+                            `/admin/news/drafts/${editedArticle.draft_id}/crops`,
+                            {
+                                image_crops: crops,
+                                version: editedArticle.version,
+                            },
+                            {
+                                preserveScroll: true,
+                                onStart: () => {
+                                    setImageSaving(true);
+                                    setImageError('');
+                                },
+                                onError: (errors) =>
+                                    setImageError(
+                                        Object.values(errors).join(' '),
+                                    ),
+                                onFinish: () => setImageSaving(false),
+                            },
+                        );
+                    }}
+                />
+            )}
             <Head title="Asisten AI" />
             <div
                 ref={workspace}
@@ -2291,7 +2352,9 @@ export default function NewsCreatorAgent({
                                 <button
                                     type="button"
                                     className="relative mb-6 flex aspect-[16/7] w-full items-center justify-center overflow-hidden rounded-xl border border-dashed bg-muted/30 text-sm text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
-                                    disabled={!editMode}
+                                    disabled={
+                                        !editMode || imageSaving || draftDirty
+                                    }
                                     onClick={() =>
                                         newsImageInput.current?.click()
                                     }
@@ -2299,7 +2362,11 @@ export default function NewsCreatorAgent({
                                     {editedArticle.image ? (
                                         <>
                                             <img
-                                                src={editedArticle.image}
+                                                src={
+                                                    editedArticle.image_variants
+                                                        ?.website ??
+                                                    editedArticle.image
+                                                }
                                                 alt="Gambar berita"
                                                 className="absolute inset-0 size-full object-cover"
                                             />
@@ -2317,6 +2384,37 @@ export default function NewsCreatorAgent({
                                         </>
                                     )}
                                 </button>
+                                {editMode && draftDirty && (
+                                    <p className="mb-4 text-sm text-muted-foreground">
+                                        Simpan perubahan teks sebelum mengganti
+                                        atau menyesuaikan gambar.
+                                    </p>
+                                )}
+                                {imageError && (
+                                    <p
+                                        role="alert"
+                                        className="mb-4 text-sm text-destructive"
+                                    >
+                                        {imageError}
+                                    </p>
+                                )}
+                                {editedArticle.image &&
+                                    !conversationReadOnly && (
+                                        <Button
+                                            variant="outline"
+                                            className="mb-5"
+                                            disabled={
+                                                imageSaving ||
+                                                publishing ||
+                                                draftDirty
+                                            }
+                                            onClick={() => setCropOpen(true)}
+                                        >
+                                            {imageSaving
+                                                ? 'Menyimpan gambar...'
+                                                : 'Pratinjau & Sesuaikan Gambar'}
+                                        </Button>
+                                    )}
                                 <div className="mb-5 flex flex-wrap gap-2">
                                     {editedArticle.category && (
                                         <Badge>{editedArticle.category}</Badge>

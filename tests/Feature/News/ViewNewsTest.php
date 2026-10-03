@@ -38,9 +38,10 @@ use Inertia\Testing\AssertableInertia as Assert;
 // ── Shared news instance for all tests ──────────────────────────
 beforeEach(function () {
     $this->news = News::factory()->create([
-        'title' => 'Gotong Royong Desa Punggul',
-        'content' => 'Jemput semua penduduk hadir ke program gotong royong.',
-        'category' => 'Pengumuman',
+        'title'    => 'Gotong Royong Desa Punggul',
+        'content'  => 'Jemput semua penduduk hadir ke program gotong royong.',
+        'excerpt'  => 'Program gotong royong akan diadakan.',
+        'category_id' => \App\Models\NewsCategory::firstOrCreate(['name' => 'Pengumuman'])->getKey(),
     ]);
 });
 
@@ -62,7 +63,7 @@ test('TC-NEWS-01: guest can view news homepage without login', function () {
 // Input  : Authenticated villager GET /
 // Output : Homepage renders with HTTP 200
 test('TC-NEWS-02: authenticated villager can view news homepage', function () {
-    $villager = User::factory()->create(['role' => 'villager']);
+    $villager = User::factory()->create(['roleID' => \App\Models\UserRole::firstOrCreate(['name' => 'villager'])->getKey()]);
 
     $response = $this->actingAs($villager)->get('/');
 
@@ -79,8 +80,8 @@ test('TC-NEWS-02: authenticated villager can view news homepage', function () {
 //          items regardless of category filter.
 test('TC-NEWS-03: news homepage can be filtered by category', function () {
     News::factory()->create([
-        'title' => 'Amaran Banjir Kilat',
-        'category' => 'Darurat',
+        'title'    => 'Amaran Banjir Kilat',
+        'category_id' => \App\Models\NewsCategory::firstOrCreate(['name' => 'Darurat'])->getKey(),
     ]);
 
     $response = $this->get('/?category=Pengumuman');
@@ -97,7 +98,7 @@ test('TC-NEWS-03: news homepage can be filtered by category', function () {
 // Input  : GET /news/{id} with valid news id
 // Output : Full article page renders with HTTP 200
 test('TC-NEWS-04: guest can view single news article', function () {
-    $response = $this->get("/news/{$this->news->id}");
+    $response = $this->get("/news/{$this->news->getKey()}");
 
     $response->assertStatus(200);
 });
@@ -115,7 +116,7 @@ test('TC-NEWS-05: api returns news list', function () {
 // Input  : GET /api/news/{id} with valid news id
 // Output : Single news JSON returned with HTTP 200
 test('TC-NEWS-06: api returns single news by id', function () {
-    $response = $this->getJson("/api/news/{$this->news->id}");
+    $response = $this->getJson("/api/news/{$this->news->getKey()}");
 
     $response->assertStatus(200);
 });
@@ -125,11 +126,11 @@ test('TC-NEWS-06: api returns single news by id', function () {
 // Output : Related news returned with HTTP 200
 test('TC-NEWS-07: api returns related news for valid news id', function () {
     News::factory()->create([
-        'title' => 'Mesyuarat Penduduk Desa',
-        'category' => 'Pengumuman',
+        'title'    => 'Mesyuarat Penduduk Desa',
+        'category_id' => \App\Models\NewsCategory::firstOrCreate(['name' => 'Pengumuman'])->getKey(),
     ]);
 
-    $response = $this->getJson("/api/news/{$this->news->id}/related");
+    $response = $this->getJson("/api/news/{$this->news->getKey()}/related");
 
     $response->assertStatus(200);
 });
@@ -169,7 +170,7 @@ test('TC-NEWS-10: api returns empty array for related news with invalid id', fun
 });
 
 test('shared news controller returns JSON when request expects JSON', function () {
-    $controller = new WebNewsController;
+    $controller = app(WebNewsController::class);
     $request = Request::create('/news', 'GET');
     $request->headers->set('accept', 'application/json');
 
@@ -183,14 +184,15 @@ test('shared comment controller returns JSON when request expects JSON', functio
     $user = User::factory()->create();
     $news = News::factory()->create();
 
-    $controller = new WebCommentController;
-    $request = Request::create("/news/{$news->id}/comment", 'POST', ['content' => 'This is a test comment']);
+    $controller = app(WebCommentController::class);
+    $request = Request::create("/news/{$news->getKey()}/comment", 'POST', ['content' => 'This is a test comment']);
     $request->headers->set('accept', 'application/json');
     $request->setUserResolver(fn () => $user);
+    $this->actingAs($user);
 
-    $response = $controller->store($request, $news->id);
+    $response = $controller->store($request, $news->getKey());
 
     expect($response->getStatusCode())->toBe(201)
         ->and(str_contains($response->headers->get('content-type', ''), 'application/json'))->toBeTrue()
-        ->and(Comment::where('newsID', $news->id)->where('userID', $user->id)->count())->toBe(1);
+        ->and(Comment::where('newsID', $news->getKey())->where('userID', $user->id)->count())->toBe(1);
 });

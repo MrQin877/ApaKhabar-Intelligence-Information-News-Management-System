@@ -37,13 +37,17 @@ use App\Models\User;
 
 // ── Shared setup ────────────────────────────────────────────────
 beforeEach(function () {
+    foreach (['pengumuman', 'darurat'] as $name) {
+        \App\Models\BroadcastCategory::firstOrCreate(['name' => $name]);
+    }
+    \App\Models\Channel::firstOrCreate(['name' => 'aplikasi']);
     $this->moderator = User::factory()->create([
-        'role'     => 'moderator',
+        'roleID' => \App\Models\UserRole::firstOrCreate(['name' => 'moderator'])->getKey(),
         'password' => bcrypt('Password123!'),
     ]);
 
     $this->villager = User::factory()->create([
-        'role'     => 'villager',
+        'roleID' => \App\Models\UserRole::firstOrCreate(['name' => 'villager'])->getKey(),
         'password' => bcrypt('Password123!'),
     ]);
 });
@@ -133,7 +137,7 @@ test('TC-BRD-05: moderator can create broadcast targeted to karyawan only', func
 
     $broadcast = Broadcast::where('title', 'Mesyuarat Kakitangan')->first();
     expect($broadcast)->not->toBeNull();
-    expect($broadcast->audience)->toBe('karyawan');
+    expect($broadcast->load('users.roleRecord')->audience)->toBe('karyawan');
 });
 
 // ── TC-BRD-06 ───────────────────────────────────────────────────
@@ -177,7 +181,7 @@ test('TC-BRD-07: moderator can archive a broadcast', function () {
     ]);
 
     $response = $this->actingAs($this->moderator)
-                     ->post("/admin/broadcasting/{$broadcast->id}/archive");
+                     ->post("/admin/broadcasting/{$broadcast->getKey()}/archive");
 
     $response->assertRedirect('/admin/broadcasting');
 
@@ -213,7 +217,7 @@ test('TC-BRD-09: moderator can restore an archived broadcast', function () {
     ]);
 
     $response = $this->actingAs($this->moderator)
-                     ->post("/admin/broadcasting/{$broadcast->id}/restore");
+                     ->post("/admin/broadcasting/{$broadcast->getKey()}/restore");
 
     $response->assertRedirect();
 

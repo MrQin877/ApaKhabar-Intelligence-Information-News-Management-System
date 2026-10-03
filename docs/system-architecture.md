@@ -60,3 +60,11 @@ Idle time does not intentionally stop AI processing. Laptop sleep pauses local s
 ## Other feature paths
 
 Public news and engagement use `NewsController`, `CommentController`, `PostLikeController`, and services under `app/Services/News`. Broadcasting uses `BroadcastController`, `SmsService`, and `Village/NotificationService`. Auth and settings have browser/mobile-specific verification and password recovery controllers. Website translation is handled by `WebsiteTranslationController` and `WebsiteTranslation`; social credentials and account selection use `MetaConnectionController` and `News/MetaConnections`.
+
+## Automatic historical context and per-request progress
+
+`RelatedEditorialContext.find()` ranks topic-word overlap using the prompt and selected source titles. It scans the latest 200 eligible information records and 200 active published-news records, requires overlap in both the title and content, and returns at most three matches. Information is restricted to the owner, approved, active, non-archived documents; only active news is considered. This is lexical retrieval: synonyms and records outside the search window may be missed. Retrieved text is a background source, not a current-event fact.
+
+`NewsGenerationService` persists the matches on the request/response messages and sends `historical_sources` to Python, refreshing them on resume. The assistant displays their titles, IDs, and text for inspection. Python bounds generated lead/body content to 250 words, including revisions; manual edits remain unrestricted.
+
+`assistantTurnAnchors()` in `resources/js/lib/assistant-turns.ts` associates the current draft card with its response message and extraction progress with the latest document-processing message. A second upload therefore shows progress after that upload, before any new draft, without moving the previous draft below it. After approved extraction for an explicit generation request, the client preserves the session prompt and current draft ID for revision.

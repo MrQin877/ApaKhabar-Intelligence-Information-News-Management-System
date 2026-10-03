@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\AssistantCategoryController;
 use App\Http\Controllers\Admin\BroadcastController;
 use App\Http\Controllers\Admin\MetaConnectionController;
 use App\Http\Controllers\Admin\NewsCategoryController;
@@ -98,7 +99,7 @@ Route::prefix('admin')
 
         // General AI assistant. News generation and document extraction are
         // capabilities of this workspace, not its navigation parent.
-        Route::post('/ai-assistant/category-proposals/{message}', [\App\Http\Controllers\Admin\AssistantCategoryController::class, 'decide'])->name('assistant.category-decision');
+        Route::post('/ai-assistant/category-proposals/{message}', [AssistantCategoryController::class, 'decide'])->name('assistant.category-decision');
         Route::get('/ai-assistant', [NewsCreatorController::class, 'create'])->name('assistant.index');
         Route::get('/ai-assistant/runs/{requestId}', [NewsCreatorController::class, 'agentProgress'])->name('assistant.progress');
         Route::post('/ai-assistant/generate-async', [NewsCreatorController::class, 'generateAsync'])->name('assistant.generate-async');
@@ -127,6 +128,8 @@ Route::prefix('admin')
         Route::post('/news/manual', [NewsWorkspaceController::class, 'store'])->name('news-workspace.manual.store');
         Route::get('/news/manual/{draft}/edit', [NewsWorkspaceController::class, 'edit'])->name('news-workspace.manual.edit');
         Route::put('/news/manual/{draft}', [NewsWorkspaceController::class, 'update'])->name('news-workspace.manual.update');
+        Route::post('/news/drafts/{draft}/preview', [NewsWorkspaceController::class, 'previewAi'])->name('news-workspace.drafts.preview');
+        Route::post('/news/drafts/{draft}/crops', [NewsWorkspaceController::class, 'cropAi'])->name('news-workspace.drafts.crops');
         Route::post('/news/drafts/{draft}/publish', [NewsWorkspaceController::class, 'publish'])->name('news-workspace.drafts.publish');
         Route::post('/news/drafts/{draft}/retry', [NewsWorkspaceController::class, 'retry'])->name('news-workspace.drafts.retry');
         Route::post('/news/{type}/{id}/archive', [NewsWorkspaceController::class, 'archive'])->name('news-workspace.items.archive');

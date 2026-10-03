@@ -303,10 +303,10 @@ test('TC-AUTH-15: two factor challenge screen can be rendered for 2fa enabled us
 // Output : JSON with sanctum token and user object
 test('TC-AUTH-16: api login returns sanctum token and user object', function () {
     $user = User::factory()->create([
-        'email'    => 'ahmad@gmail.com',
         'password' => bcrypt('password'),
-        'role'     => 'villager',
+        'roleID' => \App\Models\UserRole::firstOrCreate(['name' => 'villager'])->getKey(),
     ]);
+    $user->emailRecord()->update(['email' => 'ahmad@gmail.com']);
 
     $response = $this->postJson('/api/login', [
         'email'    => 'ahmad@gmail.com',
@@ -329,9 +329,9 @@ test('TC-AUTH-16: api login returns sanctum token and user object', function () 
 test('TC-AUTH-17: api login returns correct user name and email in response', function () {
     $user = User::factory()->create([
         'name'     => 'Ahmad Zaki',
-        'email'    => 'ahmad@gmail.com',
         'password' => bcrypt('password'),
     ]);
+    $user->emailRecord()->update(['email' => 'ahmad@gmail.com']);
 
     $response = $this->postJson('/api/login', [
         'email'    => 'ahmad@gmail.com',
@@ -398,10 +398,10 @@ test('TC-AUTH-19: api logout clears push token from user record', function () {
 test('TC-AUTH-20: api profile endpoint returns authenticated user data', function () {
     $user = User::factory()->create([
         'name'     => 'Ahmad Zaki',
-        'email'    => 'ahmad@gmail.com',
         'password' => bcrypt('password'),
-        'role'     => 'villager',
+        'roleID' => \App\Models\UserRole::firstOrCreate(['name' => 'villager'])->getKey(),
     ]);
+    $user->emailRecord()->update(['email' => 'ahmad@gmail.com']);
 
     $loginResponse = $this->postJson('/api/login', [
         'email'    => 'ahmad@gmail.com',
@@ -497,7 +497,7 @@ test('TC-AUTH-25: push token endpoint returns 422 when token field is empty', fu
 //          Your middleware redirects instead of returning 403
 test('TC-AUTH-26: villager user cannot access admin broadcasting page', function () {
     $villager = User::factory()->create([
-        'role'     => 'villager',
+        'roleID' => \App\Models\UserRole::firstOrCreate(['name' => 'villager'])->getKey(),
         'password' => bcrypt('password'),
     ]);
 

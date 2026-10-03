@@ -67,3 +67,5 @@ Admin browser routes require authentication, verification, and admin/moderator r
 ## Testing map
 
 `tests/Feature/IntelligentNews` covers assistant behavior, workflow state, document previews and upload limits. `tests/Feature/News` covers manual editing, AI publishing, schema migration, Meta connections, and publishing providers. `Broadcast`, `Auth`, and `Settings` cover their corresponding features. See the root README for check commands; provider mocks do not measure real model accuracy or prove live credentials work.
+
+Automatic historical context is implemented in `app/Services/RelatedEditorialContext.php` and integrated by `NewsGenerationService`. Chat turn anchors are in `resources/js/lib/assistant-turns.ts`. Regression coverage is in `tests/Feature/IntelligentNews/RelatedEditorialContextTest.php`, `AgentIntegrationTest.php`, and `tests/js/assistant-turns.test.mjs`.

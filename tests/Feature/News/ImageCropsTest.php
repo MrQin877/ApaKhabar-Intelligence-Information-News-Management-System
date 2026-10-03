@@ -258,3 +258,50 @@ test('canonical AI drafts publish the full lead and body with every platform cro
         ->and(News::sole()->excerpt)->toBe('Pembuka berita lengkap.')
         ->and(News::sole()->image)->toBe($preview['images']['website']);
 });
+
+test('AI image crops and publication preview use the exact saved draft and reject stale previews', function () {
+    $path = cropUpload()->storePublicly('news-images', 'public');
+    $draft = IntelligentNewsDraft::create([
+        'created_by' => auth()->id(), 'creation_method' => 'ai', 'status' => 'draft',
+        'labels' => [], 'sources_used' => [], 'warnings' => [],
+        'title' => 'Berita AI', 'excerpt' => '', 'content' => "Pembukaan berita.\n\nIsi berita yang lengkap.",
+        'image' => Storage::disk('public')->url($path), 'version' => 1,
+    ]);
+    $this->post('/admin/news/drafts/'.$draft->id.'/crops', [
+        'version' => 1, 'image_crops' => cropSettings(),
+    ])->assertRedirect()->assertSessionHasNoErrors();
+    $draft->refresh();
+    expect($draft->version)->toBe(2)->and($draft->image_crops)->toBe(cropSettings());
+    $preview = $this->postJson('/admin/news/drafts/'.$draft->id.'/preview', ['version' => 2])
+        ->assertOk()->assertJsonPath('content', $draft->content)
+        ->assertJsonPath('images.instagram', $draft->image_variants['instagram'])
+        ->assertJsonPath('issues', [])->json();
+    $draft->update(['content' => 'Isi berita sudah berubah.', 'version' => 3]);
+    $this->postJson('/admin/news/drafts/'.$draft->id.'/publish', [
+        'version' => 3, 'confirm_review' => true, 'platforms' => ['website'], 'preview_token' => $preview['token'],
+    ])->assertUnprocessable()->assertJsonValidationErrors('preview_token');
+    $preview = $this->postJson('/admin/news/drafts/'.$draft->id.'/preview', ['version' => 3])->assertOk()->json();
+    $this->mock(MetaConnections::class, fn ($mock) => $mock->shouldReceive('platforms')->andReturn([
+        ['id' => 'website', 'name' => 'Aplikasi', 'status' => 'connected'],
+    ]));
+    $this->postJson('/admin/news/drafts/'.$draft->id.'/publish', [
+        'version' => 3, 'confirm_review' => true, 'platforms' => ['website'], 'preview_token' => $preview['token'],
+    ])->assertOk()->assertJsonPath('success', true);
+    expect(News::sole()->content)->toBe($preview['content'])
+        ->and(News::sole()->image)->toBe($preview['images']['website']);
+});
+
+test('AI previews and crops enforce ownership version and valid framing', function () {
+    $draft = IntelligentNewsDraft::create([
+        'created_by' => auth()->id(), 'creation_method' => 'ai', 'status' => 'draft',
+        'labels' => [], 'sources_used' => [], 'warnings' => [],
+        'title' => 'Berita AI', 'excerpt' => '', 'content' => 'Isi berita lengkap.', 'version' => 1,
+    ]);
+    $this->postJson('/admin/news/drafts/'.$draft->id.'/preview', ['version' => 2])->assertUnprocessable();
+    $this->postJson('/admin/news/drafts/'.$draft->id.'/crops', ['version' => 1, 'image_crops' => []])->assertUnprocessable();
+    $this->postJson('/admin/news/drafts/'.$draft->id.'/preview', ['version' => 1])->assertOk()
+        ->assertJsonCount(1, 'issues.instagram');
+    $this->actingAs(User::factory()->create(['roleID' => UserRole::firstWhere('name', 'admin')->getKey()]));
+    $this->postJson('/admin/news/drafts/'.$draft->id.'/preview', ['version' => 1])->assertForbidden();
+    $this->postJson('/admin/news/drafts/'.$draft->id.'/crops', ['version' => 1, 'image_crops' => cropSettings()])->assertForbidden();
+});

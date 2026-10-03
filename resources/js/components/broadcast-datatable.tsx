@@ -18,10 +18,8 @@ import {
   Siren,
   Megaphone,
   X,
-  SlidersHorizontal,
   Archive,
   Send,
-  XCircle,
   ListFilter,
   CircleCheck,
   Users,
@@ -41,7 +39,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -81,6 +78,52 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs"
+
+  function ColumnSelector({
+  table,
+  columnLabels,
+}: {
+  table: any
+  columnLabels: Record<string, string>
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-9 gap-1.5 shrink-0"
+        >
+          <Columns3 className="h-4 w-4" />
+          <span className="hidden sm:inline">Kolom</span>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-48">
+        {table
+          .getAllColumns()
+          .filter(
+            (column: any) =>
+              column.id !== "select" && 
+              column.id !== "actions" &&
+              column.getCanHide()
+          )
+          .map((column: any) => (
+            <DropdownMenuCheckboxItem
+              key={column.id}
+              checked={column.getIsVisible()}
+              onCheckedChange={(value) =>
+                column.toggleVisibility(!!value)
+              }
+              className="capitalize"
+            >
+              {columnLabels[column.id] ?? column.id}
+            </DropdownMenuCheckboxItem>
+          ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
 
 interface DataTableProps<TData extends RowData, TValue = unknown> {
   columns: ColumnDef<DataTableFeatures, TData, TValue>[]
@@ -170,9 +213,6 @@ export function DataTable<TData extends RowData, TValue = unknown>({ columns, da
     setActiveFilterControls([])
   }
 
-  function setTypeTab(type?: string) {
-    table.getColumn("type")?.setFilterValue(type ? [type] : undefined)
-  }
 
   function toggleArrayFilter(column: string, value: string) {
     const col = table.getColumn(column)
@@ -203,55 +243,8 @@ export function DataTable<TData extends RowData, TValue = unknown>({ columns, da
     table.resetRowSelection()
   }
 
-  function handleBulkCancel() {
-    console.log("Cancel IDs:", selectedIds)
-    table.resetRowSelection()
-  }
 
-  function ColumnSelector({
-  table,
-  columnLabels,
-}: {
-  table: any
-  columnLabels: Record<string, string>
-}) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-9 gap-1.5 shrink-0"
-        >
-          <Columns3 className="h-4 w-4" />
-          <span className="hidden sm:inline">Kolom</span>
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-48">
-        {table
-          .getAllColumns()
-          .filter(
-            (column: any) =>
-              column.id !== "select" && 
-              column.id !== "actions" &&
-              column.getCanHide()
-          )
-          .map((column: any) => (
-            <DropdownMenuCheckboxItem
-              key={column.id}
-              checked={column.getIsVisible()}
-              onCheckedChange={(value) =>
-                column.toggleVisibility(!!value)
-              }
-              className="capitalize"
-            >
-              {columnLabels[column.id] ?? column.id}
-            </DropdownMenuCheckboxItem>
-          ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
-}
+
 
   return (
     <div className="flex flex-col h-full">

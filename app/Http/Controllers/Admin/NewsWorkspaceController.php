@@ -193,6 +193,71 @@ class NewsWorkspaceController extends Controller
         ]);
     }
 
+    public function previewAi(Request $request, IntelligentNewsDraft $draft): JsonResponse
+    {
+        $this->authorizeDraft($request, $draft);
+        abort_unless($draft->creation_method === 'ai' && $draft->status === 'draft', 422);
+        $request->validate(['version' => ['required', 'integer', Rule::in([$draft->version])]]);
+        $content = $this->publicationContent($draft);
+        $caption = ArticleText::post($draft->title, $content);
+        $images = collect(['website', 'facebook', 'instagram'])->mapWithKeys(
+            fn ($platform) => [$platform => NewsImageUrl::resolve($draft->image_variants[$platform] ?? $draft->image)]
+        )->all();
+        $issues = [];
+        if (! isset($draft->image_variants['instagram'])) {
+            $issues['instagram'][] = 'Tambahkan foto dan sesuaikan potongan gambar sebelum menerbitkan ke Instagram.';
+        }
+        if (mb_strlen($caption) > 2200) {
+            $issues['instagram'][] = 'Teks Instagram maksimal 2.200 karakter. Pendekkan berita sebelum menerbitkan.';
+        }
+        $token = (string) Str::uuid();
+        Cache::put('ai-publication-preview:'.$token, [
+            'user_id' => $request->user()->getKey(),
+            'draft_id' => $draft->id,
+            'fingerprint' => hash('sha256', json_encode($draft->getAttributes())),
+            'issues' => $issues,
+        ], now()->addHour());
+
+        return response()->json([
+            'token' => $token, 'title' => $draft->title, 'content' => $content,
+            'category' => $draft->category?->name, 'caption' => $caption,
+            'images' => $images, 'issues' => $issues,
+        ]);
+    }
+
+    public function cropAi(Request $request, IntelligentNewsDraft $draft): RedirectResponse
+    {
+        $this->authorizeDraft($request, $draft);
+        abort_unless($draft->creation_method === 'ai' && $draft->status === 'draft', 422);
+        $request->validate([
+            'version' => ['required', 'integer', Rule::in([$draft->version])],
+            'image_crops' => ['required', 'array'],
+            'image_crops.sync' => ['required', 'boolean'],
+            ...collect(['website', 'instagram', 'facebook'])->flatMap(fn ($platform) => [
+                "image_crops.$platform.x" => ['required', 'numeric', 'between:0,1'],
+                "image_crops.$platform.y" => ['required', 'numeric', 'between:0,1'],
+                "image_crops.$platform.zoom" => ['required', 'numeric', 'between:1,4'],
+            ])->all(),
+        ]);
+        $crops = $request->input('image_crops');
+        $variants = app(NewsImageCropService::class)->generate($draft->image ?? '', $crops);
+        $draft->update([
+            'image_crops' => $crops, 'image_variants' => $variants,
+            'version' => $draft->version + 1, 'reviewed_at' => null,
+        ]);
+
+        $draft->versions()->create([
+            'version' => $draft->version, 'change_type' => 'image_changed',
+            'revision_source' => 'manual', 'created_by' => $request->user()->getKey(),
+            'snapshot' => $draft->only([
+                'title', 'content', 'excerpt', 'labels', 'sources_used', 'warnings',
+                'category_id', 'image', 'image_crops', 'image_variants', 'user_prompt',
+            ]),
+        ]);
+
+        return back()->with('success', 'Potongan gambar berhasil disimpan.');
+    }
+
     public function store(Request $request): RedirectResponse|JsonResponse
     {
         $data = $this->validateDraft($request);
@@ -255,6 +320,19 @@ class NewsWorkspaceController extends Controller
     {
         $this->authorizeDraft($request, $draft);
         abort_unless($draft->status === 'draft', 422, 'Only draft content can be published.');
+        if ($draft->creation_method === 'ai' && $request->filled('preview_token')) {
+            $preview = Cache::get('ai-publication-preview:'.$request->string('preview_token'));
+            if (! $preview || $preview['user_id'] !== $request->user()->getKey()
+                || $preview['draft_id'] !== $draft->id
+                || $preview['fingerprint'] !== hash('sha256', json_encode($draft->getAttributes()))) {
+                throw ValidationException::withMessages(['preview_token' => 'Draf berubah atau pratinjau kedaluwarsa. Buka pratinjau kembali.']);
+            }
+            foreach ($request->input('platforms', ['website']) as $platform) {
+                if (! empty($preview['issues'][$platform])) {
+                    throw ValidationException::withMessages(['platforms' => $preview['issues'][$platform]]);
+                }
+            }
+        }
         $confirmReview = $draft->creation_method === 'ai' && $request->boolean('confirm_review');
         if ($confirmReview) {
             $request->validate(['confirm_review' => ['accepted'], 'version' => ['required', 'integer', Rule::in([$draft->version])]]);

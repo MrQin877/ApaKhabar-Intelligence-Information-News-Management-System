@@ -1,10 +1,11 @@
 import {
     useEffect,
-    useState,
-    type CSSProperties,
-    type MouseEvent,
-    type ReactNode,
+    useState
+    
+    
+    
 } from 'react';
+import type {CSSProperties, MouseEvent, ReactNode} from 'react';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 
 interface PreviewFrameProps {
@@ -29,14 +30,18 @@ export function PreviewFrame({
         const query = window.matchMedia('(max-width: 1023px)');
         const update = () => setMobile(query.matches);
         query.addEventListener('change', update);
+
         return () => query.removeEventListener('change', update);
     }, []);
-    if (mobile)
-        return (
+
+    if (mobile) {
+return (
             <Dialog
                 open
                 onOpenChange={(open) => {
-                    if (!open) onClose();
+                    if (!open) {
+onClose();
+}
                 }}
             >
                 <DialogContent
@@ -50,6 +55,8 @@ export function PreviewFrame({
                 </DialogContent>
             </Dialog>
         );
+}
+
     return (
         <section
             className="relative mt-16 flex min-h-0 w-full shrink-0 flex-col overflow-hidden rounded-l-2xl rounded-r-none border-y border-l border-border/60 bg-card ring-1 ring-foreground/5 motion-safe:animate-in motion-safe:duration-200 motion-safe:fade-in-0 motion-safe:slide-in-from-right-4 lg:h-[calc(100%-4rem)] lg:w-[var(--preview-width)]"
