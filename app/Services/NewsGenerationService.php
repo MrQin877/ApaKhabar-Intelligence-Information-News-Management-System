@@ -281,6 +281,10 @@ class NewsGenerationService
             }
             $runEvent('source_loading', 'Membaca dokumen asli', 'Membaca ulang file sumber untuk verifikasi draf.');
             $payload['original_documents'] = (object) $this->originalDocuments($items);
+            if (\Illuminate\Support\Facades\Cache::get(\App\Jobs\GenerateIntelligentNews::cacheKey($userId, $validated['request_id'] ?? '').':cancelled')) {
+                $run->update(['status' => 'failed', 'completed_at' => now()]);
+                return ['errors' => ['generation' => 'Permintaan dihentikan oleh pengguna.']];
+            }
             IntelligentNewsRunEvent::create([
                 'run_id' => $run->id, 'sequence' => $run->events()->count() + 1,
                 'event_type' => 'agent_run', 'label' => 'Agen editorial dimulai', 'content' => 'Menjalankan alur editorial.',
@@ -293,6 +297,10 @@ class NewsGenerationService
                 ->post(rtrim(config('services.apakhabar_ai.url'), '/').$endpoint, $payload)
                 ->throw()
                 ->json();
+            if (\Illuminate\Support\Facades\Cache::get(\App\Jobs\GenerateIntelligentNews::cacheKey($userId, $validated['request_id'] ?? '').':cancelled')) {
+                $run->update(['status' => 'failed', 'completed_at' => now()]);
+                return ['errors' => ['generation' => 'Permintaan dihentikan oleh pengguna.']];
+            }
             IntelligentNewsRunEvent::create([
                 'run_id' => $run->id, 'sequence' => $run->events()->count() + 1,
                 'event_type' => 'agent_context', 'label' => 'Prosedur editorial tercatat', 'content' => 'Rencana dan versi keahlian disimpan untuk peninjauan.',

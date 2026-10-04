@@ -33,6 +33,8 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -421,6 +423,18 @@ class NewsCreatorController extends Controller
         } catch (\Throwable $exception) {
             return response()->json(['stage' => 'unavailable', 'label' => 'Pembaruan terputus; mencoba lagi'], 503);
         }
+    }
+
+    public function stopGeneration(Request $request, string $requestId): JsonResponse
+    {
+        $key = GenerateIntelligentNews::cacheKey($request->user()->getKey(), $requestId);
+        $job = Cache::get($key);
+        abort_unless($job, 404);
+        if (! in_array($job['status'], ['completed', 'failed'], true)) {
+            Cache::put($key.':cancelled', true, now()->addDay());
+            Cache::put($key, ['status' => 'failed', 'events' => [], 'errors' => ['generation' => 'Permintaan dihentikan oleh pengguna.']], now()->addDay());
+        }
+        return response()->json(['status' => 'stopped']);
     }
 
     public function agentProgress(Request $request, string $requestId): JsonResponse
@@ -906,6 +920,44 @@ class NewsCreatorController extends Controller
                         ->all(),
                     'last_message_at' => now(),
                 ]);
+                DB::transaction(function () use ($session): void {
+                    $waiting = IntelligentNewsSession::whereKey($session->id)->lockForUpdate()->first();
+                    if (! $waiting || $waiting->status !== 'ready_to_generate'
+                        || $waiting->current_intent !== 'generate_news' || $waiting->archived_at
+                        || blank($waiting->prompt) || $waiting->draft()->where('status', 'published')->exists()) {
+                        return;
+                    }
+                    $documents = IntelligenceDocument::whereIn('id', $waiting->selected_document_ids ?? [])
+                        ->where('uploaded_by', $waiting->created_by)->whereNull('archived_at')->get();
+                    if ($documents->isEmpty() || $documents->count() !== count($waiting->selected_document_ids ?? [])
+                        || $documents->contains(fn ($document) => $document->status !== 'ready')) {
+                        return;
+                    }
+                    $items = IntelligenceInformation::whereIn('document_id', $documents->pluck('id'))->get();
+                    if ($items->contains(fn ($item) => $item->review_status === 'pending')) {
+                        return;
+                    }
+                    $approved = $items->filter(fn ($item) => $item->review_status === 'approved' && $item->is_active);
+                    if ($approved->isEmpty()) {
+                        return;
+                    }
+                    $requestId = (string) Str::uuid();
+                    $lastMessage = $waiting->messages()->reorder()->latest('id')->first();
+                    if ($lastMessage?->intent === 'queued_request') {
+                        return;
+                    }
+                    Cache::put(GenerateIntelligentNews::cacheKey($waiting->created_by, $requestId),
+                        ['status' => 'queued', 'events' => []], now()->addDay());
+                    $waiting->messages()->create(['role' => 'system', 'intent' => 'queued_request',
+                        'content' => 'Informasi disetujui. Menyusun draf sesuai permintaan Anda.',
+                        'payload' => ['request_id' => $requestId]]);
+                    GenerateIntelligentNews::dispatch($waiting->created_by, [
+                        'request_id' => $requestId, 'session_id' => $waiting->id,
+                        'information_ids' => $approved->pluck('id')->all(),
+                        'document_ids' => $documents->pluck('id')->all(),
+                        'prompt' => $waiting->prompt, 'mode' => 'news',
+                    ])->onQueue('generation')->afterCommit();
+                });
             });
     }
 

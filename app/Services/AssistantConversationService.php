@@ -25,7 +25,7 @@ class AssistantConversationService
         }
         // Unambiguous current-turn commands must reach the editorial clarification graph.
         if (! preg_match('/\b(jangan|bukan|belum|do not|don.t|not now)\b/i', $message)
-            && preg_match('/^(?:(?:tolong|silakan|please)\s+)?(?:buat(?:kan)?|tulis(?:kan)?|susun(?:kan)?|hasilkan|generate|create|write|make)\s+(?:draf(?:t)?\s+)?(?:berita|artikel|news|article)\b/iu', $message)) {
+            && preg_match('/^(?:(?:tolong|silakan|please)\s+)?(?:buat(?:kan)?|tulis(?:kan)?|susun(?:kan)?|hasilkan|generate|create|write|make)\s+(?:draf(?:t)?\s+)?(?:berita|artikel|news|article|laporan|pengumuman|announcement)\b/iu', $message)) {
             return null;
         }
         $ids = $input['information_ids'] ?? $session->selected_information_ids ?? [];

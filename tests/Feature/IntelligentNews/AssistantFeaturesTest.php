@@ -168,3 +168,28 @@ test('published conversations are hidden and reject further messages', function 
     $this->post(route('admin.assistant.generate'), ['session_id' => $session->id, 'prompt' => 'Buat berita'])->assertStatus(409);
     Http::assertNothingSent();
 });
+
+test('explicit announcement commands route to generation without conversation inference', function (string $prompt) {
+    Http::preventStrayRequests();
+    $user = assistantOwner();
+    $result = app(\App\Services\AssistantConversationService::class)->respond($user->getKey(), ['prompt' => $prompt]);
+    expect($result)->toBeNull();
+    Http::assertNothingSent();
+})->with([
+    'Buatkan pengumuman tentang kegiatan kerja bakti warga berdasarkan dokumen ini.',
+    'Buatkan berita berdasarkan dokumen kegiatan ini untuk disampaikan kepada warga desa.',
+    'Tolong buatkan pengumuman untuk warga.',
+    'Please write announcement',
+]);
+
+test('stop action is scoped to the request owner and marks queued work cancelled', function () {
+    $user = assistantOwner();
+    $other = assistantOwner();
+    $id = (string) \Illuminate\Support\Str::uuid();
+    $key = \App\Jobs\GenerateIntelligentNews::cacheKey($user->getKey(), $id);
+    \Illuminate\Support\Facades\Cache::put($key, ['status' => 'queued'], 600);
+    $this->actingAs($other)->postJson(route('admin.assistant.stop', $id))->assertNotFound();
+    $this->actingAs($user)->postJson(route('admin.assistant.stop', $id))->assertOk();
+    expect(\Illuminate\Support\Facades\Cache::get($key.':cancelled'))->toBeTrue();
+    expect(\Illuminate\Support\Facades\Cache::get($key)['status'])->toBe('failed');
+});

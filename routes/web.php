@@ -102,6 +102,7 @@ Route::prefix('admin')
         Route::post('/ai-assistant/category-proposals/{message}', [AssistantCategoryController::class, 'decide'])->name('assistant.category-decision');
         Route::get('/ai-assistant', [NewsCreatorController::class, 'create'])->name('assistant.index');
         Route::get('/ai-assistant/runs/{requestId}', [NewsCreatorController::class, 'agentProgress'])->name('assistant.progress');
+        Route::post('/ai-assistant/runs/{requestId}/stop', [NewsCreatorController::class, 'stopGeneration'])->name('assistant.stop');
         Route::post('/ai-assistant/generate-async', [NewsCreatorController::class, 'generateAsync'])->name('assistant.generate-async');
         Route::get('/ai-assistant/documents/{document}/progress', [NewsCreatorController::class, 'documentProgress'])->name('assistant.document-progress');
         Route::post('/ai-assistant/generate', [NewsCreatorController::class, 'generate'])->name('assistant.generate');

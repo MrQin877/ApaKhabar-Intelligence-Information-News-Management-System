@@ -4,6 +4,7 @@ import {
     ChevronDown,
     ChevronRight,
     Clock3,
+    Copy,
     Edit3,
     FileText,
     FolderSearch,
@@ -463,6 +464,14 @@ export default function NewsCreatorAgent({
     const [composerMultiline, setComposerMultiline] = useState(false);
     const [sourcesOpen, setSourcesOpen] = useState(false);
     const [attachmentsOpen, setAttachmentsOpen] = useState(false);
+    async function stopGeneration() {
+        if (!activeRequestId) return;
+        const response = await csrfPost(`/admin/ai-assistant/runs/${activeRequestId}/stop`, {});
+        if (!response.ok) { setGenerationErrors({generation: 'Proses belum dapat dihentikan. Coba lagi.'}); return; }
+        try { sessionStorage.removeItem(progressStorageKey); } catch { /* Optional storage. */ }
+        setBusy(false); setActiveRequestId(null); setPendingUserMessage(null);
+        setGenerationErrors({generation: 'Permintaan dihentikan. Panggilan model yang sedang berjalan dapat memerlukan waktu untuk selesai.'});
+    }
     const questions = newsSession?.pending_questions ?? [];
     const allQuestionsAnswered =
         questions.length > 0 &&
@@ -731,7 +740,7 @@ export default function NewsCreatorAgent({
                 !/\b(jangan|do not|don't|not now|belum)\b/i.test(
                     submittedPrompt,
                 ) &&
-                /\b(generate|create|write|make|buatkan|buat|bikin|tuliskan|tulis|susunkan|susun|hasilkan)\b.{0,40}\b(news|article|berita|artikel|laporan)\b/i.test(
+                /\b(generate|create|write|make|buatkan|buat|bikin|tuliskan|tulis|susunkan|susun|hasilkan)\b.{0,40}\b(news|article|berita|artikel|laporan|pengumuman|announcement)\b/i.test(
                     submittedPrompt,
                 );
             const generalExtraction =
@@ -798,7 +807,13 @@ export default function NewsCreatorAgent({
             setPrompt('');
             router.post('/admin/documents', data, {
                 forceFormData: true,
-                onError: () => setPrompt(submittedPrompt),
+                onError: () => {
+                    setPrompt(submittedPrompt);
+                    setFiles(files);
+                    setDocumentIds(documentIds);
+                },
+                preserveState: true,
+                preserveScroll: true,
                 onFinish: () => {
                     setBusy(false);
                     setPendingUserMessage(null);
@@ -1316,6 +1331,7 @@ export default function NewsCreatorAgent({
                                             <MessageScrollerItem
                                                 key={message.id}
                                                 messageId={`history-${message.id}`}
+                                                className="group/message"
                                             >
                                                 <CategoryProposalCard
                                                     readOnly={
@@ -1328,6 +1344,17 @@ export default function NewsCreatorAgent({
                                                     message={message}
                                                     documents={documents}
                                                 />
+                                                {message.role === 'user' && message.content && (
+                                                    <div className="flex items-center justify-end gap-2 opacity-100 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/message:opacity-100 [@media(hover:hover)]:group-focus-within/message:opacity-100">
+                                                        {message.created_at && !Number.isNaN(Date.parse(message.created_at)) && (
+                                                            <time dateTime={message.created_at} title={new Date(message.created_at).toLocaleString('id-ID')} className="text-xs text-muted-foreground">
+                                                                {new Date(message.created_at).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}
+                                                            </time>
+                                                        )}
+                                                        <Button type="button" size="icon-sm" variant="ghost" title="Salin pesan" aria-label="Salin pesan" onClick={() => { void navigator.clipboard.writeText(message.content ?? '').catch(() => setGenerationErrors({generation: 'Tidak dapat menyalin pesan.'})); }}><Copy aria-hidden="true" /></Button>
+                                                        <Button type="button" size="icon-sm" variant="ghost" title="Edit dan kirim ulang" aria-label="Edit dan kirim ulang" disabled={busy || processingFiles || conversationReadOnly} onClick={() => setPrompt(message.content ?? '')}><Edit3 aria-hidden="true" /></Button>
+                                                    </div>
+                                                )}
                                                 {message.id ===
                                                     draftMessageId && draftCard}
                                                 {processingFiles &&
@@ -1354,8 +1381,9 @@ export default function NewsCreatorAgent({
                                                     message.payload
                                                         .historical_sources
                                                         .length > 0 && (
-                                                        <details className="mt-2 rounded-lg border p-3 text-sm">
-                                                            <summary>
+                                                        <details className="group/context mt-2 text-sm">
+                                                            <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 rounded-sm py-1 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+                                                                <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 transition-transform group-open/context:rotate-90" />
                                                                 Konteks
                                                                 terdahulu (
                                                                 {
@@ -1376,7 +1404,7 @@ export default function NewsCreatorAgent({
                                                                         key={
                                                                             source.source_id
                                                                         }
-                                                                        className="mt-2"
+                                                                        className="mt-3 ml-1.5 border-l border-border/60 pl-4"
                                                                     >
                                                                         <p className="font-medium">
                                                                             {
@@ -1488,7 +1516,7 @@ export default function NewsCreatorAgent({
                                         </MessageScrollerItem>
                                     )}
                                     {!conversationReadOnly &&
-                                        questions.length > 0 && (
+                                        questions.length > 0 && !busy && (
                                             <MessageScrollerItem
                                                 messageId="clarification-round"
                                                 scrollAnchor
@@ -1874,7 +1902,7 @@ export default function NewsCreatorAgent({
                         className={`pointer-events-none absolute inset-x-0 z-20 px-4 ${conversationReadOnly ? 'hidden' : ''} ${conversationStarted ? 'bottom-0 bg-gradient-to-t from-background via-background/95 to-transparent pt-12 pb-3' : 'top-[53%] pt-4'}`}
                     >
                         <div className="pointer-events-auto mx-auto w-full max-w-4xl space-y-2">
-                            {questions.length === 0 && (
+                            {(questions.length === 0 || busy) && (
                                 <>
                                     <div className="flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                                         {actions.map((action) => (
@@ -1899,7 +1927,7 @@ export default function NewsCreatorAgent({
                                                 onClick={findRelated}
                                             >
                                                 {findingRelated ? (
-                                                    <LoaderCircle className="animate-spin" />
+                                                    <span aria-label="Hentikan proses">■</span>
                                                 ) : (
                                                     <Sparkles />
                                                 )}
@@ -2211,7 +2239,7 @@ export default function NewsCreatorAgent({
                                                 size="icon"
                                                 className={`rounded-full ${composerMultiline ? 'col-start-2 row-start-2' : 'col-start-3 row-start-1'}`}
                                                 disabled={
-                                                    busy ||
+                                                    (busy && !activeRequestId) ||
                                                     processingFiles ||
                                                     (!files.length &&
                                                         !hasSources &&
@@ -2219,10 +2247,10 @@ export default function NewsCreatorAgent({
                                                         !prompt.trim() &&
                                                         !manualFact.trim())
                                                 }
-                                                onClick={() => submit()}
+                                                onClick={() => busy ? void stopGeneration() : submit()}
                                             >
                                                 {busy ? (
-                                                    <LoaderCircle className="animate-spin" />
+                                                    <span aria-label="Hentikan proses">■</span>
                                                 ) : (
                                                     <ArrowUp />
                                                 )}

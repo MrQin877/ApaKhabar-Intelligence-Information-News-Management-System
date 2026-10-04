@@ -364,3 +364,24 @@ test('generation automatically attaches relevant approved history without manual
     expect(IntelligentNewsMessage::where('role', 'user')->first()->payload['historical_sources'][0]['source_id'])
         ->toBe('history:information:'.$history->id);
 });
+
+test('approval resumes a saved generation request once but not extraction only sessions', function () {
+    \Illuminate\Support\Facades\Bus::fake();
+    Http::fake(['*/rag/information/index' => Http::response(['indexed' => 1])]);
+    $user = User::factory()->create(['roleID' => UserRole::firstOrCreate(['name' => 'admin'])->getKey()]);
+    $source = approvedAgentSource($user);
+    $source->update(['review_status' => 'pending', 'is_active' => false]);
+    $session = IntelligentNewsSession::create(['created_by' => $user->getKey(), 'status' => 'ready_to_generate',
+        'current_intent' => 'generate_news', 'prompt' => 'Buatkan pengumuman kerja bakti.',
+        'selected_document_ids' => [$source->document_id], 'selected_information_ids' => [], 'user_facts' => [], 'pending_questions' => [], 'conflicts' => []]);
+    $extract = IntelligentNewsSession::create(['created_by' => $user->getKey(), 'status' => 'collecting_sources',
+        'current_intent' => 'extract_information', 'prompt' => 'Ekstrak saja.',
+        'selected_document_ids' => [$source->document_id], 'selected_information_ids' => [], 'user_facts' => [], 'pending_questions' => [], 'conflicts' => []]);
+    $this->actingAs($user)->post(route('admin.information.review', $source), ['decision' => 'approved'])->assertSessionHasNoErrors();
+    $this->post(route('admin.information.review', $source), ['decision' => 'approved'])->assertSessionHasNoErrors();
+    \Illuminate\Support\Facades\Bus::assertDispatched(GenerateIntelligentNews::class, 1);
+    \Illuminate\Support\Facades\Bus::assertDispatched(GenerateIntelligentNews::class, fn ($job) => $job->input['session_id'] === $session->id
+        && $job->input['prompt'] === 'Buatkan pengumuman kerja bakti.' && $job->input['mode'] === 'news');
+    expect($extract->fresh()->status)->toBe('collecting_sources');
+    expect($session->messages()->where('intent', 'queued_request')->count())->toBe(1);
+});
