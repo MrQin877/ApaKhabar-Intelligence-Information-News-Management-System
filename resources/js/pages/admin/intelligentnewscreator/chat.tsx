@@ -1,3 +1,5 @@
+import { NewsRichEditor } from '@/components/news-rich-editor';
+import { newsEditorContent } from '@/lib/news-editor-content';
 import { Head, router, usePage } from '@inertiajs/react';
 import {
     ArrowUp,
@@ -443,7 +445,8 @@ export default function NewsCreatorAgent({
     const documentSources = groupDocumentSources(
         editedArticle?.selected_sources ?? [],
     );
-    const wordCount = articleContent
+    const formattedContent = newsEditorContent(articleContent);
+    const wordCount = formattedContent.text
         .trim()
         .split(/\s+/u)
         .filter(Boolean).length;
@@ -2482,22 +2485,15 @@ export default function NewsCreatorAgent({
                                     draf AI
                                 </p>
                                 {editMode ? (
-                                    <Textarea
-                                        aria-label="Isi berita"
-                                        value={articleContent}
-                                        onChange={(event) =>
-                                            setEditedArticle({
-                                                ...editedArticle,
-                                                lead: '',
-                                                body: [event.target.value],
-                                            })
-                                        }
-                                        className="min-h-[50dvh] resize-y border-0 px-0 text-base leading-8 shadow-none"
+                                    <NewsRichEditor
+                                        value={formattedContent.html}
+                                        characterCount={Array.from(formattedContent.text).length}
+                                        invalid={false}
+                                        disabled={busy || conversationReadOnly}
+                                        onChange={(html) => setEditedArticle({ ...editedArticle, lead: '', body: [html] })}
                                     />
                                 ) : (
-                                    <div className="leading-8 break-words whitespace-pre-wrap">
-                                        {articleContent}
-                                    </div>
+                                    <div className="prose prose-sm max-w-none break-words dark:prose-invert [&_ul]:list-disc [&_ol]:list-decimal [&_li]:ml-5 [&_p]:mb-4 [&_blockquote]:border-l-2 [&_blockquote]:pl-4" dangerouslySetInnerHTML={{ __html: formattedContent.html }} />
                                 )}
                                 <Collapsible
                                     open={sourcesOpen}
