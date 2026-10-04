@@ -34,13 +34,21 @@ export function QualityScoreBadge({
         return <Badge variant="outline">Skor AI belum tersedia</Badge>;
     }
 
+    if (quality.approved_by && !quality.publish_blocked) {
+        return <Badge variant="outline">Konflik disetujui moderator</Badge>;
+    }
+
+    if (quality.quality_label === 'evaluation_pending') {
+        return <Badge variant="outline">Versi terbaru sedang diperiksa</Badge>;
+    }
+
     if (quality.quality_label === 'evaluation_unavailable') {
         return <Badge variant="destructive">Evaluasi belum tersedia</Badge>;
     }
 
     return (
         <Badge variant={quality.publish_blocked ? 'destructive' : 'outline'}>
-            {quality.evaluation_version === 'separate-judge-v1'
+            {['separate-judge-v1', 'saved-draft-review-v1'].includes(quality.evaluation_version ?? '')
                 ? 'Skor evaluator'
                 : 'Skor evaluasi mandiri'}{' '}
             {quality.overall_score.toFixed(1)}/100

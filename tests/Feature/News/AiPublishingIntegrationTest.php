@@ -1,5 +1,7 @@
 <?php
 
+use App\Models\IntelligenceDocument;
+use App\Models\IntelligenceInformation;
 use App\Models\IntelligentNewsDraft;
 use App\Models\News;
 use App\Models\User;
@@ -49,7 +51,7 @@ test('reviewed AI edits publish to selected channels using existing publishers',
     });
     $this->mock(InstagramService::class, function ($mock) use ($platforms, $caption) {
         if (in_array('instagram', $platforms)) {
-            $mock->shouldReceive('publish')->once()->with('https://images.example.com/news.jpg', $caption, Mockery::type('array'))->andReturn('ig-1');
+            $mock->shouldReceive('publish')->once()->with('https://images.example.com/news.jpg', $caption, Mockery::type('array'), false)->andReturn('ig-1');
         } else {
             $mock->shouldNotReceive('publish');
         }
@@ -144,3 +146,140 @@ test('unified title and content editor preserves paragraphs through publication'
     expect(News::sole()->title)->toBe('Judul hasil tinjauan');
     expect(News::sole()->content)->toBe($content);
 })->with(['Satu paragraf lengkap.', "Pembukaan berita.\n\nKegiatan peserta.\n\nHasil kegiatan."]);
+
+function blockedDraftWithEvidence($test): void
+{
+    $document = IntelligenceDocument::create([
+        'uploaded_by' => auth()->id(), 'original_name' => 'report.txt', 'storage_disk' => 'local',
+        'storage_path' => 'test/report.txt', 'file_size' => 20, 'sha256' => str_repeat('a', 64), 'status' => 'ready',
+    ]);
+    $source = IntelligenceInformation::create([
+        'document_id' => $document->id, 'item_index' => 0, 'type' => 'Announcement',
+        'title' => 'Training', 'summary' => 'Training was held.', 'labels' => [], 'fields' => [], 'evidence' => [], 'search_text' => 'Training', 'review_status' => 'approved', 'is_active' => true,
+    ]);
+    $test->draft->informationSources()->attach($source);
+    $test->draft->qualityEvaluations()->create([
+        'evaluation_version' => 'old', 'overall_score' => 76, 'quality_label' => 'needs_review',
+        'publish_blocked' => true, 'dimensions' => [], 'claim_checks' => [], 'warnings' => ['Old participant conflict'],
+    ]);
+}
+
+test('editing a blocked draft evaluates exact saved text and allows a passing version', function () {
+    blockedDraftWithEvidence($this);
+    $sourceId = 'information:'.$this->draft->informationSources()->first()->id;
+    Http::fake(['*/news/review-draft' => Http::response(['quality' => [
+        'quality_score' => 95, 'quality_label' => 'good', 'publish_blocked' => false,
+        'dimensions' => ['accuracy' => 95], 'warnings' => [],
+        'claim_checks' => [['claim' => 'Training was held.', 'supported' => true, 'source_ids' => [$sourceId]]],
+    ]])]);
+    $this->put('/admin/ai-assistant/drafts/'.$this->draft->id, [
+        'title' => 'Training', 'content' => 'Training was held.',
+    ])->assertRedirect();
+    Http::assertSent(fn ($request) => $request['title'] === 'Training' && $request['content'] === 'Training was held.');
+    $draft = $this->draft->fresh();
+    $quality = $draft->qualityEvaluations()->first();
+    expect($quality->publish_blocked)->toBeFalse();
+    expect($quality->draft_version_id)->toBe($draft->versions()->first()->id);
+    expect($draft->qualityEvaluations()->count())->toBe(2);
+    $this->postJson('/admin/news/drafts/'.$draft->id.'/publish', [
+        'version' => $draft->version, 'confirm_review' => true, 'platforms' => ['website'],
+    ])->assertOk();
+});
+
+test('review failure preserves saved edits and keeps publication blocked', function () {
+    blockedDraftWithEvidence($this);
+    Http::fake(['*/news/review-draft' => Http::response([], 503)]);
+    $this->put('/admin/ai-assistant/drafts/'.$this->draft->id, [
+        'title' => 'Edited title', 'content' => 'Saved content',
+    ])->assertRedirect();
+    $draft = $this->draft->fresh();
+    expect($draft->content)->toBe('Saved content');
+    expect($draft->qualityEvaluations()->first()->quality_label)->toBe('evaluation_unavailable');
+    $this->postJson('/admin/news/drafts/'.$draft->id.'/publish', [
+        'version' => $draft->version, 'confirm_review' => true, 'platforms' => ['website'],
+    ])->assertStatus(422);
+});
+
+test('a new unsupported review keeps edited draft blocked', function () {
+    blockedDraftWithEvidence($this);
+    Http::fake(['*/news/review-draft' => Http::response(['quality' => [
+        'quality_score' => 60, 'quality_label' => 'needs_review', 'publish_blocked' => true,
+        'dimensions' => ['accuracy' => 60], 'warnings' => ['Unsupported attendance'],
+        'claim_checks' => [['claim' => '100 attended', 'supported' => false, 'source_ids' => []]],
+    ]])]);
+    $this->put('/admin/ai-assistant/drafts/'.$this->draft->id, [
+        'title' => 'Training', 'content' => '100 attended',
+    ])->assertRedirect();
+    $draft = $this->draft->fresh();
+    expect($draft->qualityEvaluations()->first()->overall_score)->toBe(60.0);
+    expect($draft->qualityEvaluations()->first()->publish_blocked)->toBeTrue();
+    $this->postJson('/admin/news/drafts/'.$draft->id.'/publish', [
+        'version' => $draft->version, 'confirm_review' => true, 'platforms' => ['website'],
+    ])->assertStatus(422);
+});
+
+function conflictEvaluation($test): void
+{
+    $test->draft->qualityEvaluations()->create([
+        'evaluation_version' => 'test', 'overall_score' => 76, 'quality_label' => 'needs_review',
+        'publish_blocked' => true, 'dimensions' => ['safety' => 100], 'claim_checks' => [],
+        'warnings' => ['Perbedaan jumlah peserta: laporan PDF 40, XLSX 36.'],
+    ]);
+}
+
+test('moderator can approve conflict for exact version without publishing or changing facts', function () {
+    conflictEvaluation($this);
+    $content = $this->draft->content;
+    $this->post('/admin/ai-assistant/drafts/'.$this->draft->id.'/approve-conflict', [
+        'version' => 1, 'confirm' => true, 'confirmation_word' => 'setuju',
+    ])->assertRedirect();
+    $draft = $this->draft->fresh();
+    $approval = $draft->qualityEvaluations()->first();
+    expect($approval->approved_by)->toBe(auth()->id());
+    expect($approval->approved_version)->toBe(1);
+    expect($approval->publish_blocked)->toBeFalse();
+    expect($draft->content)->toBe($content);
+    expect($draft->status)->toBe('draft');
+    expect(News::count())->toBe(0);
+    expect($draft->qualityEvaluations()->count())->toBe(2);
+    $this->postJson('/admin/news/drafts/'.$draft->id.'/publish', [
+        'version' => 1, 'confirm_review' => true, 'platforms' => ['website'],
+    ])->assertOk();
+});
+
+test('conflict approval rejects stale versions and expires after an edit', function () {
+    conflictEvaluation($this);
+    $payload = ['version' => 0, 'confirm' => true, 'confirmation_word' => 'setuju'];
+    $this->postJson('/admin/ai-assistant/drafts/'.$this->draft->id.'/approve-conflict', $payload)->assertStatus(422);
+    $payload['version'] = 1;
+    $this->post('/admin/ai-assistant/drafts/'.$this->draft->id.'/approve-conflict', $payload)->assertRedirect();
+    $this->draft->update(['version' => 2]);
+    expect($this->draft->qualityEvaluations()->first()->publish_blocked)->toBeTrue();
+    $this->postJson('/admin/news/drafts/'.$this->draft->id.'/publish', [
+        'version' => 2, 'confirm_review' => true, 'platforms' => ['website'],
+    ])->assertStatus(422);
+});
+
+test('moderator approval cannot bypass unavailable evaluations or low safety', function () {
+    foreach (['evaluation_unavailable', 'needs_review'] as $label) {
+        $this->draft->qualityEvaluations()->create([
+            'evaluation_version' => 'test', 'overall_score' => 20, 'quality_label' => $label,
+            'publish_blocked' => true, 'dimensions' => ['safety' => 20], 'claim_checks' => [], 'warnings' => ['Conflict'],
+        ]);
+        $this->postJson('/admin/ai-assistant/drafts/'.$this->draft->id.'/approve-conflict', [
+            'version' => 1, 'confirm' => true, 'confirmation_word' => 'setuju',
+        ])->assertStatus(422);
+    }
+});
+
+
+test('conflict approval requires the exact confirmation word', function () {
+    conflictEvaluation($this);
+    foreach (['', 'approve', 'yes', 'SETUJU'] as $word) {
+        $this->postJson('/admin/ai-assistant/drafts/'.$this->draft->id.'/approve-conflict', [
+            'version' => 1, 'confirm' => true, 'confirmation_word' => $word,
+        ])->assertUnprocessable()->assertJsonValidationErrors('confirmation_word');
+    }
+    expect($this->draft->qualityEvaluations()->count())->toBe(1);
+    expect($this->draft->qualityEvaluations()->first()->publish_blocked)->toBeTrue();
+});

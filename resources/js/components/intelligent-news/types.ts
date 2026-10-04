@@ -123,6 +123,8 @@ export type QualityDimension =
       };
 
 export interface ArticleQuality {
+    approved_by?: number | null;
+    approval_note?: string | null;
     evaluator_model?: string;
     evaluation_version?: string;
     overall_score: number;
@@ -133,6 +135,7 @@ export interface ArticleQuality {
 }
 
 export interface Article {
+    can_approve_conflict?: boolean;
     image_crops?: ImageCrops | null;
     image_variants?: Record<string, string> | null;
     draft_id: number;

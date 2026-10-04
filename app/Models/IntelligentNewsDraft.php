@@ -112,6 +112,6 @@ class IntelligentNewsDraft extends Model
 
     public function qualityEvaluations()
     {
-        return $this->hasMany(AiQualityEvaluation::class, 'draft_id')->latest();
+        return $this->hasMany(AiQualityEvaluation::class, 'draft_id')->latest()->orderByDesc('id');
     }
 }

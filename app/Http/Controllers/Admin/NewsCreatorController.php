@@ -25,6 +25,7 @@ use App\Models\IntelligentNewsRun;
 use App\Models\IntelligentNewsRunEvent;
 use App\Models\IntelligentNewsSession;
 use App\Models\NewsCategory;
+use App\Services\DraftQualityReviewService;
 use App\Services\News\MetaConnections;
 use App\Services\NewsGenerationService;
 use Illuminate\Http\Client\PendingRequest;
@@ -32,10 +33,10 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -93,10 +94,11 @@ class NewsCreatorController extends Controller
                     'image_variants' => $draft->image_variants,
                     'version' => $draft->version,
                     'reviewed_at' => $draft->reviewed_at?->toIso8601String(),
+                    'can_approve_conflict' => $draft->qualityEvaluations->first()?->canApproveConflict() ?? false,
                     'updated_at' => $draft->updated_at?->toIso8601String(),
                     'quality' => optional($draft->qualityEvaluations->first())->only([
                         'overall_score', 'quality_label', 'publish_blocked', 'dimensions',
-                        'claim_checks', 'warnings', 'evaluation_version', 'evaluator_model',
+                        'claim_checks', 'warnings', 'evaluation_version', 'evaluator_model', 'approved_by', 'approved_at', 'approval_note',
                     ]),
                     'selected_sources' => $draft->informationSources->map(fn ($item) => [
                         'id' => $item->id,
@@ -434,6 +436,7 @@ class NewsCreatorController extends Controller
             Cache::put($key.':cancelled', true, now()->addDay());
             Cache::put($key, ['status' => 'failed', 'events' => [], 'errors' => ['generation' => 'Permintaan dihentikan oleh pengguna.']], now()->addDay());
         }
+
         return response()->json(['status' => 'stopped']);
     }
 
@@ -589,15 +592,47 @@ class NewsCreatorController extends Controller
 
         }
 
-        $draft->update([
-            ...$validated,
-            'version' => $draft->version + 1,
-            'reviewed_at' => null,
-        ]);
-        $this->storeDraftVersion($draft->fresh(), $request->user()->getKey(), 'edited', 'manual');
+        $reviewer = app(DraftQualityReviewService::class);
+        $evaluation = DB::transaction(function () use ($draft, $validated, $request, $reviewer) {
+            $draft = IntelligentNewsDraft::lockForUpdate()->findOrFail($draft->id);
+            abort_unless($draft->status === 'draft', 422, 'Only draft content can be edited.');
+            $needsEvaluation = $draft->creation_method === 'ai' && $draft->qualityEvaluations()->exists();
+            $draft->update([...$validated, 'version' => $draft->version + 1, 'reviewed_at' => null]);
+            $version = $this->storeDraftVersion($draft->fresh(), $request->user()->getKey(), 'edited', 'manual');
+
+            return $needsEvaluation ? $reviewer->pending($draft, $version) : null;
+        });
+        if ($evaluation) {
+            $reviewer->evaluate($draft->fresh(), $evaluation);
+        }
 
         return redirect()->route('admin.assistant.index', ['draft' => $draft->id])
             ->with('success', 'Perubahan draf berhasil disimpan. Tinjau versi baru sebelum publikasi.');
+    }
+
+    public function approveConflict(Request $request, IntelligentNewsDraft $draft): RedirectResponse
+    {
+        abort_unless($draft->created_by === $request->user()->getKey(), 403);
+        $data = $request->validate([
+            'version' => ['required', 'integer'], 'confirm' => ['accepted'],
+            'confirmation_word' => ['required', 'string', 'in:setuju'],
+        ]);
+        DB::transaction(function () use ($request, $draft, $data) {
+            $current = IntelligentNewsDraft::lockForUpdate()->findOrFail($draft->id);
+            abort_unless($current->status === 'draft' && $current->version === $data['version'], 422, 'Draf berubah. Tinjau versi terbaru.');
+            $quality = $current->qualityEvaluations()->first();
+            abort_unless($quality?->canApproveConflict(), 422, 'Konflik ini belum dapat disetujui.');
+            $approved = $quality->replicate();
+            $approved->fill([
+                'quality_label' => 'moderator_approved', 'publish_blocked' => true,
+                'approved_by' => $request->user()->getKey(), 'approved_at' => now(),
+                'approval_note' => 'Moderator mengonfirmasi dengan mengetik setuju.', 'approved_version' => $current->version,
+            ])->save();
+            $current->update(['reviewed_at' => now()]);
+        });
+
+        return redirect()->route('admin.assistant.index', ['draft' => $draft->id])
+            ->with('success', 'Konflik disetujui untuk versi ini. Berita belum dipublikasikan.');
     }
 
     public function reviewDraft(Request $request, IntelligentNewsDraft $draft): RedirectResponse

@@ -108,6 +108,7 @@ Route::prefix('admin')
         Route::post('/ai-assistant/generate', [NewsCreatorController::class, 'generate'])->name('assistant.generate');
         Route::post('/ai-assistant/recommendations', [NewsCreatorController::class, 'recommend'])->name('assistant.recommendations');
         Route::put('/ai-assistant/drafts/{draft}', [NewsCreatorController::class, 'updateDraft'])->name('assistant.drafts.update');
+        Route::post('/ai-assistant/drafts/{draft}/approve-conflict', [NewsCreatorController::class, 'approveConflict'])->name('assistant.drafts.approve-conflict');
         Route::post('/ai-assistant/drafts/{draft}/review', [NewsCreatorController::class, 'reviewDraft'])->name('assistant.drafts.review');
         Route::post('/ai-assistant/drafts/{draft}/image', [NewsCreatorController::class, 'uploadDraftImage'])->name('assistant.drafts.image');
 

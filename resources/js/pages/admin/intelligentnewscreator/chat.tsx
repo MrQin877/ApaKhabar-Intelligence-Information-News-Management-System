@@ -1,3 +1,4 @@
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { NewsRichEditor } from '@/components/news-rich-editor';
 import { newsEditorContent } from '@/lib/news-editor-content';
 import { Head, router, usePage } from '@inertiajs/react';
@@ -919,6 +920,26 @@ export default function NewsCreatorAgent({
 
         return () => window.clearInterval(timer);
     }, []);
+
+    const [conflictApprovalOpen, setConflictApprovalOpen] = useState(false);
+    const [conflictApprovalWord, setConflictApprovalWord] = useState('');
+    const [approvingConflict, setApprovingConflict] = useState(false);
+    const [conflictApprovalError, setConflictApprovalError] = useState('');
+
+    function approveConflict() {
+        if (!editedArticle || draftDirty || editMode || conversationReadOnly || approvingConflict || conflictApprovalWord.trim() !== 'setuju') return;
+        setApprovingConflict(true);
+        setConflictApprovalError('');
+        router.post(`/admin/ai-assistant/drafts/${editedArticle.draft_id}/approve-conflict`, {
+            version: editedArticle.version,
+            confirm: true,
+            confirmation_word: conflictApprovalWord.trim(),
+        }, {
+            onSuccess: () => { setConflictApprovalOpen(false); setConflictApprovalWord(''); },
+            onError: (errors) => setConflictApprovalError(Object.values(errors).join(' ')),
+            onFinish: () => setApprovingConflict(false),
+        });
+    }
 
     function saveDraft() {
         if (!editedArticle) {
@@ -2287,6 +2308,30 @@ export default function NewsCreatorAgent({
                             setResizingPreview(true);
                         }}
                     >
+                        <Dialog open={conflictApprovalOpen && Boolean(editedArticle.can_approve_conflict)}
+                            onOpenChange={(open) => { if (!approvingConflict) { setConflictApprovalOpen(open); setConflictApprovalWord(''); setConflictApprovalError(''); } }}>
+                            <DialogContent closeDisabled={approvingConflict}>
+                                <DialogHeader>
+                                    <DialogTitle>Setujui berita dengan perbedaan data?</DialogTitle>
+                                    <DialogDescription>
+                                        AI menemukan perbedaan pada sumber. Pastikan berita menjelaskan perbedaan tersebut dengan benar. Persetujuan membuka akses publikasi untuk versi ini; berita belum langsung dipublikasikan.
+                                    </DialogDescription>
+                                </DialogHeader>
+                                <ul className="max-h-40 list-disc space-y-2 overflow-auto pl-5 text-sm">{editedArticle.quality?.warnings.map((warning, i) => <li key={i}>{warning}</li>)}</ul>
+                                <label className="block text-sm" htmlFor="conflict-approval-word">Ketik <strong>setuju</strong> untuk menyetujui.
+                                    <input id="conflict-approval-word" className="mt-2 w-full rounded border bg-background p-2"
+                                        value={conflictApprovalWord} disabled={approvingConflict} autoComplete="off"
+                                        onChange={(event) => setConflictApprovalWord(event.target.value)} placeholder="setuju" />
+                                </label>
+                                {conflictApprovalError && <p role="alert" className="text-sm text-destructive">{conflictApprovalError}</p>}
+                                <DialogFooter>
+                                    <Button variant="outline" disabled={approvingConflict} onClick={() => { setConflictApprovalOpen(false); setConflictApprovalWord(''); }}>Batal</Button>
+                                    <Button onClick={approveConflict} disabled={approvingConflict || conversationReadOnly || editMode || draftDirty || conflictApprovalWord.trim() !== 'setuju'}>
+                                        {approvingConflict ? 'Menyetujui…' : 'Setujui'}
+                                    </Button>
+                                </DialogFooter>
+                            </DialogContent>
+                        </Dialog>
                         <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border/50 bg-card/80 px-5 py-4 backdrop-blur-xl">
                             <div>
                                 <div className="flex flex-wrap items-center gap-2">
@@ -2340,6 +2385,12 @@ export default function NewsCreatorAgent({
                                         >
                                             <Edit3 /> Edit
                                         </Button>
+                                        {editedArticle.can_approve_conflict && (
+                                            <Button variant="outline" disabled={conversationReadOnly || approvingConflict}
+                                                onClick={() => { setConflictApprovalWord(''); setConflictApprovalError(''); setConflictApprovalOpen(true); }}>
+                                                Tinjau dan setujui konflik
+                                            </Button>
+                                        )}
                                         <Button
                                             disabled={
                                                 conversationReadOnly ||
