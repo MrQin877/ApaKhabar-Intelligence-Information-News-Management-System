@@ -34,6 +34,9 @@ class GenerateIntelligentNews implements ShouldQueue
     public function handle(NewsGenerationService $service): void
     {
         $key = self::cacheKey($this->userId, $this->input['request_id']);
+        if (Cache::get($key.':cancelled')) {
+            return;
+        }
         // Duplicate deliveries must never create a second draft version.
         $lock = Cache::lock($key.':lock', 1300);
         if (! $lock->get()) {
@@ -46,6 +49,10 @@ class GenerateIntelligentNews implements ShouldQueue
             User::findOrFail($this->userId);
             Cache::put($key, ['status' => 'running', 'events' => []], now()->addDay());
             $result = $service->generate($this->userId, $this->input);
+            if (Cache::get($key.':cancelled')) {
+                $this->markRunFailed();
+                return;
+            }
             if (isset($result['errors'])) {
                 $this->markRunFailed();
             }
