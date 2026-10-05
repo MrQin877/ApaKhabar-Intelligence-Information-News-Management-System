@@ -1,3 +1,4 @@
+import { requestsNewsGeneration } from '@/lib/upload-intent';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { NewsRichEditor } from '@/components/news-rich-editor';
 import { newsEditorContent } from '@/lib/news-editor-content';
@@ -740,13 +741,7 @@ export default function NewsCreatorAgent({
                 data.append('prompt', submittedPrompt);
             }
 
-            const generationIntent =
-                !/\b(jangan|do not|don't|not now|belum)\b/i.test(
-                    submittedPrompt,
-                ) &&
-                /\b(generate|create|write|make|buatkan|buat|bikin|tuliskan|tulis|susunkan|susun|hasilkan)\b.{0,40}\b(news|article|berita|artikel|laporan|pengumuman|announcement)\b/i.test(
-                    submittedPrompt,
-                );
+            const generationIntent = requestsNewsGeneration(submittedPrompt);
             const generalExtraction =
                 !submittedPrompt ||
                 /\b(all|everything|semua|seluruh|tidak tahu|don't know)\b/i.test(
