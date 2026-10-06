@@ -37,7 +37,7 @@ const platforms = [
         id: 'website',
         key: 'application',
         name: 'Aplikasi',
-        icon: '/images/brands/aplikasi-white.svg',
+        icon: '/favicon.svg',
     },
 ] as const;
 
@@ -67,7 +67,7 @@ export function PublicationIndicators({
                         <img
                             src={platform.icon}
                             alt=""
-                            className={`size-5 object-contain ${platform.id === 'website' ? 'rounded bg-primary p-0.5' : ''}`}
+                            className="size-5 object-contain"
                         />
                         {result.success ? (
                             <Check
@@ -228,7 +228,7 @@ export function RetryPublicationDialog({
                                 <img
                                     src={platform.icon}
                                     alt=""
-                                    className={`size-5 object-contain ${platform.id === 'website' ? 'rounded bg-primary p-0.5' : ''}`}
+                                    className="size-5 object-contain"
                                 />
                                 {platform.name}
                             </label>
