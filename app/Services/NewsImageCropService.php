@@ -9,6 +9,32 @@ class NewsImageCropService
 {
     public const SIZES = ['website' => [1600, 900], 'instagram' => [1080, 1080], 'facebook' => [1200, 630]];
 
+    public static function outputSize(string $platform, array $crop): array
+    {
+        if ($platform === 'website' || ! isset($crop['type'])) {
+            return self::SIZES[$platform];
+        }
+
+        return match ($crop['type']) {
+            'portrait' => [1080, 1350],
+            'square' => [1080, 1080],
+            'landscape' => $platform === 'instagram' ? [1080, 566] : [1200, 630],
+        };
+    }
+
+    // Must match image-crops.ts, including integer rounding and edge clamping.
+    public static function cropRectangle(int $width, int $height, string $platform, array $crop): array
+    {
+        [$outWidth, $outHeight] = self::outputSize($platform, $crop);
+        $ratio = $outWidth / $outHeight;
+        $w = max(1, (int) round(min($width, $height * $ratio) / $crop['zoom']));
+        $h = max(1, (int) round(min($height, $width / $ratio) / $crop['zoom']));
+
+        return ['width' => $w, 'height' => $h,
+            'x' => (int) round(max(0, min($width - $w, $crop['x'] * $width - $w / 2))),
+            'y' => (int) round(max(0, min($height - $h, $crop['y'] * $height - $h / 2)))];
+    }
+
     public function generate(string $url, array $settings, string $directory = 'news-images/crops'): array
     {
         $path = parse_url($url, PHP_URL_PATH) ?: '';
@@ -60,14 +86,11 @@ class NewsImageCropService
             $variants = [];
             foreach (self::SIZES as $platform => [$outWidth, $outHeight]) {
                 $crop = $settings[$platform];
-                $ratio = $outWidth / $outHeight;
-                $cropWidth = max(1, (int) round(min($width, $height * $ratio) / $crop['zoom']));
-                $cropHeight = max(1, (int) round(min($height, $width / $ratio) / $crop['zoom']));
-                $left = (int) round(max(0, min($width - $cropWidth, $crop['x'] * $width - $cropWidth / 2)));
-                $top = (int) round(max(0, min($height - $cropHeight, $crop['y'] * $height - $cropHeight / 2)));
+                [$outWidth, $outHeight] = self::outputSize($platform, $crop);
+                $rectangle = self::cropRectangle($width, $height, $platform, $crop);
                 $canvas = imagecreatetruecolor($outWidth, $outHeight);
                 imagefill($canvas, 0, 0, imagecolorallocate($canvas, 255, 255, 255));
-                imagecopyresampled($canvas, $source, 0, 0, $left, $top, $outWidth, $outHeight, $cropWidth, $cropHeight);
+                imagecopyresampled($canvas, $source, 0, 0, $rectangle['x'], $rectangle['y'], $outWidth, $outHeight, $rectangle['width'], $rectangle['height']);
                 ob_start();
                 imagejpeg($canvas, null, 95);
                 $jpeg = ob_get_clean();

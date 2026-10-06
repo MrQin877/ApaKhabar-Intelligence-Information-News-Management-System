@@ -233,6 +233,8 @@ class NewsWorkspaceController extends Controller
             'version' => ['required', 'integer', Rule::in([$draft->version])],
             'image_crops' => ['required', 'array'],
             'image_crops.sync' => ['required', 'boolean'],
+            'image_crops.instagram.type' => ['sometimes', Rule::in(['portrait', 'square', 'landscape'])],
+            'image_crops.facebook.type' => ['sometimes', Rule::in(['portrait', 'square', 'landscape'])],
             ...collect(['website', 'instagram', 'facebook'])->flatMap(fn ($platform) => [
                 "image_crops.$platform.x" => ['required', 'numeric', 'between:0,1'],
                 "image_crops.$platform.y" => ['required', 'numeric', 'between:0,1'],
@@ -596,8 +598,10 @@ class NewsWorkspaceController extends Controller
             'image_crops' => ['nullable', 'array:sync,website,instagram,facebook'],
             'image_crops.sync' => ['required_with:image_crops', 'boolean'],
             'image_crops.website' => ['required_with:image_crops', 'array:x,y,zoom'],
-            'image_crops.instagram' => ['required_with:image_crops', 'array:x,y,zoom'],
-            'image_crops.facebook' => ['required_with:image_crops', 'array:x,y,zoom'],
+            'image_crops.instagram' => ['required_with:image_crops', 'array:x,y,zoom,type'],
+            'image_crops.facebook' => ['required_with:image_crops', 'array:x,y,zoom,type'],
+            'image_crops.instagram.type' => ['sometimes', Rule::in(['portrait', 'square', 'landscape'])],
+            'image_crops.facebook.type' => ['sometimes', Rule::in(['portrait', 'square', 'landscape'])],
             ...collect(['website', 'instagram', 'facebook'])->flatMap(fn ($platform) => [
                 "image_crops.$platform.x" => ['required_with:image_crops', 'numeric', 'between:0,1'],
                 "image_crops.$platform.y" => ['required_with:image_crops', 'numeric', 'between:0,1'],

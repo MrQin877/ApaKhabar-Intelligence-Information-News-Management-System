@@ -35,7 +35,7 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import AppLayout from '@/layouts/app-layout';
-import { defaultCrops } from '@/lib/image-crops';
+import { defaultCrops, initializeCrops } from '@/lib/image-crops';
 import type { ImageCrops } from '@/lib/image-crops';
 import { publishManual } from '@/lib/manual-publish';
 import type { PublishResult } from '@/lib/manual-publish';
@@ -173,7 +173,24 @@ export default function ManualEditor({
         form.clearErrors('cover_photo');
         form.setData('cover_photo', file);
         form.setData('image_crops', defaultCrops());
-        setPreview(URL.createObjectURL(file));
+        const url = URL.createObjectURL(file);
+        setPreview(url);
+        const image = new Image();
+        image.onload = () => {
+            form.setData((data) =>
+                data.cover_photo === file
+                    ? {
+                          ...data,
+                          image_crops: initializeCrops(
+                              data.image_crops ?? defaultCrops(),
+                              image.naturalWidth,
+                              image.naturalHeight,
+                          ),
+                      }
+                    : data,
+            );
+        };
+        image.src = url;
     }
 
     function save(intent: 'draft' | 'publish', previewToken?: string) {

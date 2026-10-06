@@ -100,6 +100,38 @@ test('invalid and incomplete crops are rejected before storing images', function
     expect(Storage::disk('public')->allFiles())->toBe([]);
 });
 
+test('social crop types persist and generate matching dimensions without changing the original', function ($type, $ig, $fb) {
+    $article = cropArticle();
+    [$width, $height] = match ($type) {
+        'portrait' => [1080, 1350],
+        'square' => [1080, 1080],
+        'landscape' => [1920, 1080],
+    };
+    $article['cover_photo'] = UploadedFile::fake()->image('original.png', $width, $height);
+    $article['image_crops']['instagram']['type'] = $type;
+    $article['image_crops']['facebook']['type'] = $type;
+    $original = file_get_contents($article['cover_photo']->getRealPath());
+    $this->post('/admin/news/manual', $article)->assertSessionHasNoErrors();
+    $draft = IntelligentNewsDraft::sole();
+    expect($draft->image_crops)->toBe($article['image_crops']);
+    foreach (['website' => [1600, 900], 'instagram' => $ig, 'facebook' => $fb] as $platform => $size) {
+        $bytes = Storage::disk('public')->get('news-images/crops/'.basename($draft->image_variants[$platform]));
+        expect(array_slice(getimagesizefromstring($bytes), 0, 2))->toBe($size);
+    }
+    expect(Storage::disk('public')->get('news-images/'.basename($draft->image)))->toBe($original);
+})->with([
+    ['portrait', [1080, 1350], [1080, 1350]],
+    ['square', [1080, 1080], [1080, 1080]],
+    ['landscape', [1080, 566], [1200, 630]],
+]);
+
+test('unsupported social crop types are rejected', function () {
+    $article = cropArticle();
+    $article['image_crops']['instagram']['type'] = 'unsupported';
+    $this->post('/admin/news/manual', $article)->assertSessionHasErrors('image_crops.instagram.type');
+    expect(Storage::disk('public')->allFiles())->toBe([]);
+});
+
 test('publication preview and final publication use the identical generated crop variants', function () {
     $preview = $this->postJson('/admin/news/manual/preview', cropArticle())->assertOk()->json();
     foreach (NewsImageCropService::SIZES as $platform => [$width, $height]) {
