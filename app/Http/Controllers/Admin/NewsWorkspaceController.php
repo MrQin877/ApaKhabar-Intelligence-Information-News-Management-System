@@ -47,7 +47,7 @@ class NewsWorkspaceController extends Controller
                     'key' => "draft-{$draft->id}",
                     'id' => $draft->id,
                     'record_type' => 'draft',
-                    'title' => $draft->title,
+                    'title' => $draft->title ?: 'Berita tanpa judul',
                     'preview' => ArticleText::preview($this->publicationContent($draft)),
                     'status' => $draft->status === 'archived' ? 'archived' : ($draft->publicationResults() ? 'active' : 'draft'),
                     ...$this->publicationCard($draft),
@@ -233,6 +233,8 @@ class NewsWorkspaceController extends Controller
             'version' => ['required', 'integer', Rule::in([$draft->version])],
             'image_crops' => ['required', 'array'],
             'image_crops.sync' => ['required', 'boolean'],
+            'image_crops.instagram.type' => ['sometimes', Rule::in(['portrait', 'square', 'landscape'])],
+            'image_crops.facebook.type' => ['sometimes', Rule::in(['portrait', 'square', 'landscape'])],
             ...collect(['website', 'instagram', 'facebook'])->flatMap(fn ($platform) => [
                 "image_crops.$platform.x" => ['required', 'numeric', 'between:0,1'],
                 "image_crops.$platform.y" => ['required', 'numeric', 'between:0,1'],
@@ -269,8 +271,7 @@ class NewsWorkspaceController extends Controller
             return $this->publish($request, $draft);
         }
 
-        return redirect()->route('admin.news-workspace.manual.edit', $draft)
-            ->with('success', 'Draf manual berhasil disimpan.');
+        return $this->savedManualDraft($request, $draft);
     }
 
     public function edit(Request $request, IntelligentNewsDraft $draft): Response
@@ -283,7 +284,7 @@ class NewsWorkspaceController extends Controller
                 'headline' => $draft->title,
                 'content' => $this->publicationContent($draft),
                 'content_html' => app(ArticleHtml::class)->sanitize(
-                    preg_match('/<(p|div|br|strong|b|em|i|u|ul|ol|li|blockquote)\b/i', $this->publicationContent($draft))
+                    preg_match('/<(p|div|br|strong|b|em|i|u|ul|ol|li|blockquote|h[1-6]|img)\b/i', $this->publicationContent($draft))
                         ? $this->publicationContent($draft)
                         : nl2br(e($this->publicationContent($draft)))
                 ),
@@ -313,7 +314,20 @@ class NewsWorkspaceController extends Controller
             return $this->publish($request, $draft);
         }
 
-        return back()->with('success', 'Draf berhasil diperbarui.');
+        return $this->savedManualDraft($request, $draft);
+    }
+
+    private function savedManualDraft(Request $request, IntelligentNewsDraft $draft): RedirectResponse|JsonResponse
+    {
+        if ($request->expectsJson() && ! $request->header('X-Inertia')) {
+            return response()->json(['draft' => [
+                'id' => $draft->id, 'image' => $draft->image,
+                'image_crops' => $draft->image_crops, 'content_html' => $draft->content,
+            ]]);
+        }
+
+        return redirect()->route('admin.news-workspace.manual.edit', $draft)
+            ->with('success', 'Berita berhasil disimpan sebagai draf.');
     }
 
     public function publish(Request $request, IntelligentNewsDraft $draft): RedirectResponse|JsonResponse
@@ -592,19 +606,22 @@ class NewsWorkspaceController extends Controller
         if (is_string($request->input('image_crops'))) {
             $request->merge(['image_crops' => json_decode($request->input('image_crops'), true) ?? 'invalid']);
         }
+        $partialDraft = $request->input('intent', 'draft') === 'draft' && $previewDirectory === null;
         $data = $request->validate([
             'image_crops' => ['nullable', 'array:sync,website,instagram,facebook'],
             'image_crops.sync' => ['required_with:image_crops', 'boolean'],
             'image_crops.website' => ['required_with:image_crops', 'array:x,y,zoom'],
-            'image_crops.instagram' => ['required_with:image_crops', 'array:x,y,zoom'],
-            'image_crops.facebook' => ['required_with:image_crops', 'array:x,y,zoom'],
+            'image_crops.instagram' => ['required_with:image_crops', 'array:x,y,zoom,type'],
+            'image_crops.facebook' => ['required_with:image_crops', 'array:x,y,zoom,type'],
+            'image_crops.instagram.type' => ['sometimes', Rule::in(['portrait', 'square', 'landscape'])],
+            'image_crops.facebook.type' => ['sometimes', Rule::in(['portrait', 'square', 'landscape'])],
             ...collect(['website', 'instagram', 'facebook'])->flatMap(fn ($platform) => [
                 "image_crops.$platform.x" => ['required_with:image_crops', 'numeric', 'between:0,1'],
                 "image_crops.$platform.y" => ['required_with:image_crops', 'numeric', 'between:0,1'],
                 "image_crops.$platform.zoom" => ['required_with:image_crops', 'numeric', 'between:1,4'],
             ])->all(),
-            'headline' => ['required', 'string', 'max:255'],
-            'content' => ['required', 'string', 'min:20', 'max:100000'],
+            'headline' => [$partialDraft ? 'nullable' : 'required', 'string', 'max:255'],
+            'content' => [$partialDraft ? 'nullable' : 'required', 'string', 'min:'.($partialDraft ? 0 : 20), 'max:100000'],
             'category_id' => ['nullable', 'integer', Rule::exists('news_categories', 'categoryID')->where('is_active', true)->whereNull('deleted_at')],
             'image' => ['nullable', 'url', 'max:2048'],
             'cover_photo' => ['nullable', 'image', 'mimes:jpg,jpeg,png', 'max:5120'],
@@ -619,9 +636,11 @@ class NewsWorkspaceController extends Controller
             $this->validatePlatforms($request);
         }
 
+        $data['headline'] = $data['headline'] ?? '';
+        $data['content'] = $data['content'] ?? '';
         if (($data['content_format'] ?? 'text') === 'html') {
             $data['content'] = app(ArticleHtml::class)->sanitize($data['content']);
-            if (mb_strlen(trim(html_entity_decode(strip_tags($data['content'])))) < 20) {
+            if (! $partialDraft && mb_strlen(trim(html_entity_decode(strip_tags($data['content'])))) < 20) {
                 throw ValidationException::withMessages(['content' => 'Isi berita harus berisi setidaknya 20 karakter teks.']);
             }
         }

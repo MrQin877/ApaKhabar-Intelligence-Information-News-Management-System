@@ -69,6 +69,60 @@ test('manual editor saves formatting and cover without publishing', function () 
         ->component('admin/intelligentnewscreator/editor')->where('draft.show_on_homepage', false)->has('draft.content_html'));
 });
 
+test('partial drafts save as JSON and appear in the news list with an editable draft status', function ($fields) {
+    $this->postJson('/admin/news/manual', ['intent' => 'draft', 'content_format' => 'html', ...$fields])
+        ->assertOk()->assertJsonPath('draft.id', 1);
+    $draft = IntelligentNewsDraft::sole();
+    expect($draft->status)->toBe('draft')->and($draft->reviewed_at)->toBeNull()
+        ->and($draft->published_news_id)->toBeNull()->and($draft->publication_results)->toBeNull()
+        ->and(News::count())->toBe(0);
+    $this->get('/admin/news')->assertInertia(fn (Assert $page) => $page
+        ->where('items.0.status', 'draft')
+        ->where('items.0.resume_url', route('admin.news-workspace.manual.edit', $draft)));
+    $this->get('/admin/news/manual/'.$draft->id.'/edit')->assertInertia(fn (Assert $page) => $page
+        ->where('draft.headline', $fields['headline'] ?? '')
+        ->where('draft.content_html', $fields['content'] ?? ''));
+})->with([
+    [['headline' => 'Judul saja']],
+    [['content' => '<p>Baru mulai</p>']],
+    [['content' => '<img src="https://example.com/photo.jpg" alt="Foto warga">']],
+]);
+
+test('saving a partial draft again updates its record and preserves cover crop category and inserted images', function () {
+    Storage::fake('public');
+    config(['filesystems.news_media_disk' => 'public']);
+    $category = NewsCategory::create(['name' => 'Warga', 'is_active' => true]);
+    $crop = ['x' => 0.5, 'y' => 0.5, 'zoom' => 1];
+    $crops = ['sync' => true, 'website' => $crop, 'instagram' => [...$crop, 'type' => 'portrait'], 'facebook' => [...$crop, 'type' => 'portrait']];
+    $response = $this->postJson('/admin/news/manual', [
+        'intent' => 'draft', 'content_format' => 'html', 'content' => '<p>Awal</p>',
+        'cover_photo' => UploadedFile::fake()->image('cover.png', 1080, 1350), 'category_id' => $category->getKey(), 'image_crops' => $crops,
+    ])->assertOk()->json('draft');
+    $content = '<h2>Subjudul</h2><p>Ringkasan</p><img src="https://example.com/image.jpg" alt="Warga">';
+    $this->postJson('/admin/news/manual/'.$response['id'], [
+        '_method' => 'put', 'intent' => 'draft', 'headline' => 'Judul baru', 'content_format' => 'html',
+        'content' => $content, 'image' => $response['image'], 'image_crops' => $crops, 'category_id' => $category->getKey(),
+    ])->assertOk()->assertJsonPath('draft.id', $response['id']);
+    $draft = IntelligentNewsDraft::sole();
+    expect($draft->title)->toBe('Judul baru')->and($draft->image)->toBe($response['image'])
+        ->and($draft->content)->toBe($content)->and($draft->image_crops)->toBe($crops)
+        ->and($draft->category_id)->toBe($category->getKey())->and($draft->status)->toBe('draft')
+        ->and(News::count())->toBe(0);
+    $this->get('/admin/news/manual/'.$draft->id.'/edit')->assertInertia(fn (Assert $page) => $page
+        ->where('draft.content_html', $content)->where('draft.image_crops', $crops)->where('draft.image', $response['image']));
+});
+
+test('partial drafts still cannot prepare a publication preview and failed updates retain saved data', function () {
+    $this->postJson('/admin/news/manual', ['intent' => 'draft', 'headline' => 'Belum selesai'])->assertOk();
+    $draft = IntelligentNewsDraft::sole();
+    $this->postJson('/admin/news/manual/preview', ['headline' => 'Belum selesai', 'content' => '<p>Awal</p>', 'content_format' => 'html'])
+        ->assertUnprocessable()->assertJsonValidationErrors('content');
+    $this->putJson('/admin/news/manual/'.$draft->id, ['intent' => 'draft', 'headline' => str_repeat('a', 256)])
+        ->assertUnprocessable();
+    expect($draft->fresh()->title)->toBe('Belum selesai')->and(IntelligentNewsDraft::count())->toBe(1)
+        ->and(News::count())->toBe(0);
+});
+
 test('manual publishing saves the current fields and homepage preference', function () {
     $this->post('/admin/news/manual', manualArticle(['intent' => 'publish']))
         ->assertSessionHasNoErrors()->assertRedirect('/admin/news/manual/1/edit')
@@ -128,8 +182,8 @@ test('manual editor rejects unsupported and oversized covers', function () {
     expect(IntelligentNewsDraft::count())->toBe(0);
 });
 
-test('formatting markup cannot satisfy the minimum article length', function () {
-    $this->post('/admin/news/manual', manualArticle(['content' => '<p><strong><em><u> </u></em></strong></p>']))
+test('formatting markup cannot satisfy the minimum article length for publishing', function () {
+    $this->post('/admin/news/manual', manualArticle(['intent' => 'publish', 'content' => '<p><strong><em><u> </u></em></strong></p>']))
         ->assertSessionHasErrors('content');
 });
 

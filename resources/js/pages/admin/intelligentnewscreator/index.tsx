@@ -41,6 +41,7 @@ import AppLayout from '@/layouts/app-layout';
 import type { BreadcrumbItem } from '@/types';
 
 type Status = 'draft' | 'active' | 'archived';
+type StatusFilter = Status | 'all';
 type ViewMode = 'card' | 'list';
 
 interface WorkspaceItem {
@@ -73,7 +74,8 @@ const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Berita', href: '/admin/news' },
 ];
 
-const statusNames: Record<Status, string> = {
+const statusNames: Record<StatusFilter, string> = {
+    all: 'Semua',
     draft: 'Draf',
     active: 'Aktif',
     archived: 'Diarsipkan',
@@ -132,9 +134,7 @@ function ItemActions({ item }: { item: WorkspaceItem }) {
                     )}
                     {item.can_publish && (
                         <DropdownMenuItem
-                            onSelect={() =>
-                                router.visit(item.resume_url)
-                            }
+                            onSelect={() => router.visit(item.resume_url)}
                         >
                             <Send /> Tinjau dan publikasikan
                         </DropdownMenuItem>
@@ -163,7 +163,7 @@ function ItemActions({ item }: { item: WorkspaceItem }) {
 }
 
 export default function NewsWorkspace({ items, counts }: Props) {
-    const [status, setStatus] = useState<Status>('active');
+    const [status, setStatus] = useState<StatusFilter>('all');
     const [view, setView] = useState<ViewMode>('card');
     const [search, setSearch] = useState('');
     const filtered = useMemo(() => {
@@ -171,7 +171,7 @@ export default function NewsWorkspace({ items, counts }: Props) {
 
         return items.filter(
             (item) =>
-                item.status === status &&
+                (status === 'all' || item.status === status) &&
                 (!query ||
                     [item.title, item.preview, item.category]
                         .filter(Boolean)
@@ -238,23 +238,25 @@ export default function NewsWorkspace({ items, counts }: Props) {
                         <Tabs
                             value={status}
                             onValueChange={(value) =>
-                                setStatus(value as Status)
+                                setStatus(value as StatusFilter)
                             }
                         >
                             <TabsList>
-                                {(Object.keys(statusNames) as Status[]).map(
-                                    (value) => (
-                                        <TabsTrigger key={value} value={value}>
-                                            {statusNames[value]}
-                                            <Badge
-                                                variant="secondary"
-                                                className="ml-1.5"
-                                            >
-                                                {counts[value]}
-                                            </Badge>
-                                        </TabsTrigger>
-                                    ),
-                                )}
+                                {(
+                                    Object.keys(statusNames) as StatusFilter[]
+                                ).map((value) => (
+                                    <TabsTrigger key={value} value={value}>
+                                        {statusNames[value]}
+                                        <Badge
+                                            variant="secondary"
+                                            className="ml-1.5"
+                                        >
+                                            {value === 'all'
+                                                ? items.length
+                                                : counts[value]}
+                                        </Badge>
+                                    </TabsTrigger>
+                                ))}
                             </TabsList>
                         </Tabs>
                         <div className="flex gap-2">
@@ -300,7 +302,9 @@ export default function NewsWorkspace({ items, counts }: Props) {
                                 <div>
                                     <p className="font-medium">
                                         Belum ada{' '}
-                                        {statusNames[status].toLowerCase()}
+                                        {status === 'all'
+                                            ? 'berita'
+                                            : statusNames[status].toLowerCase()}
                                     </p>
                                     <p className="text-sm text-muted-foreground">
                                         Buat berita manual atau mulai percakapan
@@ -335,6 +339,15 @@ export default function NewsWorkspace({ items, counts }: Props) {
                                                 {item.creation_method === 'ai'
                                                     ? 'Dibuat AI'
                                                     : 'Manual'}
+                                            </Badge>
+                                            <Badge
+                                                variant={
+                                                    item.status === 'draft'
+                                                        ? 'secondary'
+                                                        : 'outline'
+                                                }
+                                            >
+                                                {statusNames[item.status]}
                                             </Badge>
                                             {item.category && (
                                                 <Badge variant="outline">
@@ -425,6 +438,15 @@ export default function NewsWorkspace({ items, counts }: Props) {
                                         {item.creation_method === 'ai'
                                             ? 'AI'
                                             : 'Manual'}
+                                    </Badge>
+                                    <Badge
+                                        variant={
+                                            item.status === 'draft'
+                                                ? 'secondary'
+                                                : 'outline'
+                                        }
+                                    >
+                                        {statusNames[item.status]}
                                     </Badge>
                                     {item.quality_score !== null && (
                                         <Badge

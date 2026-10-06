@@ -9,7 +9,48 @@ export const cropPlatforms = {
     },
 } as const;
 export type CropPlatform = keyof typeof cropPlatforms;
-export type Crop = { x: number; y: number; zoom: number };
+export type CropType = 'portrait' | 'square' | 'landscape';
+export type Crop = { x: number; y: number; zoom: number; type?: CropType };
+export function imageOrientation(width: number, height: number): CropType {
+    const ratio = width / height;
+
+    return ratio < 0.9 ? 'portrait' : ratio > 1.1 ? 'landscape' : 'square';
+}
+
+// Exact output dimensions define the ratio, including landscape rounding.
+export function cropSpec(platform: CropPlatform, crop: Crop) {
+    const legacy = cropPlatforms[platform];
+
+    if (platform === 'website' || !crop.type) {
+        return legacy;
+    }
+
+    const sizes = {
+        portrait: { width: 1080, height: 1350, ratio: '4:5' },
+        square: { width: 1080, height: 1080, ratio: '1:1' },
+        landscape: {
+            width: platform === 'instagram' ? 1080 : 1200,
+            height: platform === 'instagram' ? 566 : 630,
+            ratio: '1.91:1',
+        },
+    };
+
+    return { label: legacy.label, ...sizes[crop.type] };
+}
+
+export function initializeCrops(
+    crops: ImageCrops,
+    width: number,
+    height: number,
+): ImageCrops {
+    const type = imageOrientation(width, height);
+
+    return {
+        ...crops,
+        instagram: { ...crops.instagram, type: crops.instagram.type ?? type },
+        facebook: { ...crops.facebook, type: crops.facebook.type ?? type },
+    };
+}
 export type ImageCrops = { sync: boolean } & Record<CropPlatform, Crop>;
 export const defaultCrops = (): ImageCrops => ({
     sync: true,
@@ -43,8 +84,8 @@ export function cropRectangle(
     platform: CropPlatform,
     crop: Crop,
 ) {
-    const ratio =
-        cropPlatforms[platform].width / cropPlatforms[platform].height;
+    const spec = cropSpec(platform, crop);
+    const ratio = spec.width / spec.height;
     const w = Math.max(
         1,
         Math.round(Math.min(width, height * ratio) / crop.zoom),

@@ -1,4 +1,4 @@
-import { Head, Link, useForm } from '@inertiajs/react';
+import { Head, Link, router, useForm } from '@inertiajs/react';
 import {
     ArrowLeft,
     FilePenLine,
@@ -23,6 +23,14 @@ import type {
 import { PublishResultDialog } from '@/components/publish-result-dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -34,9 +42,11 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { useUnsavedNews } from '@/hooks/use-unsaved-news';
 import AppLayout from '@/layouts/app-layout';
-import { defaultCrops } from '@/lib/image-crops';
+import { defaultCrops, initializeCrops } from '@/lib/image-crops';
 import type { ImageCrops } from '@/lib/image-crops';
+import { hasManualContent, saveManualDraft } from '@/lib/manual-draft';
 import { publishManual } from '@/lib/manual-publish';
 import type { PublishResult } from '@/lib/manual-publish';
 import type { MetaAuthConfig } from '@/lib/meta-auth';
@@ -86,6 +96,10 @@ export default function ManualEditor({
 }: Props) {
     const [confirmPublish, setConfirmPublish] = useState(false);
     const [publishing, setPublishing] = useState(false);
+    const [savingDraft, setSavingDraft] = useState(false);
+    const [saveError, setSaveError] = useState('');
+    const savingStarted = useRef(false);
+    const [draftId, setDraftId] = useState(draft?.id);
     const [publishResult, setPublishResult] = useState<PublishResult>();
     const publishStarted = useRef(false);
     const [dragging, setDragging] = useState(false);
@@ -99,7 +113,7 @@ export default function ManualEditor({
             category.name.trim().toLocaleLowerCase('id') !== 'lainnya',
     );
 
-    const form = useForm(`ManualEditor:${draft?.id ?? 'new'}`, {
+    const form = useForm({
         headline: draft?.headline ?? '',
         content: draft?.content_html ?? '',
         content_format: 'html',
@@ -116,13 +130,19 @@ export default function ManualEditor({
             (category) => String(category.categoryID) === form.data.category_id,
         );
     const setFormData = form.setData;
+    const setFormDefaults = form.setDefaults;
     useEffect(() => {
         if (!selectedCategoryExists) {
             setFormData('category_id', '');
+            setFormDefaults('category_id', '');
         }
-    }, [selectedCategoryExists, setFormData]);
+    }, [selectedCategoryExists, setFormData, setFormDefaults]);
 
-    const busy = form.processing || publishing || Boolean(publishResult);
+    const busy =
+        savingDraft || form.processing || publishing || Boolean(publishResult);
+    const isDirty =
+        form.isDirty && (Boolean(draftId) || hasManualContent(form.data));
+    const unsaved = useUnsavedNews(isDirty, busy);
     const contentText = useMemo(() => {
         if (typeof DOMParser === 'undefined') {
             return '';
@@ -173,7 +193,24 @@ export default function ManualEditor({
         form.clearErrors('cover_photo');
         form.setData('cover_photo', file);
         form.setData('image_crops', defaultCrops());
-        setPreview(URL.createObjectURL(file));
+        const url = URL.createObjectURL(file);
+        setPreview(url);
+        const image = new Image();
+        image.onload = () => {
+            form.setData((data) =>
+                data.cover_photo === file
+                    ? {
+                          ...data,
+                          image_crops: initializeCrops(
+                              data.image_crops ?? defaultCrops(),
+                              image.naturalWidth,
+                              image.naturalHeight,
+                          ),
+                      }
+                    : data,
+            );
+        };
+        image.src = url;
     }
 
     function save(intent: 'draft' | 'publish', previewToken?: string) {
@@ -206,16 +243,27 @@ export default function ManualEditor({
 
             body.append('intent', 'publish');
 
-            if (draft) {
+            if (draftId) {
                 body.append('_method', 'put');
             }
 
             void publishManual(
-                draft ? `/admin/news/manual/${draft.id}` : '/admin/news/manual',
+                draftId
+                    ? `/admin/news/manual/${draftId}`
+                    : '/admin/news/manual',
                 body,
                 [...form.data.platforms],
             )
                 .then((result) => {
+                    if (
+                        Object.values(result.results).some(
+                            (platform) => platform.success,
+                        )
+                    ) {
+                        form.setDefaults(form.data);
+                        unsaved.allowLeave();
+                    }
+
                     setConfirmPublish(false);
                     setPublishResult(result);
                 })
@@ -224,48 +272,57 @@ export default function ManualEditor({
             return;
         }
 
-        form.transform((data) => ({
-            ...data,
-            intent,
-            ...(draft ? { _method: 'put' } : {}),
-        }));
-        // Multipart POST with method spoofing keeps the existing PUT update route.
-        form.post(
-            draft ? `/admin/news/manual/${draft.id}` : '/admin/news/manual',
-            {
-                preserveScroll: true,
-                forceFormData: true,
-                onFinish: () => setConfirmPublish(false),
-                onError: (errors) => {
-                    setConfirmPublish(false);
-                    const platformError = Object.entries(errors).find(([key]) =>
-                        key.startsWith('platforms'),
-                    );
+        void persistDraft();
+    }
 
-                    if (platformError) {
-                        form.setError('platforms', platformError[1]);
-                    } else {
-                        setConfirmPublish(false);
-                    }
-                },
-                onSuccess: (page) => {
-                    const saved = page.props.draft as Draft | undefined;
-                    setPreview('');
-                    setConfirmPublish(false);
-                    form.setData((data) => ({
-                        ...data,
-                        cover_photo: null,
-                        image: saved?.image ?? data.image,
-                        image_crops: saved?.image_crops ?? data.image_crops,
-                        content: saved?.content_html ?? data.content,
-                    }));
+    async function persistDraft() {
+        if (savingStarted.current || busy) {
+            return;
+        }
 
-                    if (fileInput.current) {
-                        fileInput.current.value = '';
-                    }
-                },
-            },
-        );
+        savingStarted.current = true;
+        setSavingDraft(true);
+        setSaveError('');
+        form.clearErrors();
+
+        try {
+            const saved = await saveManualDraft(form.data, draftId);
+            setDraftId(saved.id);
+            const data = {
+                ...form.data,
+                cover_photo: null,
+                image: saved.image ?? '',
+                image_crops: saved.image_crops,
+                content: saved.content_html,
+            };
+            form.setDefaults(data);
+            form.setData(data);
+            setPreview('');
+
+            if (fileInput.current) {
+                fileInput.current.value = '';
+            }
+
+            window.dispatchEvent(new Event('manual-draft-saved'));
+
+            if (unsaved.open) {
+                unsaved.leave();
+            } else {
+                unsaved.allowLeave();
+                router.visit(`/admin/news/manual/${saved.id}/edit`, {
+                    replace: true,
+                });
+            }
+        } catch (error) {
+            setSaveError(
+                error instanceof Error
+                    ? error.message
+                    : 'Draf belum berhasil disimpan. Periksa koneksi dan coba lagi.',
+            );
+        } finally {
+            savingStarted.current = false;
+            setSavingDraft(false);
+        }
     }
 
     async function preparePreview(): Promise<PublicationPreviewData> {
@@ -519,6 +576,7 @@ export default function ManualEditor({
                                     </Label>
                                     <Input
                                         id="headline"
+                                        disabled={busy}
                                         value={form.data.headline}
                                         onChange={(event) =>
                                             form.setData(
@@ -693,15 +751,26 @@ export default function ManualEditor({
                         </div>
                     </div>
                     <footer className="sticky bottom-0 z-20 w-full border-t border-border/40 bg-(--editor-background)">
+                        {saveError && !unsaved.open && (
+                            <p
+                                role="alert"
+                                className="px-4 pt-3 text-center text-sm text-destructive"
+                            >
+                                {saveError}
+                            </p>
+                        )}
                         <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-end gap-3 px-4 py-4 sm:px-6 lg:px-8">
                             <Button
                                 type="submit"
                                 variant="outline"
-                                disabled={busy}
+                                disabled={
+                                    busy ||
+                                    (!draftId && !hasManualContent(form.data))
+                                }
                                 className="h-10 flex-1 rounded-lg bg-card sm:flex-none sm:px-5"
                             >
                                 <Save />{' '}
-                                {form.processing
+                                {savingDraft || form.processing
                                     ? 'Menyimpan...'
                                     : 'Simpan draf'}
                             </Button>
@@ -753,6 +822,66 @@ export default function ManualEditor({
                 onPublish={(token) => save('publish', token)}
             />
             {publishResult && <PublishResultDialog result={publishResult} />}
+            <Dialog
+                open={unsaved.open}
+                onOpenChange={(open) => {
+                    if (!open) {
+                        unsaved.continueEditing();
+                    }
+                }}
+            >
+                <DialogContent
+                    overlayClassName="z-[100] bg-black/75"
+                    className="z-[101] max-h-[calc(100dvh-2rem)] overflow-y-auto border-border/70 bg-card sm:max-w-[440px]"
+                    closeDisabled={savingDraft}
+                    aria-busy={savingDraft}
+                    onInteractOutside={(event) => event.preventDefault()}
+                    onEscapeKeyDown={(event) => {
+                        event.preventDefault();
+
+                        if (!savingDraft) {
+                            unsaved.continueEditing();
+                        }
+                    }}
+                >
+                    <DialogHeader className="pr-6 text-left">
+                        <DialogTitle>Berita belum disimpan</DialogTitle>
+                        <DialogDescription>
+                            Simpan berita sebagai draf agar dapat dilanjutkan
+                            nanti.
+                        </DialogDescription>
+                    </DialogHeader>
+                    {saveError && (
+                        <p role="alert" className="text-sm text-destructive">
+                            {saveError}
+                        </p>
+                    )}
+                    <DialogFooter className="flex-row justify-end">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            disabled={savingDraft}
+                            onClick={() => {
+                                form.reset();
+                                unsaved.leave();
+                            }}
+                        >
+                            Batal
+                        </Button>
+                        <Button
+                            type="button"
+                            className="bg-brand-600 text-white hover:bg-brand-700"
+                            disabled={savingDraft}
+                            onClick={() => void persistDraft()}
+                        >
+                            {savingDraft && (
+                                <LoaderCircle className="animate-spin" />
+                            )}
+                            {savingDraft ? 'Menyimpan...' : 'Simpan draf'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
             {cropOpen && (
                 <NewsImageCropDialog
                     src={preview || form.data.image}

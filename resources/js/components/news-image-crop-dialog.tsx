@@ -13,7 +13,9 @@ import {
     clamp,
     cropPlatforms,
     cropRectangle,
+    cropSpec,
     defaultCrops,
+    initializeCrops,
     updateCrop,
 } from '@/lib/image-crops';
 import type { Crop, CropPlatform, ImageCrops } from '@/lib/image-crops';
@@ -31,7 +33,7 @@ function Preview({
 }) {
     const canvas = useRef<HTMLCanvasElement>(null);
     const drag = useRef<{ x: number; y: number; crop: Crop } | null>(null);
-    const spec = cropPlatforms[platform];
+    const spec = cropSpec(platform, crop);
     const rectangle = cropRectangle(
         image.naturalWidth,
         image.naturalHeight,
@@ -64,7 +66,8 @@ function Preview({
         rectangle.y,
         rectangle.width,
         rectangle.height,
-        spec,
+        spec.width,
+        spec.height,
     ]);
 
     return (
@@ -183,19 +186,32 @@ export function NewsImageCropDialog({
     onSave: (crops: ImageCrops) => void;
 }) {
     const [crops, setCrops] = useState(initial ?? defaultCrops);
-    const [image, setImage] = useState<HTMLImageElement>();
-    const [failed, setFailed] = useState(false);
+    const [loadedImage, setImage] = useState<HTMLImageElement>();
+    const [failedSrc, setFailedSrc] = useState<string>();
+    const image =
+        loadedImage?.getAttribute('src') === src ? loadedImage : undefined;
+    const failed = failedSrc === src;
     useEffect(() => {
         const loaded = new Image();
-        loaded.onload = () => setImage(loaded);
-        loaded.onerror = () => setFailed(true);
+        loaded.onload = () => {
+            setCrops(
+                initializeCrops(
+                    initial ?? defaultCrops(),
+                    loaded.naturalWidth,
+                    loaded.naturalHeight,
+                ),
+            );
+            setImage(loaded);
+            setFailedSrc(undefined);
+        };
+        loaded.onerror = () => setFailedSrc(src);
         loaded.src = src;
 
         return () => {
             loaded.onload = null;
             loaded.onerror = null;
         };
-    }, [src]);
+    }, [src, initial]);
     function change(platform: CropPlatform, crop: Crop) {
         setCrops((previous) => updateCrop(previous, platform, crop));
     }
