@@ -1,7 +1,25 @@
-import { Head, router, useForm } from '@inertiajs/react';
-import { Edit3, Plus, Tags, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import {
+    DndContext,
+    closestCenter,
+    KeyboardSensor,
+    PointerSensor,
+    useSensor,
+    useSensors,
+} from '@dnd-kit/core';
+import {
+    SortableContext,
+    arrayMove,
+    sortableKeyboardCoordinates,
+    useSortable,
+    verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { Head, router } from '@inertiajs/react';
+import { Edit3, Plus, Tags, Trash2, GripVertical, Save } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import type React from 'react';
+import { CategoryDialog } from '@/components/category-dialog';
+import type { Category } from '@/components/category-dialog';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -16,17 +34,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
-import {
     Table,
     TableBody,
     TableCell,
@@ -34,68 +41,189 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
-import { Textarea } from '@/components/ui/textarea';
 import AppLayout from '@/layouts/app-layout';
 import type { BreadcrumbItem } from '@/types';
-
-interface Category {
-    id: number;
-    name: string;
-    slug: string;
-    description: string | null;
-    status: 'active' | 'inactive';
-    display_order: number;
-    is_default: boolean;
-    articles_count: number;
-}
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Kategori Berita', href: '/admin/categories' },
 ];
 
+function SortableCategoryRow({
+    category,
+    position,
+    saving,
+    locked,
+    openForm,
+    toggleStatus,
+    setDeleting,
+}: {
+    category: Category;
+    position: number;
+    saving: boolean;
+    locked: boolean;
+    openForm: (category: Category) => void;
+    toggleStatus: (category: Category) => void;
+    setDeleting: (category: Category) => void;
+}) {
+    const {
+        attributes,
+        listeners,
+        setNodeRef,
+        setActivatorNodeRef,
+        transform,
+        transition,
+        isDragging,
+    } = useSortable({ id: category.id, disabled: saving });
+
+    return (
+        <TableRow
+            ref={setNodeRef}
+            style={{
+                transform: CSS.Transform.toString(transform),
+                transition,
+                position: 'relative',
+                zIndex: isDragging ? 1 : undefined,
+            }}
+            className={
+                isDragging
+                    ? 'bg-accent shadow-lg outline outline-primary'
+                    : undefined
+            }
+        >
+            <TableCell className="w-12">
+                <div className="flex items-center gap-1">
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        ref={setActivatorNodeRef}
+                        {...attributes}
+                        {...listeners}
+                        disabled={saving}
+                        className="cursor-grab touch-none active:cursor-grabbing"
+                        aria-label={`Geser ${category.name}`}
+                    >
+                        <GripVertical className="size-4" />
+                    </Button>
+                </div>
+            </TableCell>
+            <TableCell>{position}</TableCell>
+            <TableCell className="font-medium">
+                {category.name}{' '}
+                {category.is_default && (
+                    <Badge variant="secondary">Bawaan</Badge>
+                )}
+            </TableCell>
+            <TableCell className="text-muted-foreground">
+                {category.slug}
+            </TableCell>
+            <TableCell>{category.articles_count}</TableCell>
+            <TableCell>
+                <Badge
+                    variant={
+                        category.status === 'active' ? 'default' : 'outline'
+                    }
+                >
+                    {category.status === 'active' ? 'Aktif' : 'Nonaktif'}
+                </Badge>
+            </TableCell>
+            <TableCell>
+                <div className="flex justify-end gap-2">
+                    <Button
+                        disabled={locked}
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openForm(category)}
+                    >
+                        <Edit3 /> Edit
+                    </Button>
+                    <Button
+                        disabled={locked}
+                        variant="outline"
+                        size="sm"
+                        onClick={() => toggleStatus(category)}
+                    >
+                        {category.status === 'active'
+                            ? 'Nonaktifkan'
+                            : 'Aktifkan'}
+                    </Button>
+                    <Button
+                        disabled={locked}
+                        variant="destructive"
+                        size="icon-sm"
+                        onClick={() => setDeleting(category)}
+                        aria-label={`Hapus ${category.name}`}
+                    >
+                        <Trash2 />
+                    </Button>
+                </div>
+            </TableCell>
+        </TableRow>
+    );
+}
+
 export default function Categories({ categories }: { categories: Category[] }) {
+    const [ordered, setOrdered] = useState(categories);
+    const [saving, setSaving] = useState(false);
+    const [orderError, setOrderError] = useState('');
+    useEffect(() => {
+        setOrdered(categories);
+    }, [categories]);
+    const dirty = ordered.some(
+        (category, index) => category.id !== categories[index]?.id,
+    );
+    const sensors = useSensors(
+        useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+        useSensor(KeyboardSensor, {
+            coordinateGetter: sortableKeyboardCoordinates,
+        }),
+    );
+    function move(from: number, to: number) {
+        if (
+            saving ||
+            from < 0 ||
+            to < 0 ||
+            from >= ordered.length ||
+            to >= ordered.length ||
+            from === to
+        ) {
+            return;
+        }
+
+        setOrdered((current) => arrayMove(current, from, to));
+        setOrderError('');
+    }
+    function saveOrder() {
+        if (!dirty || saving) {
+            return;
+        }
+
+        setSaving(true);
+        setOrderError('');
+        router.post(
+            '/admin/categories/reorder',
+            {
+                ids: ordered.map((category) => category.id),
+                original_ids: categories.map((category) => category.id),
+            },
+            {
+                preserveScroll: true,
+                onError: (errors) =>
+                    setOrderError(
+                        errors.ids ??
+                            Object.values(errors)[0] ??
+                            'Urutan gagal disimpan.',
+                    ),
+                onFinish: () => setSaving(false),
+            },
+        );
+    }
     const [editing, setEditing] = useState<Category | null>(null);
     const [formOpen, setFormOpen] = useState(false);
     const [deleting, setDeleting] = useState<Category | null>(null);
-    const form = useForm({
-        name: '',
-        description: '',
-        status: 'active' as 'active' | 'inactive',
-        display_order: 0,
-    });
-
     function openForm(category?: Category) {
         setEditing(category ?? null);
-        form.setData(
-            category
-                ? {
-                      name: category.name,
-                      description: category.description ?? '',
-                      status: category.status,
-                      display_order: category.display_order,
-                  }
-                : {
-                      name: '',
-                      description: '',
-                      status: 'active',
-                      display_order: categories.length,
-                  },
-        );
-        form.clearErrors();
         setFormOpen(true);
-    }
-
-    function submit() {
-        const options = {
-            preserveScroll: true,
-            onSuccess: () => setFormOpen(false),
-        };
-
-        if (editing) {
-            form.put(`/admin/categories/${editing.id}`, options);
-        } else {
-            form.post('/admin/categories', options);
-        }
     }
 
     function toggleStatus(category: Category) {
@@ -122,206 +250,126 @@ export default function Categories({ categories }: { categories: Category[] }) {
                                 <Tags className="text-primary" /> Kategori
                                 Berita
                             </h1>
-                            <p className="mt-1 text-sm text-muted-foreground">
-                                Kategori aktif langsung tersedia untuk editor
-                                dan asisten AI.
-                            </p>
                         </div>
-                        <Button onClick={() => openForm()}>
+                        <Button
+                            disabled={dirty || saving}
+                            onClick={() => openForm()}
+                        >
                             <Plus /> Tambah kategori
                         </Button>
                     </header>
 
                     <Card>
                         <CardHeader>
-                            <CardTitle>Semua kategori</CardTitle>
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                                <CardTitle>Semua kategori</CardTitle>
+                                <div
+                                    className={`flex gap-2 ${dirty ? 'visible' : 'invisible'}`}
+                                    aria-hidden={!dirty}
+                                >
+                                    <Button
+                                        variant="outline"
+                                        disabled={!dirty || saving}
+                                        onClick={() => {
+                                            setOrdered(categories);
+                                            setOrderError('');
+                                        }}
+                                    >
+                                        Batal
+                                    </Button>
+                                    <Button
+                                        disabled={!dirty || saving}
+                                        onClick={saveOrder}
+                                    >
+                                        <Save />
+                                        {saving
+                                            ? 'Menyimpan…'
+                                            : 'Simpan urutan'}
+                                    </Button>
+                                </div>
+                            </div>
+                            {orderError && (
+                                <p
+                                    role="alert"
+                                    className="text-sm text-destructive"
+                                >
+                                    {orderError}
+                                </p>
+                            )}
                         </CardHeader>
                         <CardContent>
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Urutan</TableHead>
-                                        <TableHead>Nama</TableHead>
-                                        <TableHead>Slug</TableHead>
-                                        <TableHead>Artikel</TableHead>
-                                        <TableHead>Status</TableHead>
-                                        <TableHead className="text-right">
-                                            Tindakan
-                                        </TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {categories.map((category) => (
-                                        <TableRow key={category.id}>
-                                            <TableCell>
-                                                {category.display_order}
-                                            </TableCell>
-                                            <TableCell className="font-medium">
-                                                {category.name}{' '}
-                                                {category.is_default && (
-                                                    <Badge variant="secondary">
-                                                        Bawaan
-                                                    </Badge>
-                                                )}
-                                            </TableCell>
-                                            <TableCell className="text-muted-foreground">
-                                                {category.slug}
-                                            </TableCell>
-                                            <TableCell>
-                                                {category.articles_count}
-                                            </TableCell>
-                                            <TableCell>
-                                                <Badge
-                                                    variant={
-                                                        category.status ===
-                                                        'active'
-                                                            ? 'default'
-                                                            : 'outline'
-                                                    }
-                                                >
-                                                    {category.status ===
-                                                    'active'
-                                                        ? 'Aktif'
-                                                        : 'Nonaktif'}
-                                                </Badge>
-                                            </TableCell>
-                                            <TableCell>
-                                                <div className="flex justify-end gap-2">
-                                                    <Button
-                                                        variant="outline"
-                                                        size="sm"
-                                                        onClick={() =>
-                                                            openForm(category)
-                                                        }
-                                                    >
-                                                        <Edit3 /> Edit
-                                                    </Button>
-                                                    <Button
-                                                        variant="outline"
-                                                        size="sm"
-                                                        onClick={() =>
-                                                            toggleStatus(
-                                                                category,
-                                                            )
-                                                        }
-                                                    >
-                                                        {category.status ===
-                                                        'active'
-                                                            ? 'Nonaktifkan'
-                                                            : 'Aktifkan'}
-                                                    </Button>
-                                                    <Button
-                                                        variant="destructive"
-                                                        size="icon-sm"
-                                                        onClick={() =>
-                                                            setDeleting(
-                                                                category,
-                                                            )
-                                                        }
-                                                        aria-label={`Hapus ${category.name}`}
-                                                    >
-                                                        <Trash2 />
-                                                    </Button>
-                                                </div>
-                                            </TableCell>
-                                        </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
+                            <DndContext
+                                sensors={sensors}
+                                collisionDetection={closestCenter}
+                                onDragEnd={({ active, over }) => {
+                                    if (over) {
+                                        move(
+                                            ordered.findIndex(
+                                                (category) =>
+                                                    category.id === active.id,
+                                            ),
+                                            ordered.findIndex(
+                                                (category) =>
+                                                    category.id === over.id,
+                                            ),
+                                        );
+                                    }
+                                }}
+                            >
+                                <SortableContext
+                                    items={ordered.map(
+                                        (category) => category.id,
+                                    )}
+                                    strategy={verticalListSortingStrategy}
+                                >
+                                    <Table>
+                                        <TableHeader>
+                                            <TableRow>
+                                                <TableHead>
+                                                    <span className="sr-only">
+                                                        Atur urutan
+                                                    </span>
+                                                </TableHead>
+                                                <TableHead>Urutan</TableHead>
+                                                <TableHead>Nama</TableHead>
+                                                <TableHead>Slug</TableHead>
+                                                <TableHead>Artikel</TableHead>
+                                                <TableHead>Status</TableHead>
+                                                <TableHead className="text-right">
+                                                    Tindakan
+                                                </TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {ordered.map((category, index) => (
+                                                <SortableCategoryRow
+                                                    key={category.id}
+                                                    category={category}
+                                                    position={index + 1}
+                                                    saving={saving}
+                                                    locked={dirty || saving}
+                                                    openForm={openForm}
+                                                    toggleStatus={toggleStatus}
+                                                    setDeleting={setDeleting}
+                                                />
+                                            ))}
+                                        </TableBody>
+                                    </Table>
+                                </SortableContext>
+                            </DndContext>
                         </CardContent>
                     </Card>
                 </div>
             </div>
 
-            <Dialog open={formOpen} onOpenChange={setFormOpen}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>
-                            {editing ? 'Edit kategori' : 'Tambah kategori'}
-                        </DialogTitle>
-                        <DialogDescription>
-                            Slug dibuat otomatis dari nama kategori.
-                        </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                        <div className="space-y-2">
-                            <Label htmlFor="category-name">Nama *</Label>
-                            <Input
-                                id="category-name"
-                                value={form.data.name}
-                                onChange={(event) =>
-                                    form.setData('name', event.target.value)
-                                }
-                            />
-                            {form.errors.name && (
-                                <p className="text-xs text-destructive">
-                                    {form.errors.name}
-                                </p>
-                            )}
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="category-description">
-                                Deskripsi
-                            </Label>
-                            <Textarea
-                                id="category-description"
-                                value={form.data.description}
-                                onChange={(event) =>
-                                    form.setData(
-                                        'description',
-                                        event.target.value,
-                                    )
-                                }
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="category-order">
-                                Urutan tampilan
-                            </Label>
-                            <Input
-                                id="category-order"
-                                type="number"
-                                min={0}
-                                value={form.data.display_order}
-                                onChange={(event) =>
-                                    form.setData(
-                                        'display_order',
-                                        Number(event.target.value),
-                                    )
-                                }
-                            />
-                        </div>
-                        {editing && (
-                            <div className="flex items-center justify-between rounded-lg border p-3">
-                                <Label htmlFor="category-active">
-                                    Kategori aktif
-                                </Label>
-                                <Switch
-                                    id="category-active"
-                                    checked={form.data.status === 'active'}
-                                    onCheckedChange={(checked) =>
-                                        form.setData(
-                                            'status',
-                                            checked ? 'active' : 'inactive',
-                                        )
-                                    }
-                                />
-                            </div>
-                        )}
-                    </div>
-                    <DialogFooter>
-                        <Button
-                            variant="outline"
-                            onClick={() => setFormOpen(false)}
-                        >
-                            Batal
-                        </Button>
-                        <Button onClick={submit} disabled={form.processing}>
-                            {form.processing ? 'Menyimpan…' : 'Simpan'}
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+            {formOpen && (
+                <CategoryDialog
+                    editing={editing}
+                    defaultOrder={categories.length}
+                    onClose={() => setFormOpen(false)}
+                    onSaved={() => router.reload({ only: ['categories'] })}
+                />
+            )}
 
             <AlertDialog
                 open={Boolean(deleting)}

@@ -40,7 +40,7 @@ function cropUpload(): UploadedFile
 
 function cropArticle(): array
 {
-    return ['headline' => 'Pratinjau berita warga', 'content' => '<p>Berita kegiatan warga yang berlangsung hari ini.</p>',
+    return ['headline' => 'Pratinjau berita warga', 'category_id' => NewsCategory::firstOrCreate(['name' => 'Pengumuman'], ['slug' => 'pengumuman', 'status' => 'active'])->getKey(), 'content' => '<p>Berita kegiatan warga yang berlangsung hari ini.</p>',
         'content_format' => 'html', 'intent' => 'draft', 'cover_photo' => cropUpload(), 'image_crops' => cropSettings()];
 }
 

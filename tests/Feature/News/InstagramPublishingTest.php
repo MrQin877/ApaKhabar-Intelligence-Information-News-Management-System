@@ -2,6 +2,7 @@
 
 use App\Models\IntelligentNewsDraft;
 use App\Models\News;
+use App\Models\NewsCategory;
 use App\Models\SocialConnection;
 use App\Models\User;
 use App\Models\UserRole;
@@ -45,7 +46,7 @@ beforeEach(function () {
     Http::fake(['https://images.example.com/*' => Http::response(instagramJpeg(2400, 400), 200, ['Content-Type' => 'image/jpeg'])]);
     $this->actingAs(User::factory()->create(['roleID' => UserRole::firstOrCreate(['name' => 'admin'])->getKey()]));
     $this->article = [
-        'headline' => 'Kegiatan warga',
+        'headline' => 'Kegiatan warga', 'category_id' => NewsCategory::firstOrCreate(['name' => 'Pengumuman'], ['slug' => 'pengumuman', 'status' => 'active'])->getKey(),
         'content' => '<p>Kegiatan warga berlangsung dengan lancar hari ini.</p>',
         'content_format' => 'html', 'intent' => 'publish',
         'image' => 'https://images.example.com/news.jpg', 'platforms' => ['instagram'],
@@ -383,3 +384,28 @@ test('Facebook-authorized Instagram publishes through Facebook Graph while prese
     Http::assertSent(fn ($r) => str_contains($r->url(), 'graph.facebook.com/') && str_ends_with($r->url(), '/888/media_publish') && $r['creation_id'] === '111');
     Http::assertNotSent(fn ($r) => str_contains($r->url(), 'graph.instagram.com'));
 });
+
+test('Instagram publishing preserves each supported crop through the Cloudinary probe', function (int $width, int $height) {
+    Storage::fake('public');
+    config(['filesystems.news_media_disk' => 'public']);
+    $jpeg = instagramJpeg($width, $height);
+    Storage::disk('public')->put('news-images/cropped.jpg', $jpeg);
+    Http::fake([
+        'api.cloudinary.com/*' => Http::response(['resource_type' => 'image', 'format' => 'jpg', 'secure_url' => 'https://res.cloudinary.com/demo/image/upload/cropped.jpg']),
+        'https://res.cloudinary.com/*' => Http::response($jpeg, 200, ['Content-Type' => 'image/jpeg']),
+        'https://graph.instagram.com/*' => Http::sequence()->push(['id' => '111'])->push(['id' => '222']),
+    ]);
+
+    expect(app(InstagramService::class)->publish('/storage/news-images/cropped.jpg', 'Caption', cropped: true))->toBe('222');
+    Http::assertSent(function ($request) use ($jpeg) {
+        return str_contains($request->url(), 'api.cloudinary.com') && str_contains($request->body(), $jpeg);
+    });
+    Http::assertSent(fn ($request) => str_ends_with($request->url(), '/media_publish') && $request['creation_id'] === '111');
+})->with([[1080, 1350], [1080, 1080], [1080, 566]]);
+
+test('Cloudinary probe still rejects unsupported image dimensions', function (int $width, int $height) {
+    Http::fake(['https://res.cloudinary.com/*' => Http::response(instagramJpeg($width, $height), 200, ['Content-Type' => 'image/jpeg'])]);
+
+    expect(fn () => app(InstagramImageService::class)->probeCloudinary('https://res.cloudinary.com/demo/image/upload/photo.jpg'))
+        ->toThrow(ValidationException::class);
+})->with([[1080, 1920], [100, 100], [1200, 630]]);

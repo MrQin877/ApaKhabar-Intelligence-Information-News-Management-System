@@ -22,6 +22,7 @@ function manualArticle(array $overrides = []): array
 {
     return array_replace([
         'headline' => 'Berita kegiatan warga',
+        'category_id' => NewsCategory::firstOrCreate(['name' => 'Pengumuman'], ['slug' => 'pengumuman', 'status' => 'active'])->getKey(),
 
         'content' => '<p>Warga berkumpul untuk kegiatan bersama hari ini.</p>',
         'content_format' => 'html',
@@ -373,4 +374,56 @@ test('AI category resolution ignores inactive and deleted categories including w
     expect($method->invoke($controller, ['category' => $inactive->name]))->toBe($active->getKey());
     $active->update(['is_active' => false]);
     expect($method->invoke($controller, ['category' => $deleted->name]))->toBeNull();
+});
+
+test('inline category creation returns an active selection shared by manual editor and category management', function () {
+    $category = $this->postJson('/admin/categories', [
+        'name' => 'Kegiatan Komunitas',
+        'description' => 'Berita kegiatan warga setempat.',
+        'status' => 'active',
+        'display_order' => 7,
+    ])->assertCreated()->assertJsonPath('category.is_active', true)
+        ->assertJsonPath('category.display_order', 7)->json('category');
+
+    $this->get('/admin/news/manual/create')->assertInertia(fn (Assert $page) => $page
+        ->where('categories', fn ($items) => collect($items)->contains('categoryID', $category['categoryID'])));
+    $this->get('/admin/categories')->assertInertia(fn (Assert $page) => $page
+        ->where('categories', fn ($items) => collect($items)->contains(fn ($item) => $item['id'] === $category['categoryID'] && $item['name'] === $category['name'])));
+    $this->postJson('/admin/categories', ['name' => 'Kegiatan Komunitas'])
+        ->assertUnprocessable()->assertJsonValidationErrors('name');
+    expect(NewsCategory::where('name', 'Kegiatan Komunitas')->count())->toBe(1);
+});
+
+
+test('manual publication and preview require a category but drafts may omit it', function () {
+    $article = manualArticle(['category_id' => null]);
+    $this->postJson('/admin/news/manual', [...$article, 'intent' => 'publish'])
+        ->assertUnprocessable()->assertJsonValidationErrors('category_id');
+    $this->postJson('/admin/news/manual/preview', $article)
+        ->assertUnprocessable()->assertJsonValidationErrors('category_id');
+    expect(News::count())->toBe(0);
+    $this->postJson('/admin/news/manual', $article)->assertOk();
+    expect(IntelligentNewsDraft::sole()->category_id)->toBeNull();
+});
+
+test('manual publication rechecks the category in a cached preview', function () {
+    $article = manualArticle();
+    $preview = $this->postJson('/admin/news/manual/preview', $article)->assertOk()->json();
+    NewsCategory::findOrFail($article['category_id'])->update(['is_active' => false]);
+    $this->postJson('/admin/news/manual', ['intent' => 'publish', 'platforms' => ['website'], 'preview_token' => $preview['token']])
+        ->assertUnprocessable()->assertJsonValidationErrors('category_id');
+    expect(News::count())->toBe(0);
+});
+
+
+test('category creation returns the saved category and refreshed active dropdown options', function () {
+    $active = NewsCategory::create(['name' => 'Existing active', 'slug' => 'existing-active', 'status' => 'active']);
+    $inactive = NewsCategory::create(['name' => 'Hidden inactive', 'slug' => 'hidden-inactive', 'status' => 'inactive']);
+    $response = $this->postJson('/admin/categories', ['name' => 'New inline category', 'display_order' => 0])
+        ->assertCreated()->assertJsonPath('category.is_active', true);
+    $newId = $response->json('category.categoryID');
+    $ids = collect($response->json('categories'))->pluck('id');
+    expect($ids->contains($newId))->toBeTrue()
+        ->and($ids->contains($active->getKey()))->toBeTrue()
+        ->and($ids->contains($inactive->getKey()))->toBeFalse();
 });

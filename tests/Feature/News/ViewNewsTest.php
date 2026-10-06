@@ -196,3 +196,35 @@ test('shared comment controller returns JSON when request expects JSON', functio
         ->and(str_contains($response->headers->get('content-type', ''), 'application/json'))->toBeTrue()
         ->and(Comment::where('newsID', $news->getKey())->where('userID', $user->id)->count())->toBe(1);
 });
+
+test('news details exposes the original image without replacing the cropped cover', function () {
+    $cover = '/storage/news-images/crops/website.jpg';
+    $original = '/storage/news-images/original.jpg';
+    $this->news->update(['image' => $cover]);
+    \App\Models\IntelligentNewsDraft::create([
+        'created_by' => User::factory()->create()->getKey(),
+        'title' => $this->news->title,
+        'content' => $this->news->content,
+        'image' => $original,
+        'excerpt' => '',
+        'labels' => [],
+        'sources_used' => [],
+        'warnings' => [],
+        'published_news_id' => $this->news->getKey(),
+        'status' => 'published',
+    ]);
+
+    $this->get('/news/'.$this->news->getKey())->assertOk()->assertInertia(fn (Assert $page) => $page
+        ->where('news.image', $cover)
+        ->where('news.original_image', $original));
+    $listed = collect(app(\App\Services\News\NewsService::class)->listNews())->firstWhere('id', (string) $this->news->getKey());
+    expect(\App\Support\NewsImageUrl::forWeb($listed['image']))->toBe($cover);
+});
+
+test('news details falls back to the cover when no original draft image exists', function () {
+    $this->news->update(['image' => '/storage/news-images/legacy.jpg']);
+
+    $this->get('/news/'.$this->news->getKey())->assertOk()->assertInertia(fn (Assert $page) => $page
+        ->where('news.image', '/storage/news-images/legacy.jpg')
+        ->where('news.original_image', '/storage/news-images/legacy.jpg'));
+});

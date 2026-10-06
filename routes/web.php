@@ -143,7 +143,8 @@ Route::prefix('admin')
         Route::get('/apakhabar-creator/documents', fn () => redirect()->route('admin.documents.index'));
         Route::get('/apakhabar-creator/archive', fn () => redirect()->route('admin.documents.index'));
 
-        Route::middleware('role:admin')->group(function () {
+        Route::middleware('role:admin,moderator')->group(function () {
+            Route::post('/categories/reorder', [NewsCategoryController::class, 'reorder'])->name('categories.reorder');
             Route::get('/categories', [NewsCategoryController::class, 'index'])->name('categories.index');
             Route::post('/categories', [NewsCategoryController::class, 'store'])->name('categories.store');
             Route::put('/categories/{category}', [NewsCategoryController::class, 'update'])->name('categories.update');

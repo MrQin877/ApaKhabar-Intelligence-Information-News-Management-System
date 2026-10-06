@@ -21,6 +21,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -333,6 +334,9 @@ class NewsWorkspaceController extends Controller
     public function publish(Request $request, IntelligentNewsDraft $draft): RedirectResponse|JsonResponse
     {
         $this->authorizeDraft($request, $draft);
+        if ($draft->creation_method === 'manual') {
+            $this->requirePublicationCategory($draft->category_id);
+        }
         abort_unless($draft->status === 'draft', 422, 'Only draft content can be published.');
         if ($draft->creation_method === 'ai' && $request->filled('preview_token')) {
             $preview = Cache::get('ai-publication-preview:'.$request->string('preview_token'));
@@ -586,6 +590,16 @@ class NewsWorkspaceController extends Controller
         }
     }
 
+    private function requirePublicationCategory(mixed $categoryId): void
+    {
+        Validator::make(['category_id' => $categoryId], [
+            'category_id' => ['required', 'integer', Rule::exists('news_categories', 'categoryID')->where('is_active', true)->whereNull('deleted_at')],
+        ], [
+            'category_id.required' => 'Pilih kategori sebelum menerbitkan berita.',
+            'category_id.exists' => 'Pilih kategori aktif sebelum menerbitkan berita.',
+        ])->validate();
+    }
+
     private function validateDraftData(Request $request, ?string $previewDirectory = null): array
     {
         if ($request->filled('preview_token')) {
@@ -593,6 +607,7 @@ class NewsWorkspaceController extends Controller
             if (! $prepared || $prepared['user_id'] !== $request->user()->getKey()) {
                 throw ValidationException::withMessages(['platforms' => 'Pratinjau sudah berakhir. Buka kembali pratinjau sebelum menerbitkan.']);
             }
+            $this->requirePublicationCategory($prepared['data']['category_id'] ?? null);
             $this->validatePlatforms($request);
             foreach ($request->input('platforms') as $platform) {
                 if (! empty($prepared['issues'][$platform])) {
@@ -622,7 +637,7 @@ class NewsWorkspaceController extends Controller
             ])->all(),
             'headline' => [$partialDraft ? 'nullable' : 'required', 'string', 'max:255'],
             'content' => [$partialDraft ? 'nullable' : 'required', 'string', 'min:'.($partialDraft ? 0 : 20), 'max:100000'],
-            'category_id' => ['nullable', 'integer', Rule::exists('news_categories', 'categoryID')->where('is_active', true)->whereNull('deleted_at')],
+            'category_id' => [$partialDraft ? 'nullable' : 'required', 'integer', Rule::exists('news_categories', 'categoryID')->where('is_active', true)->whereNull('deleted_at')],
             'image' => ['nullable', 'url', 'max:2048'],
             'cover_photo' => ['nullable', 'image', 'mimes:jpg,jpeg,png', 'max:5120'],
             'show_on_homepage' => ['sometimes', 'boolean'],
@@ -630,7 +645,7 @@ class NewsWorkspaceController extends Controller
             'intent' => ['sometimes', Rule::in(['draft', 'publish'])],
             'platforms' => ['exclude_unless:intent,publish', 'required', 'array', 'min:1', 'max:3'],
             'platforms.*' => ['string', 'distinct', Rule::in(['website', 'facebook', 'instagram'])],
-        ]);
+        ], ['category_id.required' => 'Pilih kategori sebelum menerbitkan berita.']);
 
         if (($data['intent'] ?? 'draft') === 'publish') {
             $this->validatePlatforms($request);

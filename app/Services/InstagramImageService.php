@@ -47,9 +47,13 @@ class InstagramImageService
         }
         $finalUrl = (string) ($response->effectiveUri() ?? $url);
         $contentType = strtolower(trim(explode(';', $response->header('Content-Type'))[0]));
+        $supportedSizes = array_map(
+            fn (string $type) => NewsImageCropService::outputSize('instagram', ['type' => $type]),
+            ['portrait', 'square', 'landscape'],
+        );
         $valid = $response->status() === 200 && $contentType === 'image/jpeg'
             && $response->header('Location') === '' && $finalUrl === $url
-            && $metadata !== null && $metadata['width'] === 1080 && $metadata['height'] === 1080;
+            && $metadata !== null && in_array([$metadata['width'], $metadata['height']], $supportedSizes, true);
         PublishLog::write('instagram.cloudinary_probe', [...$context, 'image_url' => $url,
             'http_status' => $response->status(), 'content_type' => $response->header('Content-Type'),
             'content_length' => $response->header('Content-Length'), 'final_url' => $finalUrl,
@@ -57,7 +61,7 @@ class InstagramImageService
             'metadata' => $metadata, 'valid' => $valid,
         ], $valid ? 'info' : 'error');
         if (! $valid) {
-            throw ValidationException::withMessages(['platforms' => 'URL Cloudinary harus mengembalikan HTTP 200 dan JPEG 1080x1080 langsung tanpa pengalihan.']);
+            throw ValidationException::withMessages(['platforms' => 'URL Cloudinary harus mengembalikan HTTP 200 dan JPEG dengan ukuran potongan Instagram yang didukung ('.implode(', ', array_map(fn (array $size) => implode('x', $size), $supportedSizes)).') langsung tanpa pengalihan.']);
         }
     }
 

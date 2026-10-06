@@ -52,6 +52,7 @@ class NewsController extends Controller
                 'title' => $news['title'],
                 'content' => $news['content'],
                 'image' => NewsImageUrl::forWeb($news['image']),
+                'original_image' => NewsImageUrl::forWeb($news['original_image']),
                 'date' => $news['date'],
                 'category' => $news['category'],
                 'views' => $news['views'],

@@ -3,6 +3,7 @@
 namespace App\Services\News;
 
 use App\Models\Comment;
+use App\Models\IntelligentNewsDraft;
 use App\Models\Like;
 use App\Models\News;
 use App\Models\User;
@@ -43,6 +44,8 @@ class NewsService
         }
 
         $news->increment('view');
+        $originalImage = IntelligentNewsDraft::where('published_news_id', $news->getKey())
+            ->latest('id')->value('image');
 
         $comments = Comment::where('newsID', $news->getKey())
             ->whereNull('parentID')
@@ -60,6 +63,7 @@ class NewsService
             'content' => $news->content,
             'body' => $news->content,
             'image' => $news->image ?? 'https://placehold.co/800x400',
+            'original_image' => $originalImage ?: ($news->image ?? 'https://placehold.co/800x400'),
             'date' => optional($news->created_at)->format('d F Y') ?? '-',
             'category' => $news->category ?? 'Umum',
             'views' => $news->view ?? 0,

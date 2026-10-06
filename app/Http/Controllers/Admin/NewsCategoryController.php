@@ -7,6 +7,7 @@ use App\Models\NewsCategory;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -26,14 +27,14 @@ class NewsCategoryController extends Controller
 
     public function all(Request $request): JsonResponse
     {
-        $this->requireAdmin($request);
+        $this->requireManager($request);
 
         return response()->json(['categories' => $this->categoryData(false)]);
     }
 
     public function store(Request $request): RedirectResponse|JsonResponse
     {
-        $this->requireAdmin($request);
+        $this->requireManager($request);
         $data = $this->validated($request);
         $category = NewsCategory::create([
             ...$data,
@@ -42,13 +43,13 @@ class NewsCategoryController extends Controller
         ]);
 
         return $request->expectsJson()
-            ? response()->json(['category' => $category], 201)
+            ? response()->json(['category' => $category->fresh(), 'categories' => $this->categoryData(true)], 201)
             : back()->with('success', 'Kategori berhasil ditambahkan.');
     }
 
     public function update(Request $request, NewsCategory $category): RedirectResponse|JsonResponse
     {
-        $this->requireAdmin($request);
+        $this->requireManager($request);
         $data = $this->validated($request, $category);
         $category->update([
             ...$data,
@@ -62,12 +63,39 @@ class NewsCategoryController extends Controller
 
     public function destroy(Request $request, NewsCategory $category): RedirectResponse|JsonResponse
     {
-        $this->requireAdmin($request);
+        $this->requireManager($request);
         $category->delete();
 
         return $request->expectsJson()
             ? response()->json(status: 204)
             : back()->with('success', 'Kategori berhasil dihapus.');
+    }
+
+    public function reorder(Request $request): RedirectResponse|JsonResponse
+    {
+        $this->requireManager($request);
+        $data = $request->validate([
+            'ids' => ['required', 'array', 'list', 'min:1', 'max:9999'],
+            'ids.*' => ['required', 'integer', 'distinct'],
+            'original_ids' => ['required', 'array', 'list', 'min:1', 'max:9999'],
+            'original_ids.*' => ['required', 'integer', 'distinct'],
+        ]);
+        DB::transaction(function () use ($data) {
+            $categories = NewsCategory::orderBy('display_order')->orderBy('name')->lockForUpdate()->get();
+            $current = $categories->modelKeys();
+            $original = array_map('intval', $data['original_ids']);
+            $ids = array_map('intval', $data['ids']);
+            if ($current !== $original || count($ids) !== count($current) || array_diff($ids, $current)) {
+                throw ValidationException::withMessages(['ids' => 'Daftar kategori telah berubah. Muat ulang halaman sebelum mengatur urutan.']);
+            }
+            foreach ($ids as $index => $id) {
+                NewsCategory::whereKey($id)->update(['display_order' => $index + 1]);
+            }
+        });
+
+        return $request->expectsJson()
+            ? response()->json(['categories' => $this->categoryData(false)])
+            : back()->with('success', 'Urutan navigasi berhasil disimpan.');
     }
 
     private function validated(Request $request, ?NewsCategory $category = null): array
@@ -120,8 +148,8 @@ class NewsCategoryController extends Controller
             ])->all();
     }
 
-    private function requireAdmin(Request $request): void
+    private function requireManager(Request $request): void
     {
-        abort_unless($request->user()?->isAdmin(), 403);
+        abort_unless($request->user()?->isAdmin() || $request->user()?->isModerator(), 403);
     }
 }

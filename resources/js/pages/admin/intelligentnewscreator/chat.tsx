@@ -1,7 +1,3 @@
-import { requestsNewsGeneration } from '@/lib/upload-intent';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { NewsRichEditor } from '@/components/news-rich-editor';
-import { newsEditorContent } from '@/lib/news-editor-content';
 import { Head, router, usePage } from '@inertiajs/react';
 import {
     ArrowUp,
@@ -55,6 +51,7 @@ import type {
 } from '@/components/intelligent-news/types';
 import { WorkspaceActions } from '@/components/intelligent-news/workspace-actions';
 import { NewsImageCropDialog } from '@/components/news-image-crop-dialog';
+import { NewsRichEditor } from '@/components/news-rich-editor';
 import type { PublicationPreviewData } from '@/components/publication-preview';
 import { PublishNewsDialog } from '@/components/publish-news-dialog';
 import type { PublishPlatformId } from '@/components/publish-news-dialog';
@@ -66,6 +63,14 @@ import {
     CollapsibleContent,
     CollapsibleTrigger,
 } from '@/components/ui/collapsible';
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogDescription,
+    DialogFooter,
+} from '@/components/ui/dialog';
 
 import {
     DropdownMenu,
@@ -89,6 +94,8 @@ import { assistantTurnAnchors } from '@/lib/assistant-turns';
 import { csrfPost } from '@/lib/csrf-request';
 import { groupDocumentSources } from '@/lib/group-document-sources';
 import { metaRequest } from '@/lib/meta-auth';
+import { newsEditorContent } from '@/lib/news-editor-content';
+import { requestsNewsGeneration } from '@/lib/upload-intent';
 import type { BreadcrumbItem } from '@/types';
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -470,12 +477,36 @@ export default function NewsCreatorAgent({
     const [sourcesOpen, setSourcesOpen] = useState(false);
     const [attachmentsOpen, setAttachmentsOpen] = useState(false);
     async function stopGeneration() {
-        if (!activeRequestId) return;
-        const response = await csrfPost(`/admin/ai-assistant/runs/${activeRequestId}/stop`, {});
-        if (!response.ok) { setGenerationErrors({generation: 'Proses belum dapat dihentikan. Coba lagi.'}); return; }
-        try { sessionStorage.removeItem(progressStorageKey); } catch { /* Optional storage. */ }
-        setBusy(false); setActiveRequestId(null); setPendingUserMessage(null);
-        setGenerationErrors({generation: 'Permintaan dihentikan. Panggilan model yang sedang berjalan dapat memerlukan waktu untuk selesai.'});
+        if (!activeRequestId) {
+            return;
+        }
+
+        const response = await csrfPost(
+            `/admin/ai-assistant/runs/${activeRequestId}/stop`,
+            {},
+        );
+
+        if (!response.ok) {
+            setGenerationErrors({
+                generation: 'Proses belum dapat dihentikan. Coba lagi.',
+            });
+
+            return;
+        }
+
+        try {
+            sessionStorage.removeItem(progressStorageKey);
+        } catch {
+            /* Optional storage. */
+        }
+
+        setBusy(false);
+        setActiveRequestId(null);
+        setPendingUserMessage(null);
+        setGenerationErrors({
+            generation:
+                'Permintaan dihentikan. Panggilan model yang sedang berjalan dapat memerlukan waktu untuk selesai.',
+        });
     }
     const questions = newsSession?.pending_questions ?? [];
     const allQuestionsAnswered =
@@ -731,6 +762,15 @@ export default function NewsCreatorAgent({
         }
 
         if (files.length) {
+            if (submittedPrompt.length > 2000) {
+                setGenerationErrors({
+                    prompt: 'Pesan dengan lampiran maksimal 2.000 karakter. Ringkas instruksi sebelum mengirim.',
+                });
+
+                return;
+            }
+
+            setGenerationErrors({});
             setActiveRequestId(null);
             setLiveEvents([]);
             const data = new FormData();
@@ -806,10 +846,20 @@ export default function NewsCreatorAgent({
             setPrompt('');
             router.post('/admin/documents', data, {
                 forceFormData: true,
-                onError: () => {
+                onError: (uploadErrors) => {
+                    setGenerationErrors(uploadErrors);
                     setPrompt(submittedPrompt);
                     setFiles(files);
                     setDocumentIds(documentIds);
+                },
+                onCancel: () => {
+                    setPrompt(submittedPrompt);
+                    setFiles(files);
+                    setDocumentIds(documentIds);
+                    setGenerationErrors({
+                        documents:
+                            'Pengiriman terhenti. Dokumen dan pesan tetap tersedia. Silakan kirim ulang.',
+                    });
                 },
                 preserveState: true,
                 preserveScroll: true,
@@ -908,13 +958,17 @@ export default function NewsCreatorAgent({
         }
     }, [sessions, newsSession?.id, activeRequestId]);
     useEffect(() => {
+        if (busy) {
+            return;
+        }
+
         const timer = window.setInterval(
-            () => router.reload({ only: ['sessions'] }),
+            () => router.reload({ only: ['sessions'], async: true }),
             8000,
         );
 
         return () => window.clearInterval(timer);
-    }, []);
+    }, [busy]);
 
     const [conflictApprovalOpen, setConflictApprovalOpen] = useState(false);
     const [conflictApprovalWord, setConflictApprovalWord] = useState('');
@@ -922,18 +976,36 @@ export default function NewsCreatorAgent({
     const [conflictApprovalError, setConflictApprovalError] = useState('');
 
     function approveConflict() {
-        if (!editedArticle || draftDirty || editMode || conversationReadOnly || approvingConflict || conflictApprovalWord.trim() !== 'setuju') return;
+        if (
+            !editedArticle ||
+            draftDirty ||
+            editMode ||
+            conversationReadOnly ||
+            approvingConflict ||
+            conflictApprovalWord.trim() !== 'setuju'
+        ) {
+            return;
+        }
+
         setApprovingConflict(true);
         setConflictApprovalError('');
-        router.post(`/admin/ai-assistant/drafts/${editedArticle.draft_id}/approve-conflict`, {
-            version: editedArticle.version,
-            confirm: true,
-            confirmation_word: conflictApprovalWord.trim(),
-        }, {
-            onSuccess: () => { setConflictApprovalOpen(false); setConflictApprovalWord(''); },
-            onError: (errors) => setConflictApprovalError(Object.values(errors).join(' ')),
-            onFinish: () => setApprovingConflict(false),
-        });
+        router.post(
+            `/admin/ai-assistant/drafts/${editedArticle.draft_id}/approve-conflict`,
+            {
+                version: editedArticle.version,
+                confirm: true,
+                confirmation_word: conflictApprovalWord.trim(),
+            },
+            {
+                onSuccess: () => {
+                    setConflictApprovalOpen(false);
+                    setConflictApprovalWord('');
+                },
+                onError: (errors) =>
+                    setConflictApprovalError(Object.values(errors).join(' ')),
+                onFinish: () => setApprovingConflict(false),
+            },
+        );
     }
 
     function saveDraft() {
@@ -1363,17 +1435,89 @@ export default function NewsCreatorAgent({
                                                     message={message}
                                                     documents={documents}
                                                 />
-                                                {message.role === 'user' && message.content && (
-                                                    <div className="flex items-center justify-end gap-2 opacity-100 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/message:opacity-100 [@media(hover:hover)]:group-focus-within/message:opacity-100">
-                                                        {message.created_at && !Number.isNaN(Date.parse(message.created_at)) && (
-                                                            <time dateTime={message.created_at} title={new Date(message.created_at).toLocaleString('id-ID')} className="text-xs text-muted-foreground">
-                                                                {new Date(message.created_at).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}
-                                                            </time>
-                                                        )}
-                                                        <Button type="button" size="icon-sm" variant="ghost" title="Salin pesan" aria-label="Salin pesan" onClick={() => { void navigator.clipboard.writeText(message.content ?? '').catch(() => setGenerationErrors({generation: 'Tidak dapat menyalin pesan.'})); }}><Copy aria-hidden="true" /></Button>
-                                                        <Button type="button" size="icon-sm" variant="ghost" title="Edit dan kirim ulang" aria-label="Edit dan kirim ulang" disabled={busy || processingFiles || conversationReadOnly} onClick={() => setPrompt(message.content ?? '')}><Edit3 aria-hidden="true" /></Button>
-                                                    </div>
-                                                )}
+                                                {message.role === 'user' &&
+                                                    message.content && (
+                                                        <div className="flex items-center justify-end gap-2 opacity-100 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-focus-within/message:opacity-100 [@media(hover:hover)]:group-hover/message:opacity-100">
+                                                            {message.created_at &&
+                                                                !Number.isNaN(
+                                                                    Date.parse(
+                                                                        message.created_at,
+                                                                    ),
+                                                                ) && (
+                                                                    <time
+                                                                        dateTime={
+                                                                            message.created_at
+                                                                        }
+                                                                        title={new Date(
+                                                                            message.created_at,
+                                                                        ).toLocaleString(
+                                                                            'id-ID',
+                                                                        )}
+                                                                        className="text-xs text-muted-foreground"
+                                                                    >
+                                                                        {new Date(
+                                                                            message.created_at,
+                                                                        ).toLocaleString(
+                                                                            'id-ID',
+                                                                            {
+                                                                                day: 'numeric',
+                                                                                month: 'short',
+                                                                                year: 'numeric',
+                                                                                hour: '2-digit',
+                                                                                minute: '2-digit',
+                                                                                hourCycle:
+                                                                                    'h23',
+                                                                            },
+                                                                        )}
+                                                                    </time>
+                                                                )}
+                                                            <Button
+                                                                type="button"
+                                                                size="icon-sm"
+                                                                variant="ghost"
+                                                                title="Salin pesan"
+                                                                aria-label="Salin pesan"
+                                                                onClick={() => {
+                                                                    void navigator.clipboard
+                                                                        .writeText(
+                                                                            message.content ??
+                                                                                '',
+                                                                        )
+                                                                        .catch(
+                                                                            () =>
+                                                                                setGenerationErrors(
+                                                                                    {
+                                                                                        generation:
+                                                                                            'Tidak dapat menyalin pesan.',
+                                                                                    },
+                                                                                ),
+                                                                        );
+                                                                }}
+                                                            >
+                                                                <Copy aria-hidden="true" />
+                                                            </Button>
+                                                            <Button
+                                                                type="button"
+                                                                size="icon-sm"
+                                                                variant="ghost"
+                                                                title="Edit dan kirim ulang"
+                                                                aria-label="Edit dan kirim ulang"
+                                                                disabled={
+                                                                    busy ||
+                                                                    processingFiles ||
+                                                                    conversationReadOnly
+                                                                }
+                                                                onClick={() =>
+                                                                    setPrompt(
+                                                                        message.content ??
+                                                                            '',
+                                                                    )
+                                                                }
+                                                            >
+                                                                <Edit3 aria-hidden="true" />
+                                                            </Button>
+                                                        </div>
+                                                    )}
                                                 {message.id ===
                                                     draftMessageId && draftCard}
                                                 {processingFiles &&
@@ -1401,8 +1545,11 @@ export default function NewsCreatorAgent({
                                                         .historical_sources
                                                         .length > 0 && (
                                                         <details className="group/context mt-2 text-sm">
-                                                            <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 rounded-sm py-1 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
-                                                                <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 transition-transform group-open/context:rotate-90" />
+                                                            <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 rounded-sm py-1 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none [&::-webkit-details-marker]:hidden">
+                                                                <ChevronRight
+                                                                    aria-hidden="true"
+                                                                    className="size-3.5 shrink-0 transition-transform group-open/context:rotate-90"
+                                                                />
                                                                 Konteks
                                                                 terdahulu (
                                                                 {
@@ -1535,7 +1682,8 @@ export default function NewsCreatorAgent({
                                         </MessageScrollerItem>
                                     )}
                                     {!conversationReadOnly &&
-                                        questions.length > 0 && !busy && (
+                                        questions.length > 0 &&
+                                        !busy && (
                                             <MessageScrollerItem
                                                 messageId="clarification-round"
                                                 scrollAnchor
@@ -1946,7 +2094,9 @@ export default function NewsCreatorAgent({
                                                 onClick={findRelated}
                                             >
                                                 {findingRelated ? (
-                                                    <span aria-label="Hentikan proses">■</span>
+                                                    <span aria-label="Hentikan proses">
+                                                        ■
+                                                    </span>
                                                 ) : (
                                                     <Sparkles />
                                                 )}
@@ -2258,7 +2408,8 @@ export default function NewsCreatorAgent({
                                                 size="icon"
                                                 className={`rounded-full ${composerMultiline ? 'col-start-2 row-start-2' : 'col-start-3 row-start-1'}`}
                                                 disabled={
-                                                    (busy && !activeRequestId) ||
+                                                    (busy &&
+                                                        !activeRequestId) ||
                                                     processingFiles ||
                                                     (!files.length &&
                                                         !hasSources &&
@@ -2266,25 +2417,45 @@ export default function NewsCreatorAgent({
                                                         !prompt.trim() &&
                                                         !manualFact.trim())
                                                 }
-                                                onClick={() => busy ? void stopGeneration() : submit()}
+                                                onClick={() =>
+                                                    busy
+                                                        ? void stopGeneration()
+                                                        : submit()
+                                                }
                                             >
                                                 {busy ? (
-                                                    <span aria-label="Hentikan proses">■</span>
+                                                    <span aria-label="Hentikan proses">
+                                                        ■
+                                                    </span>
                                                 ) : (
                                                     <ArrowUp />
                                                 )}
                                             </Button>
                                         </div>
                                     </div>
-                                    {(errors.document ||
-                                        errors.documents ||
-                                        errors.generation) && (
-                                        <p className="text-sm text-danger-text">
-                                            {errors.document ||
-                                                errors.documents ||
-                                                errors.generation}
-                                        </p>
-                                    )}
+                                    {Object.entries(errors)
+                                        .filter(
+                                            ([field]) =>
+                                                [
+                                                    'document',
+                                                    'documents',
+                                                    'generation',
+                                                    'prompt',
+                                                    'extraction_query',
+                                                    'manual_fact',
+                                                    'session_id',
+                                                ].includes(field) ||
+                                                field.startsWith('documents.'),
+                                        )
+                                        .map(([field, message]) => (
+                                            <p
+                                                key={field}
+                                                role="alert"
+                                                className="text-sm text-danger-text"
+                                            >
+                                                {message}
+                                            </p>
+                                        ))}
                                     <p className="text-xs text-muted-foreground">
                                         Maksimum 5 file baru · dokumen,
                                         spreadsheet, teks, dan gambar OCR
@@ -2303,26 +2474,92 @@ export default function NewsCreatorAgent({
                             setResizingPreview(true);
                         }}
                     >
-                        <Dialog open={conflictApprovalOpen && Boolean(editedArticle.can_approve_conflict)}
-                            onOpenChange={(open) => { if (!approvingConflict) { setConflictApprovalOpen(open); setConflictApprovalWord(''); setConflictApprovalError(''); } }}>
+                        <Dialog
+                            open={
+                                conflictApprovalOpen &&
+                                Boolean(editedArticle.can_approve_conflict)
+                            }
+                            onOpenChange={(open) => {
+                                if (!approvingConflict) {
+                                    setConflictApprovalOpen(open);
+                                    setConflictApprovalWord('');
+                                    setConflictApprovalError('');
+                                }
+                            }}
+                        >
                             <DialogContent closeDisabled={approvingConflict}>
                                 <DialogHeader>
-                                    <DialogTitle>Setujui berita dengan perbedaan data?</DialogTitle>
+                                    <DialogTitle>
+                                        Setujui berita dengan perbedaan data?
+                                    </DialogTitle>
                                     <DialogDescription>
-                                        AI menemukan perbedaan pada sumber. Pastikan berita menjelaskan perbedaan tersebut dengan benar. Persetujuan membuka akses publikasi untuk versi ini; berita belum langsung dipublikasikan.
+                                        AI menemukan perbedaan pada sumber.
+                                        Pastikan berita menjelaskan perbedaan
+                                        tersebut dengan benar. Persetujuan
+                                        membuka akses publikasi untuk versi ini;
+                                        berita belum langsung dipublikasikan.
                                     </DialogDescription>
                                 </DialogHeader>
-                                <ul className="max-h-40 list-disc space-y-2 overflow-auto pl-5 text-sm">{editedArticle.quality?.warnings.map((warning, i) => <li key={i}>{warning}</li>)}</ul>
-                                <label className="block text-sm" htmlFor="conflict-approval-word">Ketik <strong>setuju</strong> untuk menyetujui.
-                                    <input id="conflict-approval-word" className="mt-2 w-full rounded border bg-background p-2"
-                                        value={conflictApprovalWord} disabled={approvingConflict} autoComplete="off"
-                                        onChange={(event) => setConflictApprovalWord(event.target.value)} placeholder="setuju" />
+                                <ul className="max-h-40 list-disc space-y-2 overflow-auto pl-5 text-sm">
+                                    {editedArticle.quality?.warnings.map(
+                                        (warning, i) => (
+                                            <li key={i}>{warning}</li>
+                                        ),
+                                    )}
+                                </ul>
+                                <label
+                                    className="block text-sm"
+                                    htmlFor="conflict-approval-word"
+                                >
+                                    Ketik <strong>setuju</strong> untuk
+                                    menyetujui.
+                                    <input
+                                        id="conflict-approval-word"
+                                        className="mt-2 w-full rounded border bg-background p-2"
+                                        value={conflictApprovalWord}
+                                        disabled={approvingConflict}
+                                        autoComplete="off"
+                                        onChange={(event) =>
+                                            setConflictApprovalWord(
+                                                event.target.value,
+                                            )
+                                        }
+                                        placeholder="setuju"
+                                    />
                                 </label>
-                                {conflictApprovalError && <p role="alert" className="text-sm text-destructive">{conflictApprovalError}</p>}
+                                {conflictApprovalError && (
+                                    <p
+                                        role="alert"
+                                        className="text-sm text-destructive"
+                                    >
+                                        {conflictApprovalError}
+                                    </p>
+                                )}
                                 <DialogFooter>
-                                    <Button variant="outline" disabled={approvingConflict} onClick={() => { setConflictApprovalOpen(false); setConflictApprovalWord(''); }}>Batal</Button>
-                                    <Button onClick={approveConflict} disabled={approvingConflict || conversationReadOnly || editMode || draftDirty || conflictApprovalWord.trim() !== 'setuju'}>
-                                        {approvingConflict ? 'Menyetujui…' : 'Setujui'}
+                                    <Button
+                                        variant="outline"
+                                        disabled={approvingConflict}
+                                        onClick={() => {
+                                            setConflictApprovalOpen(false);
+                                            setConflictApprovalWord('');
+                                        }}
+                                    >
+                                        Batal
+                                    </Button>
+                                    <Button
+                                        onClick={approveConflict}
+                                        disabled={
+                                            approvingConflict ||
+                                            conversationReadOnly ||
+                                            editMode ||
+                                            draftDirty ||
+                                            conflictApprovalWord.trim() !==
+                                                'setuju'
+                                        }
+                                    >
+                                        {approvingConflict
+                                            ? 'Menyetujui…'
+                                            : 'Setujui'}
                                     </Button>
                                 </DialogFooter>
                             </DialogContent>
@@ -2381,8 +2618,22 @@ export default function NewsCreatorAgent({
                                             <Edit3 /> Edit
                                         </Button>
                                         {editedArticle.can_approve_conflict && (
-                                            <Button variant="outline" disabled={conversationReadOnly || approvingConflict}
-                                                onClick={() => { setConflictApprovalWord(''); setConflictApprovalError(''); setConflictApprovalOpen(true); }}>
+                                            <Button
+                                                variant="outline"
+                                                disabled={
+                                                    conversationReadOnly ||
+                                                    approvingConflict
+                                                }
+                                                onClick={() => {
+                                                    setConflictApprovalWord('');
+                                                    setConflictApprovalError(
+                                                        '',
+                                                    );
+                                                    setConflictApprovalOpen(
+                                                        true,
+                                                    );
+                                                }}
+                                            >
                                                 Tinjau dan setujui konflik
                                             </Button>
                                         )}
@@ -2533,13 +2784,27 @@ export default function NewsCreatorAgent({
                                 {editMode ? (
                                     <NewsRichEditor
                                         value={formattedContent.html}
-                                        characterCount={Array.from(formattedContent.text).length}
+                                        characterCount={
+                                            Array.from(formattedContent.text)
+                                                .length
+                                        }
                                         invalid={false}
                                         disabled={busy || conversationReadOnly}
-                                        onChange={(html) => setEditedArticle({ ...editedArticle, lead: '', body: [html] })}
+                                        onChange={(html) =>
+                                            setEditedArticle({
+                                                ...editedArticle,
+                                                lead: '',
+                                                body: [html],
+                                            })
+                                        }
                                     />
                                 ) : (
-                                    <div className="prose prose-sm max-w-none break-words dark:prose-invert [&_ul]:list-disc [&_ol]:list-decimal [&_li]:ml-5 [&_p]:mb-4 [&_blockquote]:border-l-2 [&_blockquote]:pl-4" dangerouslySetInnerHTML={{ __html: formattedContent.html }} />
+                                    <div
+                                        className="prose prose-sm dark:prose-invert max-w-none break-words [&_blockquote]:border-l-2 [&_blockquote]:pl-4 [&_li]:ml-5 [&_ol]:list-decimal [&_p]:mb-4 [&_ul]:list-disc"
+                                        dangerouslySetInnerHTML={{
+                                            __html: formattedContent.html,
+                                        }}
+                                    />
                                 )}
                                 <Collapsible
                                     open={sourcesOpen}

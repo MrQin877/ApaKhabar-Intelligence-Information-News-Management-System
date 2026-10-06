@@ -7,9 +7,16 @@ import {
     ThumbsUp,
     ChevronUp,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { HeaderBar } from '@/components/header-bar';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipProvider,
+    TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { login, register } from '@/routes';
 import type { SharedData } from '@/types';
 
@@ -37,6 +44,7 @@ interface News {
     title: string;
     content: string;
     image: string;
+    original_image: string;
     date: string;
     category: string;
     views: number;
@@ -273,6 +281,8 @@ function CommentItem({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function NewsDetails({ news, comments = [] }: Props) {
+    const imagePreviewTrigger = useRef<HTMLButtonElement>(null);
+    const [imagePreviewOpen, setImagePreviewOpen] = useState(false);
     const { auth } = usePage<SharedData>().props;
     const isAuthenticated = !!auth.user;
 
@@ -379,22 +389,62 @@ export default function NewsDetails({ news, comments = [] }: Props) {
                     </div>
 
                     {/* 8️⃣ Hero image fades in with zoom — longer delay so title loads first */}
-                    <div
-                        className="mb-8 animate-fade-slide-up overflow-hidden rounded-xl"
-                        style={{ animationDelay: '160ms' }}
+                    <TooltipProvider>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <button
+                                    type="button"
+                                    ref={imagePreviewTrigger}
+                                    aria-label="Lihat gambar penuh"
+                                    onClick={() => setImagePreviewOpen(true)}
+                                    className="mb-8 block w-full animate-fade-slide-up cursor-zoom-in overflow-hidden rounded-xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                                    style={{ animationDelay: '160ms' }}
+                                >
+                                    <img
+                                        src={news.image}
+                                        alt={news.title}
+                                        className={
+                                            /\/news-images\/(?:crops\/|previews\/[^/]+\/crops\/)/.test(
+                                                news.image ?? '',
+                                            )
+                                                ? 'h-auto w-full'
+                                                : 'max-h-96 w-full object-cover transition-transform duration-700 hover:scale-[1.02]'
+                                        }
+                                    />
+                                </button>
+                            </TooltipTrigger>
+                            <TooltipContent>Lihat gambar penuh</TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
+
+                    <Dialog
+                        open={imagePreviewOpen}
+                        onOpenChange={setImagePreviewOpen}
                     >
-                        <img
-                            src={news.image}
-                            alt={news.title}
-                            className={
-                                /\/news-images\/(?:crops\/|previews\/[^/]+\/crops\/)/.test(
-                                    news.image ?? '',
-                                )
-                                    ? 'h-auto w-full'
-                                    : 'max-h-96 w-full object-cover transition-transform duration-700 hover:scale-[1.02]'
-                            }
-                        />
-                    </div>
+                        <DialogContent
+                            onCloseAutoFocus={(event) => {
+                                event.preventDefault();
+                                imagePreviewTrigger.current?.focus();
+                            }}
+                            aria-describedby={undefined}
+                            overlayClassName="bg-black/90"
+                            className="flex h-dvh w-screen max-w-none items-center justify-center rounded-none border-0 bg-transparent p-4 pt-16 text-white shadow-none sm:max-w-none [&>button]:rounded-full [&>button]:bg-black/70 [&>button]:p-2 [&>button]:text-white [&>button]:opacity-100"
+                            onClick={(event) => {
+                                if (event.target === event.currentTarget) {
+                                    setImagePreviewOpen(false);
+                                }
+                            }}
+                        >
+                            <DialogTitle className="sr-only">
+                                Gambar penuh: {news.title}
+                            </DialogTitle>
+                            <img
+                                src={news.original_image || news.image}
+                                alt={news.title}
+                                className="max-h-full max-w-full object-contain"
+                            />
+                        </DialogContent>
+                    </Dialog>
 
                     {/* Article body */}
                     <div

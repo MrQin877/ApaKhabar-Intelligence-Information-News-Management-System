@@ -87,7 +87,7 @@ export function AppSidebar() {
             href: '/admin/news/manual/create',
             icon: Newspaper,
         },
-        ...(auth.user?.role === 'admin'
+        ...(['admin', 'moderator'].includes(auth.user?.role ?? '')
             ? [
                   {
                       title: 'Kategori Berita',

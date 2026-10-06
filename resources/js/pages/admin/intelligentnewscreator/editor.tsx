@@ -6,12 +6,14 @@ import {
     Info,
     Save,
     Send,
+    Plus,
     Settings2,
     LoaderCircle,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { flushSync } from 'react-dom';
+import { CategoryDialog } from '@/components/category-dialog';
 import { NewsImageCropDialog } from '@/components/news-image-crop-dialog';
 import { NewsRichEditor } from '@/components/news-rich-editor';
 import type { PublicationPreviewData } from '@/components/publication-preview';
@@ -50,7 +52,6 @@ import { hasManualContent, saveManualDraft } from '@/lib/manual-draft';
 import { publishManual } from '@/lib/manual-publish';
 import type { PublishResult } from '@/lib/manual-publish';
 import type { MetaAuthConfig } from '@/lib/meta-auth';
-import { index as categoryManagement } from '@/routes/admin/categories';
 import type { BreadcrumbItem } from '@/types';
 
 interface Draft {
@@ -106,9 +107,13 @@ export default function ManualEditor({
     const [preview, setPreview] = useState('');
     const [cropOpen, setCropOpen] = useState(false);
     const fileInput = useRef<HTMLInputElement>(null);
-    const categoryManagementLink = useRef<HTMLAnchorElement>(null);
+    const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
+    const [categoryOptions, setCategoryOptions] = useState(categories);
     const [categoryOpen, setCategoryOpen] = useState(false);
-    const availableCategories = categories.filter(
+    useEffect(() => {
+        setCategoryOptions(categories);
+    }, [categories]);
+    const availableCategories = categoryOptions.filter(
         (category) =>
             category.name.trim().toLocaleLowerCase('id') !== 'lainnya',
     );
@@ -162,7 +167,10 @@ export default function ManualEditor({
     }, [form.data.content]);
     const characterCount = Array.from(contentText).length;
     const hasRequiredContent = Boolean(
-        form.data.headline.trim() && characterCount >= 20,
+        form.data.headline.trim() &&
+        characterCount >= 20 &&
+        Boolean(form.data.category_id) &&
+        selectedCategoryExists,
     );
 
     useEffect(() => {
@@ -403,6 +411,45 @@ export default function ManualEditor({
 
     return (
         <>
+            {categoryDialogOpen && (
+                <CategoryDialog
+                    defaultOrder={availableCategories.length}
+                    onClose={() => setCategoryDialogOpen(false)}
+                    onSaved={(category, activeCategories) => {
+                        const options = activeCategories
+                            ? activeCategories
+                                  .filter((item) => item.status === 'active')
+                                  .map((item) => ({
+                                      categoryID: item.id,
+                                      name: item.name,
+                                  }))
+                            : [
+                                  ...categoryOptions.filter(
+                                      (item) =>
+                                          item.categoryID !==
+                                          category.categoryID,
+                                  ),
+                                  ...(category.is_active ? [category] : []),
+                              ];
+                        // Commit options before selecting, so Select and the invalid-selection
+                        // effect can both resolve the newly created category immediately.
+                        flushSync(() => setCategoryOptions(options));
+
+                        if (
+                            options.some(
+                                (item) =>
+                                    item.categoryID === category.categoryID,
+                            )
+                        ) {
+                            form.setData(
+                                'category_id',
+                                String(category.categoryID),
+                            );
+                            form.clearErrors('category_id');
+                        }
+                    }}
+                />
+            )}
             <Head title={draft ? 'Edit Draf Berita' : 'Buat Berita Manual'} />
             <div className="flex w-full flex-1 flex-col bg-(--editor-background) text-foreground [--editor-background:color-mix(in_oklab,var(--muted)_30%,var(--background))]">
                 <form onSubmit={submit} className="flex w-full flex-1 flex-col">
@@ -627,7 +674,7 @@ export default function ManualEditor({
                                 <CardContent className="space-y-6 p-5 sm:p-6">
                                     <div className="space-y-2">
                                         <Label htmlFor="category">
-                                            Kategori
+                                            Kategori *
                                         </Label>
                                         <Select
                                             open={categoryOpen}
@@ -635,14 +682,21 @@ export default function ManualEditor({
                                             value={
                                                 form.data.category_id || 'none'
                                             }
-                                            onValueChange={(value) =>
+                                            onValueChange={(value) => {
+                                                if (value === 'add-category') {
+                                                    setCategoryOpen(false);
+                                                    setCategoryDialogOpen(true);
+
+                                                    return;
+                                                }
+
                                                 form.setData(
                                                     'category_id',
                                                     value === 'none'
                                                         ? ''
                                                         : value,
-                                                )
-                                            }
+                                                );
+                                            }}
                                         >
                                             <SelectTrigger
                                                 id="category"
@@ -653,14 +707,7 @@ export default function ManualEditor({
                                             >
                                                 <SelectValue placeholder="Pilih kategori" />
                                             </SelectTrigger>
-                                            <SelectContent
-                                                onKeyDown={(event) => {
-                                                    if (event.key === 'Tab') {
-                                                        event.preventDefault();
-                                                        categoryManagementLink.current?.focus();
-                                                    }
-                                                }}
-                                            >
+                                            <SelectContent>
                                                 <SelectItem value="none">
                                                     Tanpa kategori
                                                 </SelectItem>
@@ -679,34 +726,15 @@ export default function ManualEditor({
                                                     ),
                                                 )}
                                                 <SelectSeparator />
-                                                <Link
-                                                    ref={categoryManagementLink}
-                                                    href={categoryManagement.url()}
-                                                    className="flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-2 text-sm outline-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
-                                                    onKeyDown={(event) => {
-                                                        if (
-                                                            event.key ===
-                                                                'Enter' ||
-                                                            event.key === ' '
-                                                        ) {
-                                                            event.stopPropagation();
-                                                        }
-
-                                                        if (event.key === ' ') {
-                                                            event.preventDefault();
-                                                            event.currentTarget.click();
-                                                        }
-                                                    }}
-                                                    onClick={() => {
-                                                        setCategoryOpen(false);
-                                                    }}
-                                                >
-                                                    <Settings2
-                                                        className="size-4"
-                                                        aria-hidden="true"
-                                                    />
-                                                    Kelola kategori
-                                                </Link>
+                                                <SelectItem value="add-category">
+                                                    <span className="flex items-center gap-2">
+                                                        <Plus
+                                                            className="size-4"
+                                                            aria-hidden="true"
+                                                        />
+                                                        Tambah kategori
+                                                    </span>
+                                                </SelectItem>
                                             </SelectContent>
                                         </Select>
                                         <FieldError
@@ -798,7 +826,8 @@ export default function ManualEditor({
                                     id="publish-content-hint"
                                     className="w-full text-right text-xs text-muted-foreground"
                                 >
-                                    Lengkapi konten berita sebelum menerbitkan.
+                                    Lengkapi konten berita dan pilih kategori
+                                    sebelum menerbitkan.
                                 </p>
                             )}
                         </div>
