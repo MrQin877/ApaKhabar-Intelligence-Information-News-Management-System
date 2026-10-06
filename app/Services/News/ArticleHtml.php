@@ -32,6 +32,15 @@ class ArticleHtml
                 $result .= htmlspecialchars($child->textContent, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
             } elseif ($child instanceof DOMElement) {
                 $tag = strtolower($child->tagName);
+                if ($tag === 'img') {
+                    $src = $child->getAttribute('src');
+                    // Keep durable inserted images, never executable or temporary URLs.
+                    if (preg_match('~^https?://~i', $src) || preg_match('~^/storage/news-images/[^\s]+$~', $src)) {
+                        $result .= '<img src="'.htmlspecialchars($src, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8').'" alt="'.htmlspecialchars($child->getAttribute('alt'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8').'">';
+                    }
+
+                    continue;
+                }
                 if (in_array($tag, ['script', 'style', 'iframe', 'object', 'svg', 'math', 'template'], true)) {
                     continue;
                 }

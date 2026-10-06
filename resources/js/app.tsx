@@ -2,12 +2,15 @@ import { createInertiaApp } from '@inertiajs/react';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { ManualDraftToast } from '@/components/manual-draft-toast';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { WebsiteLanguageProvider } from '@/components/website-language';
 import '../css/app.css';
 import { initializeTheme } from '@/hooks/use-appearance';
+import { installNavigationGuard } from '@/lib/navigation-guard';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
+installNavigationGuard(window);
 
 createInertiaApp({
     title: (title) => (title ? `${title} - ${appName}` : appName),
@@ -24,6 +27,7 @@ createInertiaApp({
                 <TooltipProvider delayDuration={0}>
                     <WebsiteLanguageProvider>
                         <App {...props} />
+                        <ManualDraftToast />
                     </WebsiteLanguageProvider>
                 </TooltipProvider>
             </StrictMode>,
