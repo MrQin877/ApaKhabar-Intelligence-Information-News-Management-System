@@ -832,7 +832,7 @@ export default function ManualEditor({
             >
                 <DialogContent
                     overlayClassName="z-[100] bg-black/75"
-                    className="z-[101] max-h-[calc(100dvh-2rem)] gap-6 overflow-y-auto rounded-2xl border-border/70 bg-card p-5 shadow-2xl sm:max-w-[480px] sm:p-6"
+                    className="z-[101] max-h-[calc(100dvh-2rem)] overflow-y-auto border-border/70 bg-card sm:max-w-[440px]"
                     closeDisabled={savingDraft}
                     aria-busy={savingDraft}
                     onInteractOutside={(event) => event.preventDefault()}
@@ -844,11 +844,9 @@ export default function ManualEditor({
                         }
                     }}
                 >
-                    <DialogHeader className="gap-3 pr-6 text-left">
-                        <DialogTitle className="text-xl leading-snug tracking-tight">
-                            Berita belum disimpan
-                        </DialogTitle>
-                        <DialogDescription className="text-sm leading-6">
+                    <DialogHeader className="pr-6 text-left">
+                        <DialogTitle>Berita belum disimpan</DialogTitle>
+                        <DialogDescription>
                             Simpan berita sebagai draf agar dapat dilanjutkan
                             nanti.
                         </DialogDescription>
