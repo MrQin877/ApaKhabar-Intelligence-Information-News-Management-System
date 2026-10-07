@@ -87,6 +87,7 @@ class NewsCreatorController extends Controller
                     'summary' => $draft->summary,
                     'labels' => $draft->labels,
                     'category' => $draft->category?->name,
+                    'category_id' => $draft->category_id,
                     'sources_used' => $draft->sources_used,
                     'warnings' => $draft->warnings,
                     'image' => $draft->image,
@@ -591,6 +592,15 @@ class NewsCreatorController extends Controller
             ]);
 
         }
+
+        $validated = [...$validated, ...$request->validate([
+            'category_id' => ['sometimes', 'required', 'integer',
+                \Illuminate\Validation\Rule::exists('news_categories', 'categoryID')
+                    ->where('is_active', true)->whereNull('deleted_at'),
+            ],
+        ], ['category_id.required' => 'Pilih kategori berita.',
+            'category_id.exists' => 'Pilih kategori berita yang aktif.',
+        ])];
 
         $reviewer = app(DraftQualityReviewService::class);
         $evaluation = DB::transaction(function () use ($draft, $validated, $request, $reviewer) {

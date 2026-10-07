@@ -193,3 +193,29 @@ test('stop action is scoped to the request owner and marks queued work cancelled
     expect(\Illuminate\Support\Facades\Cache::get($key.':cancelled'))->toBeTrue();
     expect(\Illuminate\Support\Facades\Cache::get($key)['status'])->toBe('failed');
 });
+
+test('draft editor saves an active category with its content', function () {
+    $user = assistantOwner();
+    [, $draft] = assistantProposal($user);
+    $category = NewsCategory::create(['name' => 'Education', 'slug' => 'education', 'status' => 'active']);
+    $this->actingAs($user)->put("/admin/ai-assistant/drafts/{$draft->id}", [
+        'title' => 'Updated title', 'content' => 'Updated content', 'category_id' => $category->getKey(),
+    ])->assertSessionHasNoErrors()->assertRedirect();
+    expect($draft->fresh()->category_id)->toBe($category->getKey());
+    expect($draft->fresh()->version)->toBe(2);
+});
+
+test('draft editor rejects unavailable categories without changing the draft', function ($state) {
+    $user = assistantOwner();
+    [, $draft] = assistantProposal($user);
+    $category = NewsCategory::create(['name' => 'Unavailable', 'slug' => 'unavailable', 'status' => $state === 'inactive' ? 'inactive' : 'active']);
+    if ($state === 'deleted') {
+        $category->delete();
+    }
+    $id = match ($state) { 'missing' => 999999, 'empty' => null, default => $category->getKey() };
+    $this->actingAs($user)->put("/admin/ai-assistant/drafts/{$draft->id}", [
+        'title' => 'Changed', 'content' => 'Changed', 'category_id' => $id,
+    ])->assertSessionHasErrors('category_id');
+    expect($draft->fresh()->category_id)->toBe($draft->category_id);
+    expect($draft->fresh()->version)->toBe(1);
+})->with(['inactive', 'deleted', 'missing', 'empty']);

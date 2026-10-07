@@ -145,6 +145,7 @@ export interface Article {
     body: string[];
     labels: string[];
     category: string | null;
+    category_id?: number | null;
     warnings: string[];
     image: string | null;
     version: number;

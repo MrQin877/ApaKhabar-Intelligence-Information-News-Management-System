@@ -79,6 +79,7 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
     MessageScroller,
     MessageScrollerButton,
@@ -87,6 +88,13 @@ import {
     MessageScrollerProvider,
     MessageScrollerViewport,
 } from '@/components/ui/message-scroller';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 
 import { Textarea } from '@/components/ui/textarea';
 import AppLayout from '@/layouts/app-layout';
@@ -462,7 +470,8 @@ export default function NewsCreatorAgent({
     const draftDirty = Boolean(
         editedArticle &&
         generatedArticle &&
-        (editedArticle.headline !== generatedArticle.headline ||
+        (editedArticle.category_id !== generatedArticle.category_id ||
+            editedArticle.headline !== generatedArticle.headline ||
             editedArticle.subheadline !== generatedArticle.subheadline ||
             editedArticle.lead !== generatedArticle.lead ||
             JSON.stringify(editedArticle.body) !==
@@ -1018,6 +1027,7 @@ export default function NewsCreatorAgent({
             {
                 title: editedArticle.headline,
                 content: articleContent,
+                category_id: editedArticle.category_id ?? null,
             },
             { onSuccess: () => setEditMode(false) },
         );
@@ -2743,16 +2753,79 @@ export default function NewsCreatorAgent({
                                                 : 'Pratinjau & Sesuaikan Gambar'}
                                         </Button>
                                     )}
-                                <div className="mb-5 flex flex-wrap gap-2">
-                                    {editedArticle.category && (
-                                        <Badge>{editedArticle.category}</Badge>
-                                    )}
-                                    {editedArticle.labels.map((label) => (
-                                        <Badge key={label} variant="secondary">
-                                            {label}
-                                        </Badge>
-                                    ))}
-                                </div>
+                                {editMode ? (
+                                    <div className="mb-5 space-y-2">
+                                        <Label htmlFor="draft-category">
+                                            Kategori
+                                        </Label>
+                                        <Select
+                                            value={
+                                                categories.some(
+                                                    (category) =>
+                                                        category.categoryID ===
+                                                        editedArticle.category_id,
+                                                )
+                                                    ? String(
+                                                          editedArticle.category_id,
+                                                      )
+                                                    : ''
+                                            }
+                                            onValueChange={(value) => {
+                                                const category =
+                                                    categories.find(
+                                                        (item) =>
+                                                            item.categoryID ===
+                                                            Number(value),
+                                                    );
+
+                                                if (category) {
+setEditedArticle({
+                                                        ...editedArticle,
+                                                        category_id:
+                                                            category.categoryID,
+                                                        category: category.name,
+                                                    });
+}
+                                            }}
+                                        >
+                                            <SelectTrigger
+                                                id="draft-category"
+                                                aria-invalid={Boolean(
+                                                    errors.category_id,
+                                                )}
+                                            >
+                                                <SelectValue placeholder="Pilih kategori" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {categories.map((category) => (
+                                                    <SelectItem
+                                                        key={
+                                                            category.categoryID
+                                                        }
+                                                        value={String(
+                                                            category.categoryID,
+                                                        )}
+                                                    >
+                                                        {category.name}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                        {errors.category_id && (
+                                            <p className="text-sm text-destructive">
+                                                {errors.category_id}
+                                            </p>
+                                        )}
+                                    </div>
+                                ) : (
+                                    editedArticle.category && (
+                                        <div className="mb-5 flex flex-wrap gap-2">
+                                            <Badge>
+                                                {editedArticle.category}
+                                            </Badge>
+                                        </div>
+                                    )
+                                )}
                                 {editMode ? (
                                     <Input
                                         value={editedArticle.headline}
