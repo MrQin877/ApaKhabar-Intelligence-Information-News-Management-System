@@ -12,6 +12,7 @@ import {
     RotateCcw,
     Search,
     Send,
+    Trash2,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import {
@@ -19,6 +20,15 @@ import {
     RetryPublicationDialog,
 } from '@/components/news-publication';
 import type { PublicationResults } from '@/components/news-publication';
+import {
+    AlertDialog,
+    AlertDialogContent,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogCancel,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -45,6 +55,7 @@ type StatusFilter = Status | 'all';
 type ViewMode = 'card' | 'list';
 
 interface WorkspaceItem {
+    can_delete?: boolean;
     publication_results?: PublicationResults;
     retry_url?: string | null;
     view_url?: string | null;
@@ -83,9 +94,14 @@ const statusNames: Record<StatusFilter, string> = {
 
 function ItemActions({ item }: { item: WorkspaceItem }) {
     const [retryOpen, setRetryOpen] = useState(false);
+    const [deleteOpen, setDeleteOpen] = useState(false);
+    const [deleting, setDeleting] = useState(false);
+    const [deleteError, setDeleteError] = useState('');
     const published =
         item.record_type === 'news' ||
-        Object.keys(item.publication_results ?? {}).length > 0;
+        Object.values(item.publication_results ?? {}).some(
+            (result) => result?.success,
+        );
     const changeArchiveState = () => {
         const action = item.status === 'archived' ? 'restore' : 'archive';
         router.post(
@@ -140,16 +156,79 @@ function ItemActions({ item }: { item: WorkspaceItem }) {
                         </DropdownMenuItem>
                     )}
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem onSelect={changeArchiveState}>
-                        {item.status === 'archived' ? (
-                            <RotateCcw />
-                        ) : (
-                            <Archive />
-                        )}
-                        {item.status === 'archived' ? 'Pulihkan' : 'Arsip'}
-                    </DropdownMenuItem>
+                    {item.can_delete ? (
+                        <DropdownMenuItem
+                            className="text-destructive focus:text-destructive"
+                            onSelect={() => {
+                                setDeleteError('');
+                                setDeleteOpen(true);
+                            }}
+                        >
+                            <Trash2 />
+                            Hapus draf
+                        </DropdownMenuItem>
+                    ) : (
+                        <DropdownMenuItem onSelect={changeArchiveState}>
+                            {item.status === 'archived' ? (
+                                <RotateCcw />
+                            ) : (
+                                <Archive />
+                            )}
+                            {item.status === 'archived' ? 'Pulihkan' : 'Arsip'}
+                        </DropdownMenuItem>
+                    )}
                 </DropdownMenuContent>
             </DropdownMenu>
+            <AlertDialog
+                open={deleteOpen}
+                onOpenChange={(open) => {
+                    if (!deleting) {
+                        setDeleteOpen(open);
+                    }
+                }}
+            >
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Hapus draf ini?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Draf “{item.title}” dan percakapan terkait akan
+                            dihapus dari daftar. Dokumen sumber tetap tersimpan.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    {deleteError && (
+                        <p role="alert" className="text-sm text-destructive">
+                            {deleteError}
+                        </p>
+                    )}
+                    <AlertDialogFooter>
+                        <AlertDialogCancel disabled={deleting}>
+                            Batal
+                        </AlertDialogCancel>
+                        <Button
+                            variant="destructive"
+                            disabled={deleting}
+                            onClick={() => {
+                                setDeleting(true);
+                                router.delete(
+                                    `/admin/news/${item.record_type}/${item.id}`,
+                                    {
+                                        preserveScroll: true,
+                                        onSuccess: () => setDeleteOpen(false),
+                                        onError: (errors) =>
+                                            setDeleteError(
+                                                Object.values(errors)[0] ??
+                                                    'Draf gagal dihapus.',
+                                            ),
+                                        onFinish: () => setDeleting(false),
+                                    },
+                                );
+                            }}
+                        >
+                            {deleting ? 'Menghapus…' : 'Hapus draf'}
+                        </Button>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
             {item.retry_url && (
                 <RetryPublicationDialog
                     open={retryOpen}

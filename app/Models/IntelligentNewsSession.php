@@ -3,9 +3,12 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class IntelligentNewsSession extends Model
 {
+    use SoftDeletes;
+
     protected $fillable = [
         'created_by', 'status', 'title', 'prompt', 'context_summary', 'current_intent',
         'last_message_at', 'selected_document_ids',

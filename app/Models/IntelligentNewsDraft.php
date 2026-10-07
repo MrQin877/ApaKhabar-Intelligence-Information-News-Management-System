@@ -3,9 +3,12 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class IntelligentNewsDraft extends Model
 {
+    use SoftDeletes;
+
     protected $fillable = [
         'created_by', 'creation_method', 'category_id', 'image',
         'title', 'content', 'excerpt',
@@ -71,6 +74,12 @@ class IntelligentNewsDraft extends Model
         $parts = preg_split('/\R\s*\R/', (string) $this->content);
 
         return $this->creation_method === 'manual' ? $parts : (array_slice($parts, 1) ?: ['']);
+    }
+
+    public function hasPublishedContent(): bool
+    {
+        return $this->status === 'published'
+            || collect($this->publicationResults())->contains(fn ($result) => ($result['success'] ?? false) === true);
     }
 
     public function publicationResults(): array

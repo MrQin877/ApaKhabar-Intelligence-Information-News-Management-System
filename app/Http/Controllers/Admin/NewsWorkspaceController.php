@@ -50,7 +50,8 @@ class NewsWorkspaceController extends Controller
                     'record_type' => 'draft',
                     'title' => $draft->title ?: 'Berita tanpa judul',
                     'preview' => ArticleText::preview($this->publicationContent($draft)),
-                    'status' => $draft->status === 'archived' ? 'archived' : ($draft->publicationResults() ? 'active' : 'draft'),
+                    'status' => $draft->hasPublishedContent() ? ($draft->status === 'archived' ? 'archived' : 'active') : 'draft',
+                    'can_delete' => ! $draft->hasPublishedContent(),
                     ...$this->publicationCard($draft),
                     'creation_method' => $draft->creation_method,
                     'category' => $draft->category?->name,
@@ -88,7 +89,8 @@ class NewsWorkspaceController extends Controller
                 'record_type' => 'session',
                 'title' => $session->prompt ?: 'Percakapan AI tanpa judul',
                 'preview' => count($session->pending_questions ?? []).' informasi masih diperlukan',
-                'status' => $session->archived_at ? 'archived' : 'draft',
+                'status' => 'draft',
+                'can_delete' => true,
                 'creation_method' => 'ai',
                 'category' => null,
                 'updated_at' => $session->updated_at?->toISOString(),
@@ -524,6 +526,40 @@ class NewsWorkspaceController extends Controller
             'selected_platforms' => $request->input('platforms', ['website'])];
     }
 
+    public function destroyDraft(Request $request, string $type, int $id): RedirectResponse
+    {
+        abort_unless(in_array($type, ['draft', 'session'], true), 404);
+        DB::transaction(function () use ($request, $type, $id) {
+            $draft = $type === 'draft' ? IntelligentNewsDraft::whereKey($id)->lockForUpdate()->firstOrFail() : null;
+            if ($draft) {
+                $this->authorizeDraft($request, $draft);
+                if ($draft->hasPublishedContent()) {
+                    throw ValidationException::withMessages(['delete' => 'Berita yang telah diterbitkan tidak dapat dihapus sebagai draf. Gunakan Arsip.']);
+                }
+            }
+            $sessions = IntelligentNewsSession::query()
+                ->when($draft, fn ($query) => $query->where('draft_id', $draft->id), fn ($query) => $query->whereKey($id))
+                ->lockForUpdate()->get();
+            if (! $draft && $sessions->isEmpty()) {
+                abort(404);
+            }
+            foreach ($sessions as $session) {
+                abort_unless((int) $session->created_by === (int) $request->user()->getKey(), 403);
+                if (! $draft && $session->draft_id) {
+                    throw ValidationException::withMessages(['delete' => 'Hapus melalui tindakan pada draf berita terkait.']);
+                }
+                if (in_array($session->status, ['processing_files', 'generating'], true)
+                    || $session->runs()->whereIn('status', ['queued', 'running'])->exists()) {
+                    throw ValidationException::withMessages(['delete' => 'Tunggu proses AI selesai atau hentikan proses sebelum menghapus draf.']);
+                }
+                $session->delete();
+            }
+            $draft?->delete();
+        });
+
+        return back()->with('success', 'Draf berhasil dihapus.');
+    }
+
     public function archive(Request $request, string $type, int $id): RedirectResponse
     {
         $this->changeArchiveState($request, $type, $id, true);
@@ -545,10 +581,13 @@ class NewsWorkspaceController extends Controller
         if ($type === 'draft') {
             $draft = IntelligentNewsDraft::findOrFail($id);
             $this->authorizeDraft($request, $draft);
+            if (! $draft->hasPublishedContent()) {
+                throw ValidationException::withMessages(['archive' => 'Draf belum diterbitkan. Gunakan Hapus draf.']);
+            }
             $draft->update(['status' => $archive ? 'archived' : 'draft']);
         } elseif ($type === 'session') {
             $session = IntelligentNewsSession::where('created_by', $request->user()->getKey())->findOrFail($id);
-            $session->update(['archived_at' => $archive ? now() : null]);
+            throw ValidationException::withMessages(['archive' => 'Percakapan draf tidak diarsipkan. Gunakan Hapus draf.']);
         } else {
             News::findOrFail($id)->update(['status' => $archive ? 'archived' : 'active']);
         }

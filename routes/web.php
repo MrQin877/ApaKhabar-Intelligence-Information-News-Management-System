@@ -134,6 +134,7 @@ Route::prefix('admin')
         Route::post('/news/drafts/{draft}/crops', [NewsWorkspaceController::class, 'cropAi'])->name('news-workspace.drafts.crops');
         Route::post('/news/drafts/{draft}/publish', [NewsWorkspaceController::class, 'publish'])->name('news-workspace.drafts.publish');
         Route::post('/news/drafts/{draft}/retry', [NewsWorkspaceController::class, 'retry'])->name('news-workspace.drafts.retry');
+        Route::delete('/news/{type}/{id}', [NewsWorkspaceController::class, 'destroyDraft'])->whereIn('type', ['draft', 'session'])->name('news-workspace.items.destroy');
         Route::post('/news/{type}/{id}/archive', [NewsWorkspaceController::class, 'archive'])->name('news-workspace.items.archive');
         Route::post('/news/{type}/{id}/restore', [NewsWorkspaceController::class, 'restore'])->name('news-workspace.items.restore');
 
