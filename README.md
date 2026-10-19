@@ -45,7 +45,7 @@ composer run dev
 
 Do not regenerate the application key on an existing deployment. Review seeders before using them; they are not required by the commands above. The browser application normally opens at `http://localhost:8000`.
 
-`composer run dev` starts the PHP server, document worker, generation worker, scheduler, and Vite. It uses `php scripts/serve.php`, so Windows users do not need Bash for this command. It does **not** start the Python service or model servers.
+`composer run dev` starts the PHP server, document worker, generation worker, scheduler, and Vite. It uses `php scripts/serve.php`, so Windows users do not need Bash for this command. It does **not** start the Python service or model servers. Both queue workers use `scripts/queue-worker.php` so concurrently restarts them after clean exits (including `php artisan queue:restart`) as well as failures. After changing worker code or configuration, run `php artisan queue:restart` to reload the workers after their current jobs finish.
 
 ## AI integration
 

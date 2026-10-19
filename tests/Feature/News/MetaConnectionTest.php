@@ -13,6 +13,9 @@ use Illuminate\Support\Facades\Log;
 use Inertia\Testing\AssertableInertia as Assert;
 
 beforeEach(function () {
+    // HTTP tests do not retain response cookies automatically.
+    $this->withCredentials();
+    $this->withCookie(config('session.cookie'), Illuminate\Support\Str::random(40));
     config(['services.instagram.user_id' => null, 'services.instagram.access_token' => null]);
     config(['services.facebook.page_id' => null, 'services.facebook.page_access_token' => null]);
     $this->actingAs(User::factory()->create(['roleID' => UserRole::firstOrCreate(['name' => 'admin'])->getKey()]));
@@ -141,7 +144,7 @@ test('instagram authorization uses a time limited state and professional permiss
     expect(parse_url($location, PHP_URL_HOST))->toBe('www.facebook.com');
     expect($query['scope'])->toBe('pages_show_list,pages_read_engagement,instagram_basic,instagram_content_publish');
     expect($query['client_id'])->toBe('test-app')->and($query['redirect_uri'])->toBe('http://localhost:8000/admin/social/facebook/callback');
-    expect(session('meta_oauth.platform'))->toBe('instagram');
+    expect(Cache::get('meta-oauth:'.hash('sha256', session()->getId().':'.auth()->id()))['platform'])->toBe('instagram');
     $this->get('/admin/social/facebook/callback?state=forged&code=unused')->assertStatus(419);
     Http::assertNothingSent();
 });
@@ -535,4 +538,43 @@ test('OAuth identity diagnostics allowlist user and permissions without changing
     ]);
     expect(json_encode($records))->not->toContain('meta-user-secret', 'short-secret', 'do-not-log', 'private@example.com');
     Http::assertSent(fn ($r) => str_contains($r->url(), '/me/permissions') && $r->hasHeader('Authorization', 'Bearer meta-user-secret'));
+});
+
+test('pending authorization survives an unrelated session payload overwrite', function () {
+    $query = startMetaFlow($this, 'facebook');
+    // A background response may save a session snapshot taken before connect.
+    session()->forget('meta_oauth');
+    $url = '/admin/social/facebook/callback?'.http_build_query([
+        'state' => $query['state'], 'error' => 'access_denied',
+    ]);
+    $this->get($url)->assertRedirect('/settings/integration');
+    $this->get($url)->assertStatus(419);
+    Http::assertNothingSent();
+});
+
+test('pending authorization cannot be used by another signed in user', function () {
+    $query = startMetaFlow($this, 'facebook');
+    $this->actingAs(User::factory()->create([
+        'roleID' => UserRole::firstOrCreate(['name' => 'admin'])->getKey(),
+    ]));
+    $this->get('/admin/social/facebook/callback?'.http_build_query([
+        'state' => $query['state'], 'code' => 'unused',
+    ]))->assertStatus(419);
+    Http::assertNothingSent();
+});
+
+test('pending authorization cannot be used from another browser session', function () {
+    $query = startMetaFlow($this, 'facebook');
+    $this->withCookie(config('session.cookie'), Illuminate\Support\Str::random(40));
+    $this->get('/admin/social/facebook/callback?'.http_build_query([
+        'state' => $query['state'], 'code' => 'unused',
+    ]))->assertStatus(419);
+    Http::assertNothingSent();
+});
+
+test('authorization starts on the configured callback host before creating state', function () {
+    $this->get('http://127.0.0.1:8000/admin/social/facebook/connect?insights=1')
+        ->assertRedirect('http://localhost:8000/admin/social/facebook/connect?insights=1');
+    expect(Cache::has('meta-oauth:'.hash('sha256', session()->getId().':'.auth()->id())))->toBeFalse();
+    Http::assertNothingSent();
 });

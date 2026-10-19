@@ -1,41 +1,52 @@
-// resources/js/pages/admin/dashboard.tsx
-import { Head } from '@inertiajs/react';
-import { PlaceholderPattern } from '@/components/ui/placeholder-pattern';
-import AppLayout from '@/layouts/app-layout'; // sidebar
-import type { BreadcrumbItem } from '@/types';
+import { Head, Link, usePage } from '@inertiajs/react';
+import ReportWidgets from '@/components/analytics/report-widgets';
+import type { ReportWidget } from '@/components/analytics/report-widgets';
+import AppLayout from '@/layouts/app-layout';
+import type { SharedData } from '@/types';
+export default function Dashboard({
+    widgets,
+    period,
+}: {
+    widgets: ReportWidget[];
+    period: { from: string; to: string };
+}) {
+    const { auth } = usePage<SharedData>().props;
 
-const breadcrumbs: BreadcrumbItem[] = [
-    {
-        title: 'Dashboard',
-        href: '/admin/dashboard',
-    },
-];
-
-export default function AdminDashboard() {
     return (
-        <>
-            <Head title="Admin Dashboard" />
-            <div className="flex h-full flex-1 flex-col gap-4 overflow-x-auto rounded-xl p-4">
-                <div className="grid auto-rows-min gap-4 md:grid-cols-3">
-                    <div className="relative aspect-video overflow-hidden rounded-xl border border-sidebar-border/70 dark:border-sidebar-border">
-                        <PlaceholderPattern className="absolute inset-0 size-full stroke-neutral-900/20 dark:stroke-neutral-100/20" />
-                    </div>
-                    <div className="relative aspect-video overflow-hidden rounded-xl border border-sidebar-border/70 dark:border-sidebar-border">
-                        <PlaceholderPattern className="absolute inset-0 size-full stroke-neutral-900/20 dark:stroke-neutral-100/20" />
-                    </div>
-                    <div className="relative aspect-video overflow-hidden rounded-xl border border-sidebar-border/70 dark:border-sidebar-border">
-                        <PlaceholderPattern className="absolute inset-0 size-full stroke-neutral-900/20 dark:stroke-neutral-100/20" />
-                    </div>
+        <div className="space-y-6 p-4 md:p-6">
+            <Head title="Dasbor" />
+            <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <h1 className="text-2xl font-semibold">Dasbor</h1>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                        {period.from} — {period.to} ·{' '}
+                        {auth.user?.role === 'admin'
+                            ? 'Ringkasan analisis'
+                            : 'Ringkasan yang dibagikan admin'}
+                    </p>
                 </div>
-                <div className="relative min-h-[100vh] flex-1 overflow-hidden rounded-xl border border-sidebar-border/70 md:min-h-min dark:border-sidebar-border">
-                    <PlaceholderPattern className="absolute inset-0 size-full stroke-neutral-900/20 dark:stroke-neutral-100/20" />
-                </div>
+                {auth.user?.role === 'admin' && (
+                    <Link
+                        href="/admin/analytics"
+                        className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground"
+                    >
+                        Buka Analisis & pengaturan
+                    </Link>
+                )}
             </div>
-        </>
+            {widgets.length ? (
+                <ReportWidgets widgets={widgets} />
+            ) : (
+                <div className="rounded-xl border border-dashed p-10 text-center text-muted-foreground">
+                    Admin belum membagikan ringkasan analisis. Gunakan menu
+                    untuk mengelola berita dan siaran.
+                </div>
+            )}
+        </div>
     );
 }
-
-//wires sidebar layout to this page
-AdminDashboard.layout = (page: React.ReactNode) => (
-    <AppLayout breadcrumbs={breadcrumbs}>{page}</AppLayout>
+Dashboard.layout = (page: React.ReactNode) => (
+    <AppLayout breadcrumbs={[{ title: 'Dasbor', href: '/admin/dashboard' }]}>
+        {page}
+    </AppLayout>
 );

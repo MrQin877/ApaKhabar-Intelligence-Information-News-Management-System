@@ -1,0 +1,147 @@
+/* User-provided HeroUI palette adapted to the existing shadcn semantic roles.
+ * HeroUI accent -> primary; HeroUI muted -> muted-foreground.
+ * Keep accent as a soft selection surface and muted as a neutral background.
+ */
+:root,
+.light,
+.default,
+[data-theme='light'],
+[data-theme='default'] {
+    color-scheme: light;
+    --primary: oklch(62.7% 0.1699 149.21);
+    --primary-foreground: oklch(99.11% 0 0);
+    --ring: var(--primary);
+    --radius: 0.5rem;
+    --field-radius: 0.75rem;
+    --card: var(--surface);
+    --card-foreground: var(--foreground);
+    --popover: var(--surface);
+    --popover-foreground: var(--foreground);
+    --secondary: var(--default);
+    --secondary-foreground: var(--foreground);
+    --muted: var(--surface-secondary);
+    --accent: var(--surface-tertiary);
+    --accent-foreground: var(--foreground);
+    --destructive: var(--danger);
+    --destructive-foreground: oklch(99.11% 0 0);
+    --field-background: var(--surface);
+    --field-foreground: var(--foreground);
+    --field-placeholder: var(--muted-foreground);
+    --field-border: transparent;
+    --input: var(--border);
+    --sidebar: var(--surface);
+    --sidebar-foreground: var(--foreground);
+    --sidebar-primary: var(--primary);
+    --sidebar-primary-foreground: var(--primary-foreground);
+    --sidebar-accent: var(--accent);
+    --sidebar-accent-foreground: var(--foreground);
+    --sidebar-border: var(--border);
+    --sidebar-ring: var(--ring);
+    --chart-1: var(--primary);
+    --chart-2: oklch(65% 0.12 185);
+    --chart-3: var(--warning);
+    --chart-4: var(--danger);
+    --chart-5: oklch(60% 0.08 275);
+    --success: oklch(73.29% 0.1935 138.26);
+    --success-foreground: oklch(21.03% 0.0059 138.26);
+    --warning-foreground: oklch(21.03% 0.0059 63.79);
+    --success-bg: color-mix(in oklch, var(--success) 12%, var(--surface));
+    --success-border: color-mix(in oklch, var(--success) 30%, var(--surface));
+    --warning-bg: color-mix(in oklch, var(--warning) 12%, var(--surface));
+    --warning-border: color-mix(in oklch, var(--warning) 30%, var(--surface));
+    --danger-bg: color-mix(in oklch, var(--danger) 12%, var(--surface));
+    --danger-border: color-mix(in oklch, var(--danger) 30%, var(--surface));
+    --background: oklch(97.02% 0 149.21);
+    --foreground: oklch(21.03% 0 149.21);
+    --border: oklch(90% 0 149.21);
+    --danger: oklch(65.32% 0.2328 13.19);
+    --default: oklch(94% 0 149.21);
+    --muted-foreground: oklch(55.17% 0 149.21);
+    --surface: oklch(100% 0 149.21);
+    --surface-secondary: oklch(95.24% 0 149.21);
+    --surface-tertiary: oklch(93.73% 0 149.21);
+    --warning: oklch(78.19% 0.1585 59.78);
+    --scrollbar: oklch(87.1% 0 149.21);
+    --separator: oklch(92% 0 149.21);
+    --success-text: oklch(38% 0.1 138.26);
+    --warning-text: oklch(40% 0.1 59.78);
+    --danger-text: oklch(42% 0.16 13.19);
+    --info-bg: var(--info-50);
+    --info-border: var(--info-200);
+    --info-text: var(--info-800);
+}
+
+.dark,
+[data-theme='dark'] {
+    color-scheme: dark;
+    --primary: oklch(62.7% 0.1699 149.21);
+    --primary-foreground: oklch(99.11% 0 0);
+    --ring: var(--primary);
+    --radius: 0.5rem;
+    --field-radius: 0.75rem;
+    --card: var(--surface);
+    --card-foreground: var(--foreground);
+    --popover: var(--surface);
+    --popover-foreground: var(--foreground);
+    --secondary: var(--default);
+    --secondary-foreground: var(--foreground);
+    --muted: var(--surface-secondary);
+    --accent: var(--surface-tertiary);
+    --accent-foreground: var(--foreground);
+    --destructive: var(--danger);
+    --destructive-foreground: oklch(99.11% 0 0);
+    --field-background: var(--surface);
+    --field-foreground: var(--foreground);
+    --field-placeholder: var(--muted-foreground);
+    --field-border: transparent;
+    --input: var(--border);
+    --sidebar: var(--surface);
+    --sidebar-foreground: var(--foreground);
+    --sidebar-primary: var(--primary);
+    --sidebar-primary-foreground: var(--primary-foreground);
+    --sidebar-accent: var(--accent);
+    --sidebar-accent-foreground: var(--foreground);
+    --sidebar-border: var(--border);
+    --sidebar-ring: var(--ring);
+    --chart-1: var(--primary);
+    --chart-2: oklch(65% 0.12 185);
+    --chart-3: var(--warning);
+    --chart-4: var(--danger);
+    --chart-5: oklch(60% 0.08 275);
+    --success: oklch(73.29% 0.1935 138.26);
+    --success-foreground: oklch(21.03% 0.0059 138.26);
+    --warning-foreground: oklch(21.03% 0.0059 63.79);
+    --success-bg: color-mix(in oklch, var(--success) 12%, var(--surface));
+    --success-border: color-mix(in oklch, var(--success) 30%, var(--surface));
+    --warning-bg: color-mix(in oklch, var(--warning) 12%, var(--surface));
+    --warning-border: color-mix(in oklch, var(--warning) 30%, var(--surface));
+    --danger-bg: color-mix(in oklch, var(--danger) 12%, var(--surface));
+    --danger-border: color-mix(in oklch, var(--danger) 30%, var(--surface));
+    --background: oklch(12% 0 149.21);
+    --foreground: oklch(99.11% 0 149.21);
+    --border: oklch(28% 0 149.21);
+    --danger: oklch(59.4% 0.1967 12.08);
+    --default: oklch(27.4% 0 149.21);
+    --muted-foreground: oklch(70.5% 0 149.21);
+    --surface: oklch(21.03% 0 149.21);
+    --surface-secondary: oklch(25.7% 0 149.21);
+    --surface-tertiary: oklch(27.21% 0 149.21);
+    --warning: oklch(82.03% 0.1388 63.79);
+    --scrollbar: oklch(70.5% 0 149.21);
+    --separator: oklch(25% 0 149.21);
+    --success-text: var(--success);
+    --warning-text: var(--warning);
+    --danger-text: oklch(78% 0.13 13.19);
+    --info-bg: var(--info-950);
+    --info-border: var(--info-800);
+    --info-text: var(--info-200);
+}
+
+@layer base {
+    html {
+        background-color: var(--background);
+    }
+    * {
+        scrollbar-color: var(--scrollbar) transparent;
+    }
+}

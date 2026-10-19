@@ -55,7 +55,7 @@ const mainNavItems: NavItem[] = [
 
     {
         title: 'Analisis',
-        href: dashboard(),
+        href: '/admin/analytics',
         icon: ChartNoAxesCombined,
     },
 ];
@@ -114,7 +114,12 @@ export function AppSidebar() {
             icon: Newspaper,
             items: newsItems,
         },
-        ...mainNavItems.slice(1),
+        ...mainNavItems
+            .slice(1)
+            .filter(
+                (item) =>
+                    item.title !== 'Analisis' || auth.user?.role === 'admin',
+            ),
     ];
 
     return (

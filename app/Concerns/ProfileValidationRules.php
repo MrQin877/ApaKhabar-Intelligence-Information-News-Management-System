@@ -7,6 +7,8 @@ use Illuminate\Validation\Rule;
 
 trait ProfileValidationRules
 {
+    use DemographicRules;
+
     /**
      * Get the validation rules used to validate user profiles.
      *
@@ -15,6 +17,7 @@ trait ProfileValidationRules
     protected function profileRules(string|int|null $userId = null): array
     {
         return [
+            ...$this->demographicRules(),
             'name' => $this->nameRules(),
             'email' => $this->emailRules($userId),
         ];

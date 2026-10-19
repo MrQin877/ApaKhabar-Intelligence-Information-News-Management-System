@@ -11,17 +11,18 @@
 
 namespace App\Http\Controllers\Auth;
 
+use App\Concerns\DemographicRules;
 use App\Http\Controllers\Controller;
-use App\Services\Auth\AuthService;
 use App\Http\Requests\Settings\ProfileUpdateRequest;
+use App\Services\Auth\AuthService;
 use App\Services\Settings\ProfileService;
 use Illuminate\Http\Request;
 
 class AuthController extends Controller
 {
-    public function __construct(protected AuthService $authService)
-    {
-    }
+    use DemographicRules;
+
+    public function __construct(protected AuthService $authService) {}
 
     public function login(Request $request)
     {
@@ -47,6 +48,7 @@ class AuthController extends Controller
     public function register(Request $request)
     {
         $request->validate([
+            ...$this->demographicRules(true),
             'name' => ['required', 'string', 'max:255'],
             'email' => ['nullable', 'required_without:phone', 'email', 'max:255', 'unique:emails,email'],
             'phone' => ['nullable', 'required_without:email', 'string', 'regex:/^\+[1-9]\d{1,14}$/', 'unique:phones,phone'],
@@ -58,6 +60,7 @@ class AuthController extends Controller
             $request->input('email'),
             $request->input('phone'),
             $request->password,
+            $request->only(['date_of_birth', 'citizenship', 'gender', 'ethnicity']),
         );
 
         return response()->json($result, 201);

@@ -1,7 +1,9 @@
 <?php
 
+use App\Http\Controllers\Admin\AnalyticsController;
 use App\Http\Controllers\Admin\AssistantCategoryController;
 use App\Http\Controllers\Admin\BroadcastController;
+use App\Http\Controllers\Admin\MetaAnalyticsController;
 use App\Http\Controllers\Admin\MetaConnectionController;
 use App\Http\Controllers\Admin\NewsCategoryController;
 use App\Http\Controllers\Admin\NewsCreatorController;
@@ -11,6 +13,7 @@ use App\Http\Controllers\Home\WelcomeController;
 use App\Http\Controllers\News\CommentController;
 use App\Http\Controllers\News\NewsController;
 use App\Http\Controllers\News\PostLikeController;
+use App\Http\Controllers\Village\ActivityController;
 use App\Http\Controllers\Village\NotificationController;
 use App\Http\Controllers\WebsiteTranslationController;
 use Illuminate\Http\Request;
@@ -35,7 +38,7 @@ Route::get('/mobile/reset-password', function (Request $request) {
 })->name('mobile.password.reset');
 
 Route::post('/website/translate', WebsiteTranslationController::class)
-    ->middleware('throttle:60,1')->name('website.translate');
+    ->middleware('throttle:60,1,website-translation:')->name('website.translate');
 
 // Public routes — no auth required
 
@@ -62,6 +65,7 @@ Route::middleware(['auth', 'verified', 'role:villager'])->group(function () {
     Route::post('/news/{id}/comment', [CommentController::class, 'store'])->name('news.comment');
     Route::post('/comments/{id}/replies', [CommentController::class, 'reply'])->name('comments.reply');
     Route::get('/profile', fn () => inertia('villager/profile'))->name('villager.profile');
+    Route::post('/activity', [ActivityController::class, 'store'])->middleware('throttle:30,1,villager-activity:')->name('activity.store');
 
 });
 
@@ -74,17 +78,21 @@ Route::prefix('admin')
     ->name('admin.')
     ->middleware(['auth', 'verified', 'role:admin,moderator'])
     ->group(function () {
-        Route::get('/social/connections', [MetaConnectionController::class, 'status'])->middleware('throttle:30,1')->name('social.status');
-        Route::get('/social/facebook/connect', [MetaConnectionController::class, 'facebookStart'])->middleware('throttle:10,1')->block(10, 10)->name('social.facebook.start');
+        Route::get('/social/connections', [MetaConnectionController::class, 'status'])->middleware('throttle:30,1,meta-status:')->name('social.status');
+        Route::get('/social/facebook/connect', [MetaConnectionController::class, 'facebookStart'])->middleware('throttle:10,1,meta-connect:')->block(10, 10)->name('social.facebook.start');
         Route::get('/social/facebook/callback', [MetaConnectionController::class, 'facebookCallback'])->block(10, 10)->name('social.facebook.callback');
         Route::post('/social/facebook/cancel', [MetaConnectionController::class, 'cancelSelection'])->block(10, 10)->name('social.facebook.cancel');
-        Route::post('/social/{platform}/disconnect', [MetaConnectionController::class, 'disconnect'])->middleware('throttle:10,1')->block(10, 10)->name('social.disconnect');
-        Route::post('/social/facebook/page', [MetaConnectionController::class, 'chooseAccount'])->middleware('throttle:10,1')->block(10, 10)->name('social.facebook.page');
-        Route::post('/social/meta/account', [MetaConnectionController::class, 'chooseAccount'])->middleware('throttle:10,1')->block(10, 10)->name('social.meta.account');
+        Route::post('/social/{platform}/disconnect', [MetaConnectionController::class, 'disconnect'])->middleware('throttle:10,1,meta-disconnect:')->block(10, 10)->name('social.disconnect');
+        Route::post('/social/facebook/page', [MetaConnectionController::class, 'chooseAccount'])->middleware('throttle:10,1,meta-account:')->block(10, 10)->name('social.facebook.page');
+        Route::post('/social/meta/account', [MetaConnectionController::class, 'chooseAccount'])->middleware('throttle:10,1,meta-account:')->block(10, 10)->name('social.meta.account');
         Route::post('/social/meta/cancel', [MetaConnectionController::class, 'cancelSelection'])->block(10, 10)->name('social.meta.cancel');
-        Route::get('/social/instagram/connect', [MetaConnectionController::class, 'instagramStart'])->middleware('throttle:10,1')->block(10, 10)->name('social.instagram.start');
+        Route::get('/social/instagram/connect', [MetaConnectionController::class, 'instagramStart'])->middleware('throttle:10,1,meta-connect:')->block(10, 10)->name('social.instagram.start');
         Route::get('/social/instagram/callback', [MetaConnectionController::class, 'instagramCallback'])->block(10, 10)->name('social.instagram.callback');
-        Route::inertia('/dashboard', 'admin/dashboard')->name('dashboard');
+        Route::get('/dashboard', [AnalyticsController::class, 'dashboard'])->name('dashboard');
+        Route::put('/analytics/meta', [MetaAnalyticsController::class, 'update'])->name('analytics.meta.update');
+        Route::post('/analytics/meta/sync', [MetaAnalyticsController::class, 'sync'])->middleware('throttle:2,1,meta-insights-sync:')->name('analytics.meta.sync');
+        Route::get('/analytics', [AnalyticsController::class, 'index'])->name('analytics.index');
+        Route::put('/analytics/dashboard', [AnalyticsController::class, 'update'])->name('analytics.dashboard.update');
 
         // Broadcasting — full CRUD + archive/restore
         Route::get('/broadcasting', [BroadcastController::class, 'index'])->name('broadcasting.index');

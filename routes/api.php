@@ -3,22 +3,24 @@
 use App\Http\Controllers\Admin\NewsCategoryController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Auth\MobileEmailVerificationController;
+use App\Http\Controllers\Auth\MobilePhoneChangeController;
+use App\Http\Controllers\Auth\MobilePhoneVerificationController;
+use App\Http\Controllers\Auth\PhonePasswordResetController;
 use App\Http\Controllers\Home\EmergencyBroadcastController;
 use App\Http\Controllers\News\CommentController;
 use App\Http\Controllers\News\NewsController;
 use App\Http\Controllers\News\PostLikeController;
+use App\Http\Controllers\Village\ActivityController;
 use App\Http\Controllers\Village\NotificationController;
 use App\Http\Middleware\ApiAuth;
 use Illuminate\Support\Facades\Route;
 
-use App\Http\Controllers\Auth\MobilePhoneVerificationController;
-
 // Public phone recovery is purpose-scoped and shared by browser and mobile clients.
 Route::prefix('phone/password')->middleware('throttle:30,1')->group(function () {
-    Route::get('/status', [\App\Http\Controllers\Auth\PhonePasswordResetController::class, 'status']);
-    Route::post('/send', [\App\Http\Controllers\Auth\PhonePasswordResetController::class, 'send']);
-    Route::post('/verify', [\App\Http\Controllers\Auth\PhonePasswordResetController::class, 'verify']);
-    Route::post('/reset', [\App\Http\Controllers\Auth\PhonePasswordResetController::class, 'reset']);
+    Route::get('/status', [PhonePasswordResetController::class, 'status']);
+    Route::post('/send', [PhonePasswordResetController::class, 'send']);
+    Route::post('/verify', [PhonePasswordResetController::class, 'verify']);
+    Route::post('/reset', [PhonePasswordResetController::class, 'reset']);
 });
 
 // Public routes
@@ -39,14 +41,15 @@ Route::middleware(ApiAuth::class)->group(function () {
     Route::put('/categories/{category}', [NewsCategoryController::class, 'update']);
     Route::delete('/categories/{category}', [NewsCategoryController::class, 'destroy']);
 
-    Route::get('/phone/change-verification', [\App\Http\Controllers\Auth\MobilePhoneChangeController::class, 'status']);
-    Route::post('/phone/change-verification', [\App\Http\Controllers\Auth\MobilePhoneChangeController::class, 'send']);
-    Route::post('/phone/change-verification/verify', [\App\Http\Controllers\Auth\MobilePhoneChangeController::class, 'verify'])->middleware('throttle:10,1');
+    Route::get('/phone/change-verification', [MobilePhoneChangeController::class, 'status']);
+    Route::post('/phone/change-verification', [MobilePhoneChangeController::class, 'send']);
+    Route::post('/phone/change-verification/verify', [MobilePhoneChangeController::class, 'verify'])->middleware('throttle:10,1');
 
     Route::get('/phone/verification-status', [MobilePhoneVerificationController::class, 'status']);
     Route::post('/phone/verification-notification', [MobilePhoneVerificationController::class, 'send']);
     Route::post('/phone/verify', [MobilePhoneVerificationController::class, 'verify'])->middleware('throttle:10,1');
 
+    Route::post('/activity', [ActivityController::class, 'store'])->middleware('throttle:30,1,villager-activity:');
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/profile', [AuthController::class, 'profile']);
     Route::patch('/profile', [AuthController::class, 'updateProfile']);

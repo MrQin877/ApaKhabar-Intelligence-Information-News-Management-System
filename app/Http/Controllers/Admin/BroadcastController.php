@@ -19,7 +19,10 @@ use App\Models\Channel;
 use App\Models\Notification;
 use App\Models\User;
 use App\Notifications\BroadcastNotification;
+use App\Services\SmsService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
 use Inertia\Inertia;
 
 class BroadcastController extends Controller
@@ -34,18 +37,18 @@ class BroadcastController extends Controller
             ->latest()
             ->get()
             ->map(fn ($b) => [
-                'id'        => (string) $b->getKey(),
-                'type'      => $b->category,
-                'title'     => $b->title,
-                'audience'  => match($b->audience) {
-                    'semua'    => 'Semua Pengguna',
+                'id' => (string) $b->getKey(),
+                'type' => $b->category,
+                'title' => $b->title,
+                'audience' => match ($b->audience) {
+                    'semua' => 'Semua Pengguna',
                     'karyawan' => 'Karyawan',
-                    default    => $b->audience,
+                    default => $b->audience,
                 },
-                'status'    => match($b->status) {
-                    'dikirim'   => 'Dikirim',
+                'status' => match ($b->status) {
+                    'dikirim' => 'Dikirim',
                     'terjadwal' => 'Terjadwal',
-                    default     => 'Tertunda',
+                    default => 'Tertunda',
                 },
                 'sent_time' => $b->sent_at?->translatedFormat('d M Y, h:i A')
                             ?? $b->scheduled_at?->translatedFormat('d M Y, h:i A')
@@ -53,35 +56,39 @@ class BroadcastController extends Controller
                 'sent_timestamp' => ($b->sent_at ?? $b->scheduled_at ?? $b->created_at)->getTimestamp(),
             ]);
 
-        // ── Analytics ──────────────────────────────────────────
-        $totalPesan     = Broadcast::active()->count();
-        $dikirimHariIni = Broadcast::active()
-                            ->whereDate('sent_at', today())
-                            ->count();
+        if (! auth()->user()->isAdmin()) {
+            return Inertia::render('admin/broadcasting/index', ['broadcasts' => $broadcasts, 'analytics' => null]);
+        }
 
-        $allNotifications = \App\Models\Notification::all();
-        $totalSent        = $allNotifications->count();
-        $totalRead        = $allNotifications->whereNotNull('read_at')->count();
-        $rateTerbuka      = $totalSent > 0
+        // ── Analytics ──────────────────────────────────────────
+        $totalPesan = Broadcast::active()->count();
+        $dikirimHariIni = Broadcast::active()
+            ->whereDate('sent_at', today())
+            ->count();
+
+        $allNotifications = Notification::all();
+        $totalSent = $allNotifications->count();
+        $totalRead = $allNotifications->whereNotNull('read_at')->count();
+        $rateTerbuka = $totalSent > 0
                             ? round(($totalRead / $totalSent) * 100)
                             : 0;
 
         // ── Chart data — last 6 months ─────────────────────────
         $chartData = collect(range(5, 0))->map(function ($monthsAgo) {
-            $date  = now()->startOfMonth()->subMonths($monthsAgo);  // ← startOfMonth() first
+            $date = now()->startOfMonth()->subMonths($monthsAgo);  // ← startOfMonth() first
             $start = $date->copy()->startOfMonth();
-            $end   = $date->copy()->endOfMonth();
+            $end = $date->copy()->endOfMonth();
 
             return [
-                'month'      => $date->format('M'),
+                'month' => $date->format('M'),
                 'pengumuman' => Broadcast::active()
-                                    ->whereHas('categoryRecord', fn ($query) => $query->where('name', 'pengumuman'))
-                                    ->whereBetween('created_at', [$start, $end])
-                                    ->count(),
-                'darurat'    => Broadcast::active()
-                                    ->whereHas('categoryRecord', fn ($query) => $query->where('name', 'darurat'))
-                                    ->whereBetween('created_at', [$start, $end])
-                                    ->count(),
+                    ->whereHas('categoryRecord', fn ($query) => $query->where('name', 'pengumuman'))
+                    ->whereBetween('created_at', [$start, $end])
+                    ->count(),
+                'darurat' => Broadcast::active()
+                    ->whereHas('categoryRecord', fn ($query) => $query->where('name', 'darurat'))
+                    ->whereBetween('created_at', [$start, $end])
+                    ->count(),
             ];
         })->values();
 
@@ -93,31 +100,31 @@ class BroadcastController extends Controller
             ->get()
             ->map(function ($b) {
                 $broadcastId = (string) $b->getKey();
-                $notifs      = \App\Models\Notification::whereJsonContains('data->broadcast_id', $broadcastId)->get();
-                $sent        = $notifs->count();
-                $read        = $notifs->whereNotNull('read_at')->count();
-                $rate        = $sent > 0 ? round(($read / $sent) * 100) : 0;
+                $notifs = Notification::whereJsonContains('data->broadcast_id', $broadcastId)->get();
+                $sent = $notifs->count();
+                $read = $notifs->whereNotNull('read_at')->count();
+                $rate = $sent > 0 ? round(($read / $sent) * 100) : 0;
 
                 return [
-                    'id'       => $broadcastId,
-                    'title'    => $b->title,
+                    'id' => $broadcastId,
+                    'title' => $b->title,
                     'category' => $b->category,
                     'audience' => $b->audience === 'semua' ? 'Semua Pengguna' : 'Karyawan',
-                    'sent_at'  => $b->sent_at?->format('H:i'),
-                    'sent'     => $sent,
-                    'read'     => $read,
-                    'rate'     => $rate,
+                    'sent_at' => $b->sent_at?->format('H:i'),
+                    'sent' => $sent,
+                    'read' => $read,
+                    'rate' => $rate,
                 ];
             });
 
         return Inertia::render('admin/broadcasting/index', [
             'broadcasts' => $broadcasts,
-            'analytics'  => [
-                'total_pesan'      => $totalPesan,
+            'analytics' => [
+                'total_pesan' => $totalPesan,
                 'dikirim_hari_ini' => $dikirimHariIni,
-                'rate_terbuka'     => $rateTerbuka,
-                'chart_data'       => $chartData,
-                'recent'           => $recentBroadcasts,
+                'rate_terbuka' => $rateTerbuka,
+                'chart_data' => $chartData,
+                'recent' => $recentBroadcasts,
             ],
         ]);
     }
@@ -132,32 +139,32 @@ class BroadcastController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'title'          => 'required|string|max:255',
-            'message'        => 'required|string|max:500',
-            'category'       => 'required|in:pengumuman,darurat',
-            'channels'       => 'required|array|min:1',
-            'channels.*'     => 'in:whatsapp,sms,aplikasi',
-            'audience'       => 'required|in:semua,karyawan',
-            'send_mode'      => 'required|in:now,scheduled',
+            'title' => 'required|string|max:255',
+            'message' => 'required|string|max:500',
+            'category' => 'required|in:pengumuman,darurat',
+            'channels' => 'required|array|min:1',
+            'channels.*' => 'in:whatsapp,sms,aplikasi',
+            'audience' => 'required|in:semua,karyawan',
+            'send_mode' => 'required|in:now,scheduled',
             'scheduled_date' => 'required_if:send_mode,scheduled|nullable|date',
             'scheduled_time' => 'required_if:send_mode,scheduled|nullable|date_format:H:i',
         ]);
 
         $scheduledAt = null;
         if ($validated['send_mode'] === 'scheduled') {
-            $scheduledAt = \Carbon\Carbon::parse(
-                $validated['scheduled_date'] . ' ' . $validated['scheduled_time']
+            $scheduledAt = Carbon::parse(
+                $validated['scheduled_date'].' '.$validated['scheduled_time']
             );
         }
 
         $broadcast = Broadcast::create([
-            'created_by'   => auth()->id(),
-            'title'        => $validated['title'],
-            'message'      => $validated['message'],
-            'categoryID'   => BroadcastCategory::where('name', $validated['category'])->value('categoryID'),
-            'send_mode'    => $validated['send_mode'],
-            'status'       => $validated['send_mode'] === 'now' ? 'dikirim' : 'terjadwal',
-            'sent_at'      => $validated['send_mode'] === 'now' ? now() : null,
+            'created_by' => auth()->id(),
+            'title' => $validated['title'],
+            'message' => $validated['message'],
+            'categoryID' => BroadcastCategory::where('name', $validated['category'])->value('categoryID'),
+            'send_mode' => $validated['send_mode'],
+            'status' => $validated['send_mode'] === 'now' ? 'dikirim' : 'terjadwal',
+            'sent_at' => $validated['send_mode'] === 'now' ? now() : null,
             'scheduled_at' => $scheduledAt,
         ]);
 
@@ -180,34 +187,34 @@ class BroadcastController extends Controller
         $broadcast->load(['creator:userID,name', 'categoryRecord', 'channels', 'users.roleRecord']);
         $broadcastId = (string) $broadcast->getKey();
 
-        $allNotifications = \App\Models\Notification::whereJsonContains('data->broadcast_id', $broadcastId)->get();
+        $allNotifications = Notification::whereJsonContains('data->broadcast_id', $broadcastId)->get();
 
         $totalSent = $allNotifications->count();
-        $totalRead = $allNotifications->filter(fn ($n) => !is_null($n->read_at))->count();
-        $readRate  = $totalSent > 0 ? round(($totalRead / $totalSent) * 100) : 0;
+        $totalRead = $allNotifications->filter(fn ($n) => ! is_null($n->read_at))->count();
+        $readRate = $totalSent > 0 ? round(($totalRead / $totalSent) * 100) : 0;
 
         return Inertia::render('admin/broadcasting/show', [
             'broadcast' => [
-                'id'           => (string) $broadcast->getKey(),
-                'title'        => $broadcast->title,
-                'message'      => $broadcast->message,
-                'category'     => $broadcast->category,
-                'channels'     => $broadcast->channels->pluck('name')->all(),
-                'audience'     => $broadcast->audience,
-                'status'       => $broadcast->status,
-                'send_mode'    => $broadcast->send_mode,
+                'id' => (string) $broadcast->getKey(),
+                'title' => $broadcast->title,
+                'message' => $broadcast->message,
+                'category' => $broadcast->category,
+                'channels' => $broadcast->channels->pluck('name')->all(),
+                'audience' => $broadcast->audience,
+                'status' => $broadcast->status,
+                'send_mode' => $broadcast->send_mode,
                 'scheduled_at' => $broadcast->scheduled_at?->translatedFormat('d M Y, H:i'),
-                'sent_at'      => $broadcast->sent_at?->translatedFormat('d M Y, H:i'),
-                'archived_at'  => $broadcast->archived_at?->translatedFormat('d M Y, H:i'),
-                'created_at'   => $broadcast->created_at->translatedFormat('d M Y, H:i'),
-                'creator'      => $broadcast->creator
+                'sent_at' => $broadcast->sent_at?->translatedFormat('d M Y, H:i'),
+                'archived_at' => $broadcast->archived_at?->translatedFormat('d M Y, H:i'),
+                'created_at' => $broadcast->created_at->translatedFormat('d M Y, H:i'),
+                'creator' => $broadcast->creator
                     ? ['id' => (string) $broadcast->creator->getKey(), 'name' => $broadcast->creator->name]
                     : ['id' => null, 'name' => 'Admin'],
-                'stats'        => [
+                'stats' => auth()->user()->isAdmin() ? [
                     'total_sent' => $totalSent,
                     'total_read' => $totalRead,
-                    'read_rate'  => $readRate,
-                ],
+                    'read_rate' => $readRate,
+                ] : null,
             ],
         ]);
     }
@@ -216,7 +223,7 @@ class BroadcastController extends Controller
     public function resend(Broadcast $broadcast)
     {
         $broadcast->update([
-            'status'  => 'dikirim',
+            'status' => 'dikirim',
             'sent_at' => now(),
         ]);
 
@@ -235,7 +242,7 @@ class BroadcastController extends Controller
         Broadcast::whereIn('alertID', $request->ids)
             ->update(['archived_at' => now()]);
 
-        return back()->with('success', count($request->ids) . ' siaran berhasil diarsipkan.');
+        return back()->with('success', count($request->ids).' siaran berhasil diarsipkan.');
     }
 
     // POST /admin/broadcasting/{broadcast}/archive (single)
@@ -255,20 +262,20 @@ class BroadcastController extends Controller
             ->latest('archived_at')
             ->get()
             ->map(fn ($b) => [
-                'id'          => (string) $b->getKey(),
-                'type'        => $b->category,
-                'title'       => $b->title,
-                'audience'    => match($b->audience) {
-                    'semua'    => 'Semua Pengguna',
+                'id' => (string) $b->getKey(),
+                'type' => $b->category,
+                'title' => $b->title,
+                'audience' => match ($b->audience) {
+                    'semua' => 'Semua Pengguna',
                     'karyawan' => 'Karyawan',
-                    default    => $b->audience,
+                    default => $b->audience,
                 },
-                'status'      => match($b->status) {
-                    'dikirim'   => 'Dikirim',
+                'status' => match ($b->status) {
+                    'dikirim' => 'Dikirim',
                     'terjadwal' => 'Terjadwal',
-                    default     => 'Tertunda',
+                    default => 'Tertunda',
                 },
-                'sent_time'   => $b->sent_at?->format('h:i A')
+                'sent_time' => $b->sent_at?->format('h:i A')
                             ?? $b->scheduled_at?->format('h:i A')
                             ?? $b->created_at->format('h:i A'),
                 'archived_at' => $b->archived_at?->translatedFormat('d M Y, H:i'),
@@ -290,15 +297,15 @@ class BroadcastController extends Controller
     private function sendToUsers(Broadcast $broadcast): void
     {
         $broadcast->loadMissing(['users.roleRecord', 'channels']);
-        $users    = $broadcast->users;
+        $users = $broadcast->users;
         $channels = $broadcast->channels->pluck('name')->all();
-        $message  = "[{$broadcast->category}] {$broadcast->title}\n\n{$broadcast->message}";
+        $message = "[{$broadcast->category}] {$broadcast->title}\n\n{$broadcast->message}";
 
         // ── Debug ──
         \Log::info('sendToUsers debug', [
-            'channels'   => $channels,
+            'channels' => $channels,
             'user_count' => $users->count(),
-            'audience'   => $broadcast->audience,
+            'audience' => $broadcast->audience,
         ]);
 
         $pushTokens = [];
@@ -313,10 +320,10 @@ class BroadcastController extends Controller
 
             // ── Debug per user ──
             \Log::info('User SMS check', [
-                'name'       => $user->name,
-                'phone'      => $user->phone,
-                'verified'   => $user->hasVerifiedPhone(),
-                'has_sms'    => in_array('sms', $channels),
+                'name' => $user->name,
+                'phone' => $user->phone,
+                'verified' => $user->hasVerifiedPhone(),
+                'has_sms' => in_array('sms', $channels),
             ]);
 
             // ── SMS via Bulk360 ──
@@ -324,7 +331,7 @@ class BroadcastController extends Controller
                 && $user->phone
                 && $user->hasVerifiedPhone()
             ) {
-                app(\App\Services\SmsService::class)->sendSms($user->phone, $message);
+                app(SmsService::class)->sendSms($user->phone, $message);
             }
         }
 
@@ -340,22 +347,22 @@ class BroadcastController extends Controller
 
         // ── WhatsApp Group — send ONCE to group, not per user ──
         if (in_array('whatsapp', $channels)) {
-            $groupId = match($broadcast->audience) {
+            $groupId = match ($broadcast->audience) {
                 'karyawan' => config('services.whapi.employee_group'),
-                default    => config('services.whapi.villager_group'),
+                default => config('services.whapi.villager_group'),
             };
 
             if ($groupId) {
-                app(\App\Services\SmsService::class)->sendWhatsAppGroup($groupId, $message);
+                app(SmsService::class)->sendWhatsAppGroup($groupId, $message);
             }
         }
     }
 
     private function getTargetUsers(string $audience)
     {
-        return match($audience) {
+        return match ($audience) {
             'karyawan' => User::whereHas('roleRecord', fn ($query) => $query->whereIn('name', ['admin', 'moderator']))->get(),
-            default    => User::whereHas('roleRecord', fn ($query) => $query->whereIn('name', ['villager', 'admin', 'moderator']))->get(),
+            default => User::whereHas('roleRecord', fn ($query) => $query->whereIn('name', ['villager', 'admin', 'moderator']))->get(),
         };
     }
 
@@ -368,24 +375,24 @@ class BroadcastController extends Controller
         $chunks = array_chunk($tokens, 100);
 
         foreach ($chunks as $chunk) {
-            $messages = array_map(fn($token) => [
-                'to'       => $token,
-                'title'    => $title,
-                'body'     => $body,
-                'data'     => ['type' => $type],
-                'sound'    => 'default',
+            $messages = array_map(fn ($token) => [
+                'to' => $token,
+                'title' => $title,
+                'body' => $body,
+                'data' => ['type' => $type],
+                'sound' => 'default',
                 'priority' => $type === 'darurat' ? 'high' : 'normal',
-                'badge'    => 1,
+                'badge' => 1,
             ], $chunk);
 
             try {
-                $response = \Illuminate\Support\Facades\Http::withHeaders([
+                $response = Http::withHeaders([
                     'Content-Type' => 'application/json',
-                    'Accept'       => 'application/json',
+                    'Accept' => 'application/json',
                 ])->post('https://exp.host/--/api/v2/push/send', $messages);
 
                 \Log::info('Expo push sent', [
-                    'count'    => count($chunk),
+                    'count' => count($chunk),
                     'response' => $response->json(),
                 ]);
 

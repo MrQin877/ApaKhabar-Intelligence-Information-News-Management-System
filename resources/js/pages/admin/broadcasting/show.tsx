@@ -48,7 +48,7 @@ export type BroadcastDetail = {
     archived_at: string | null;
     created_at: string;
     creator: { id: string | null; name: string };
-    stats: {
+    stats: null | {
         total_sent: number;
         total_read: number;
         read_rate: number;
@@ -371,60 +371,66 @@ export default function BroadcastShowPage({ broadcast }: Props) {
                     </dl>
                 </section>
                 <Separator />
-                <section aria-labelledby="stats-heading">
-                    <h2
-                        id="stats-heading"
-                        className="mb-3 text-sm font-semibold"
-                    >
-                        Statistik pengiriman
-                    </h2>
-                    <div className="rounded-lg border p-4 sm:p-5">
-                        <dl className="grid grid-cols-2 gap-4">
-                            <div>
-                                <dt className="text-xs text-muted-foreground">
-                                    Total terkirim
-                                </dt>
-                                <dd className="mt-1 text-sm font-medium tabular-nums">
-                                    {broadcast.stats.total_sent}
-                                </dd>
-                            </div>
-                            <div>
-                                <dt className="text-xs text-muted-foreground">
-                                    Telah dibaca
-                                </dt>
-                                <dd className="mt-1 text-sm font-medium tabular-nums">
-                                    {broadcast.stats.total_read}
-                                </dd>
-                            </div>
-                        </dl>
-                        {broadcast.stats.total_sent > 0 && (
-                            <div className="mt-5">
-                                <div className="mb-2 flex items-center justify-between gap-3 text-xs text-muted-foreground">
-                                    <span className="flex items-center gap-1.5">
-                                        <CheckCheck className="size-3.5 shrink-0" />
-                                        Rate diakses keseluruhan
-                                    </span>
-                                    <span>{broadcast.stats.read_rate}%</span>
+                {broadcast.stats && (
+                    <section aria-labelledby="stats-heading">
+                        <h2
+                            id="stats-heading"
+                            className="mb-3 text-sm font-semibold"
+                        >
+                            Statistik pengiriman
+                        </h2>
+                        <div className="rounded-lg border p-4 sm:p-5">
+                            <dl className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <dt className="text-xs text-muted-foreground">
+                                        Total terkirim
+                                    </dt>
+                                    <dd className="mt-1 text-sm font-medium tabular-nums">
+                                        {broadcast.stats.total_sent}
+                                    </dd>
                                 </div>
-                                <div
-                                    role="progressbar"
-                                    aria-label="Rate diakses keseluruhan"
-                                    aria-valuenow={broadcast.stats.read_rate}
-                                    aria-valuemin={0}
-                                    aria-valuemax={100}
-                                    className="h-2 overflow-hidden rounded-full bg-muted"
-                                >
+                                <div>
+                                    <dt className="text-xs text-muted-foreground">
+                                        Telah dibaca
+                                    </dt>
+                                    <dd className="mt-1 text-sm font-medium tabular-nums">
+                                        {broadcast.stats.total_read}
+                                    </dd>
+                                </div>
+                            </dl>
+                            {broadcast.stats.total_sent > 0 && (
+                                <div className="mt-5">
+                                    <div className="mb-2 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                                        <span className="flex items-center gap-1.5">
+                                            <CheckCheck className="size-3.5 shrink-0" />
+                                            Rate diakses keseluruhan
+                                        </span>
+                                        <span>
+                                            {broadcast.stats.read_rate}%
+                                        </span>
+                                    </div>
                                     <div
-                                        className="h-full rounded-full bg-green-500"
-                                        style={{
-                                            width: `${Math.min(100, Math.max(0, broadcast.stats.read_rate))}%`,
-                                        }}
-                                    />
+                                        role="progressbar"
+                                        aria-label="Rate diakses keseluruhan"
+                                        aria-valuenow={
+                                            broadcast.stats.read_rate
+                                        }
+                                        aria-valuemin={0}
+                                        aria-valuemax={100}
+                                        className="h-2 overflow-hidden rounded-full bg-muted"
+                                    >
+                                        <div
+                                            className="h-full rounded-full bg-green-500"
+                                            style={{
+                                                width: `${Math.min(100, Math.max(0, broadcast.stats.read_rate))}%`,
+                                            }}
+                                        />
+                                    </div>
                                 </div>
-                            </div>
-                        )}
-                    </div>
-                </section>
+                            )}
+                        </div>
+                    </section>
+                )}
                 {isArchived && (
                     <p className="text-xs text-muted-foreground">
                         Pulihkan mengembalikan pesan ke Semua Pesan tanpa
