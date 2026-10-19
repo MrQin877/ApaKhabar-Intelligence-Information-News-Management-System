@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Admin\AssistantCategoryController;
 use App\Http\Controllers\Admin\BroadcastController;
+use App\Http\Controllers\Admin\CommentModerationController;
 use App\Http\Controllers\Admin\MetaConnectionController;
 use App\Http\Controllers\Admin\NewsCategoryController;
 use App\Http\Controllers\Admin\NewsCreatorController;
@@ -9,6 +10,7 @@ use App\Http\Controllers\Admin\NewsWorkspaceController;
 use App\Http\Controllers\Auth\MobileEmailVerificationController;
 use App\Http\Controllers\Home\WelcomeController;
 use App\Http\Controllers\News\CommentController;
+use App\Http\Controllers\News\EngagementController;
 use App\Http\Controllers\News\NewsController;
 use App\Http\Controllers\News\PostLikeController;
 use App\Http\Controllers\Village\NotificationController;
@@ -45,6 +47,15 @@ Route::get('/news', [NewsController::class, 'index'])->name('news.index');
 
 Route::get('/news/{id}', [NewsController::class, 'show'])->name('news.show');
 
+Route::get('/news/{id}/engagement', [EngagementController::class, 'context'])->middleware('throttle:30,1');
+Route::post('/news/{id}/view', [EngagementController::class, 'view'])->middleware('throttle:30,1');
+Route::post('/news/{id}/comment', [CommentController::class, 'store'])->middleware('throttle:5,1')->name('news.comment');
+Route::middleware(['auth', 'throttle:30,1'])->group(function () {
+    Route::post('/news/{id}/like', [PostLikeController::class, 'store'])->name('news.like');
+    Route::post('/comments/{id}/report', [EngagementController::class, 'report'])->name('comments.report');
+    Route::post('/comments/{id}/replies', [CommentController::class, 'reply'])->middleware('throttle:5,1')->name('comments.reply');
+});
+
 // Authenticated routes — login required for all but shared between villager and admin
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/notifications', [NotificationController::class, 'index'])
@@ -58,9 +69,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
 // Villager authenticated routes — login required for engagement
 
 Route::middleware(['auth', 'verified', 'role:villager'])->group(function () {
-    Route::post('/news/{id}/like', [PostLikeController::class, 'store'])->name('news.like');
-    Route::post('/news/{id}/comment', [CommentController::class, 'store'])->name('news.comment');
-    Route::post('/comments/{id}/replies', [CommentController::class, 'reply'])->name('comments.reply');
     Route::get('/profile', fn () => inertia('villager/profile'))->name('villager.profile');
 
 });
@@ -85,6 +93,8 @@ Route::prefix('admin')
         Route::get('/social/instagram/connect', [MetaConnectionController::class, 'instagramStart'])->middleware('throttle:10,1')->block(10, 10)->name('social.instagram.start');
         Route::get('/social/instagram/callback', [MetaConnectionController::class, 'instagramCallback'])->block(10, 10)->name('social.instagram.callback');
         Route::inertia('/dashboard', 'admin/dashboard')->name('dashboard');
+        Route::get('/comments', [CommentModerationController::class, 'index'])->name('comments.index');
+        Route::post('/comments/{id}/decision', [CommentModerationController::class, 'decide'])->middleware('throttle:30,1')->name('comments.decision');
 
         // Broadcasting — full CRUD + archive/restore
         Route::get('/broadcasting', [BroadcastController::class, 'index'])->name('broadcasting.index');

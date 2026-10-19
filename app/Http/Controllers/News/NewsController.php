@@ -59,7 +59,7 @@ class NewsController extends Controller
                 'likes_count' => $news['likes_count'],
                 'liked_by_user' => $news['liked_by_user'],
             ],
-            'comments' => [],
+            'comments' => $news['comments_list'],
         ]);
     }
 

@@ -1,6 +1,7 @@
 import { Link, usePage } from '@inertiajs/react';
 import {
     LayoutGrid,
+    MessageSquare,
     Newspaper,
     Radio,
     ChartNoAxesCombined,
@@ -113,6 +114,11 @@ export function AppSidebar() {
             title: 'Berita',
             icon: Newspaper,
             items: newsItems,
+        },
+        {
+            title: 'Moderasi Komentar',
+            href: '/admin/comments',
+            icon: MessageSquare,
         },
         ...mainNavItems.slice(1),
     ];

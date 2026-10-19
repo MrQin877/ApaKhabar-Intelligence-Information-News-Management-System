@@ -6,7 +6,6 @@ use App\Models\Comment;
 use App\Models\IntelligentNewsDraft;
 use App\Models\Like;
 use App\Models\News;
-use App\Models\User;
 use App\Support\ArticleText;
 
 class NewsService
@@ -28,7 +27,7 @@ class NewsService
                 'image' => $item->image ?? 'https://placehold.co/600x400',
                 'date' => optional($item->created_at)->format('d F Y') ?? '-',
                 'category' => $item->category ?? 'Umum',
-                'views' => $item->view ?? 0,
+                'views' => $item->unique_views ?? 0,
                 'likes' => $item->likes_count ?? 0,
                 'comments' => 0,
             ];
@@ -43,19 +42,30 @@ class NewsService
             return null;
         }
 
-        $news->increment('view');
         $originalImage = IntelligentNewsDraft::where('published_news_id', $news->getKey())
             ->latest('id')->value('image');
 
-        $comments = Comment::where('newsID', $news->getKey())
-            ->whereNull('parentID')
-            ->get()
-            ->map(fn ($comment) => [
-                'id' => (string) $comment->getKey(),
-                'content' => $comment->content,
-                'user' => optional(User::find($comment->userID))->name ?? 'Unknown',
-                'date' => optional($comment->created_at)->diffForHumans(),
-            ]);
+        $published = Comment::where('newsID', $news->getKey())
+            ->where('status', 'published')->with('author')->oldest()->get()->keyBy('commentID');
+        $comments = $published->filter(function ($comment) use ($published) {
+            $parentId = $comment->parentID;
+            $seen = [];
+            while ($parentId) {
+                if (isset($seen[$parentId]) || ! isset($published[$parentId])) {
+                    return false;
+                }
+                $seen[$parentId] = true;
+                $parentId = $published[$parentId]->parentID;
+            }
+
+            return true;
+        })->map(fn ($comment) => [
+            'id' => (string) $comment->getKey(), 'content' => $comment->content,
+            'author' => $comment->author?->name ?? $comment->guest_name ?? 'Tamu',
+            'user' => $comment->author?->name ?? $comment->guest_name ?? 'Tamu',
+            'parent_id' => $comment->parentID ? (string) $comment->parentID : null,
+            'date' => optional($comment->created_at)->diffForHumans(),
+        ])->values();
 
         return [
             'id' => (string) $news->getKey(),
@@ -66,7 +76,7 @@ class NewsService
             'original_image' => $originalImage ?: ($news->image ?? 'https://placehold.co/800x400'),
             'date' => optional($news->created_at)->format('d F Y') ?? '-',
             'category' => $news->category ?? 'Umum',
-            'views' => $news->view ?? 0,
+            'views' => $news->unique_views ?? 0,
             'likes' => $news->likes_count ?? 0,
             'likes_count' => $news->likes_count ?? 0,
             'liked_by_user' => auth()->check()
