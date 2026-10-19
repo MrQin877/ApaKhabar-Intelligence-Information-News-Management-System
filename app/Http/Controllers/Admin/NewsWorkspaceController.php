@@ -701,7 +701,7 @@ class NewsWorkspaceController extends Controller
 
         if ($request->hasFile('cover_photo')) {
             $disk = config('filesystems.news_media_disk', 'public');
-            $path = $request->file('cover_photo')->storePublicly($previewDirectory ?? 'news-images', $disk);
+            $path = app(\App\Services\NewsImageOptimizer::class)->store($request->file('cover_photo'), $previewDirectory ?? 'news-images', 'cover_photo');
             if (! $path) {
                 throw ValidationException::withMessages(['cover_photo' => 'Gambar gagal disimpan. Silakan coba lagi.']);
             }

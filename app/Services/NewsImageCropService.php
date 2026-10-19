@@ -57,29 +57,8 @@ class NewsImageCropService
             throw ValidationException::withMessages(['image_crops' => 'Gambar tidak dapat diproses. Gunakan JPG atau PNG yang valid.']);
         }
         try {
-            // Browsers apply JPEG orientation before displaying the crop preview.
-            if ($info[2] === IMAGETYPE_JPEG && function_exists('exif_read_data')) {
-                $stream = tmpfile();
-                if ($stream) {
-                    fwrite($stream, $bytes);
-                    rewind($stream);
-                    $orientation = (@exif_read_data($stream)['Orientation'] ?? 1);
-                    fclose($stream);
-                    if (in_array($orientation, [2, 5, 7], true)) {
-                        imageflip($source, IMG_FLIP_HORIZONTAL);
-                    }
-                    if ($orientation === 4) {
-                        imageflip($source, IMG_FLIP_VERTICAL);
-                    }
-                    $angle = match ($orientation) {
-                        3 => 180, 5, 8 => 90, 6, 7 => -90, default => 0
-                    };
-                    if ($angle) {
-                        $rotated = imagerotate($source, $angle, 0);
-                        imagedestroy($source);
-                        $source = $rotated;
-                    }
-                }
+            if ($info[2] === IMAGETYPE_JPEG) {
+                $source = NewsImageOptimizer::orientJpeg($source, $bytes);
             }
             $width = imagesx($source);
             $height = imagesy($source);
@@ -89,14 +68,28 @@ class NewsImageCropService
                 [$outWidth, $outHeight] = self::outputSize($platform, $crop);
                 $rectangle = self::cropRectangle($width, $height, $platform, $crop);
                 $canvas = imagecreatetruecolor($outWidth, $outHeight);
-                imagefill($canvas, 0, 0, imagecolorallocate($canvas, 255, 255, 255));
+                if ($platform === 'website') {
+                    imagealphablending($canvas, false);
+                    imagesavealpha($canvas, true);
+                    imagefill($canvas, 0, 0, imagecolorallocatealpha($canvas, 0, 0, 0, 127));
+                } else {
+                    imagefill($canvas, 0, 0, imagecolorallocate($canvas, 255, 255, 255));
+                }
                 imagecopyresampled($canvas, $source, 0, 0, $rectangle['x'], $rectangle['y'], $outWidth, $outHeight, $rectangle['width'], $rectangle['height']);
-                ob_start();
-                imagejpeg($canvas, null, 95);
-                $jpeg = ob_get_clean();
-                imagedestroy($canvas);
-                $destination = $directory.'/'.hash('sha256', $bytes.json_encode($crop).$platform.'v1').'.jpg';
-                if (! $disk->put($destination, $jpeg, 'public')) {
+                try {
+                    if ($platform === 'website') {
+                        $encoded = NewsImageOptimizer::encodeWebp($canvas);
+                    } else {
+                        ob_start();
+                        imagejpeg($canvas, null, 95);
+                        $encoded = ob_get_clean();
+                    }
+                } finally {
+                    imagedestroy($canvas);
+                }
+                $extension = $platform === 'website' ? 'webp' : 'jpg';
+                $destination = $directory.'/'.hash('sha256', $bytes.json_encode($crop).$platform.'v2').'.'.$extension;
+                if (! $disk->exists($destination) && ! $disk->put($destination, $encoded, ['visibility' => 'public', 'ContentType' => $platform === 'website' ? 'image/webp' : 'image/jpeg'])) {
                     throw ValidationException::withMessages(['image_crops' => 'Potongan gambar gagal disimpan. Silakan coba lagi.']);
                 }
                 $variants[$platform] = config('filesystems.news_media_disk', 'public') === 'public'
@@ -104,6 +97,10 @@ class NewsImageCropService
             }
 
             return $variants;
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (\Throwable) {
+            throw ValidationException::withMessages(['image_crops' => 'Potongan gambar gagal diproses. Periksa dukungan GD WebP dan penyimpanan.']);
         } finally {
             imagedestroy($source);
         }
