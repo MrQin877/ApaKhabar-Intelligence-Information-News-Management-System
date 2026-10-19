@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Comment;
 use App\Models\News;
+use App\Services\News\ModerationDecisionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -82,6 +83,7 @@ class CommentModerationController extends Controller
             'guest_name' => $comment->guest_name,
             'content' => $comment->content,
             'status' => $comment->status,
+            'revision' => $comment->moderation_revision,
             'ai_flagged' => $comment->ai_flagged,
             'categories' => $comment->moderation_categories,
             'reason' => $comment->moderation_reason,
@@ -120,25 +122,11 @@ class CommentModerationController extends Controller
         $data = $request->validate([
             'action' => ['required', Rule::in(['approve', 'reject', 'remove', 'restore', 'dismiss_reports'])],
             'reason' => 'required|string|max:500',
+            'expected_revision' => 'sometimes|integer|min:0',
         ]);
-        DB::transaction(function () use ($request, $id, $data) {
-            $comment = Comment::lockForUpdate()->findOrFail($id);
-            $from = $comment->status;
-            $to = match ($data['action']) {
-                'approve' => $from === 'pending_review' ? 'published' : null,
-                'reject' => $from === 'pending_review' ? 'rejected' : null,
-                'remove' => $from === 'published' ? 'removed' : null,
-                'restore' => $from === 'removed' ? 'published' : null,
-                'dismiss_reports' => $from,
-            };
-            abort_if($to === null, 409, 'Status komentar telah berubah. Muat ulang halaman.');
-            $comment->update(['status' => $to, 'moderator_id' => $request->user()->getKey(), 'moderated_at' => now()]);
-            DB::table('comment_moderation_history')->insert([
-                'comment_id' => $id, 'moderator_id' => $request->user()->getKey(),
-                'from_status' => $from, 'to_status' => $to, 'reason' => $data['action'].': '.$data['reason'], 'created_at' => now(),
-            ]);
-            DB::table('comment_reports')->where('comment_id', $id)->whereNull('resolved_at')->update(['resolved_at' => now()]);
-        });
+        app(ModerationDecisionService::class)->decide(
+            $request->user(), $id, $data['action'], $data['reason'], $data['expected_revision'] ?? null,
+        );
 
         return response()->json(['message' => 'Keputusan disimpan.']);
     }

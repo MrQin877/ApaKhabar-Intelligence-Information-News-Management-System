@@ -22,7 +22,7 @@ class Comment extends Model
 
     protected $hidden = ['moderation_categories', 'moderation_reason', 'ai_flagged', 'submission_hash', 'moderator_id'];
 
-    protected $casts = ['moderation_categories' => 'array', 'ai_flagged' => 'boolean'];
+    protected $casts = ['moderation_revision' => 'integer', 'moderation_categories' => 'array', 'ai_flagged' => 'boolean'];
 
     public function replies()
     {

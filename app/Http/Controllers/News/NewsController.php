@@ -60,6 +60,7 @@ class NewsController extends Controller
                 'liked_by_user' => $news['liked_by_user'],
             ],
             'comments' => $news['comments_list'],
+            'canCorrectModeration' => $request->user()?->isAdmin() === true && $request->user()->hasVerifiedEmail(),
         ]);
     }
 

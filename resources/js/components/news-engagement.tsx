@@ -1,6 +1,8 @@
 import { Link, router } from '@inertiajs/react';
-import { Eye, Heart, Share2 } from 'lucide-react';
+import { Eye, Flag, Heart, Share2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import AdminCommentFeedback from '@/components/admin-comment-feedback';
+import { Button } from '@/components/ui/button';
 import {
     Dialog,
     DialogContent,
@@ -26,6 +28,7 @@ interface Props {
     };
     comments: PublicComment[];
     authenticated: boolean;
+    canCorrectModeration?: boolean;
 }
 export async function engagementPost(url: string, data: unknown) {
     const response = await csrfPost(url, data);
@@ -48,7 +51,11 @@ export default function NewsEngagement({
     news,
     comments,
     authenticated,
+    canCorrectModeration = false,
 }: Props) {
+    const [moderationCommentId, setModerationCommentId] = useState<
+        string | null
+    >(null);
     const [prompt, setPrompt] = useState(false);
     const [liked, setLiked] = useState(news.liked_by_user);
     const [likes, setLikes] = useState(news.likes_count);
@@ -272,6 +279,13 @@ export default function NewsEngagement({
                     {message}
                 </p>
             )}
+            {canCorrectModeration && (
+                <AdminCommentFeedback
+                    newsId={news.id}
+                    selectedId={moderationCommentId}
+                    onSelect={setModerationCommentId}
+                />
+            )}
             <h2 className="text-lg font-semibold">
                 Komentar ({comments.length})
             </h2>
@@ -343,6 +357,20 @@ export default function NewsEngagement({
                 >
                     <div className="flex flex-wrap gap-3 text-sm">
                         <strong>{comment.author}</strong>
+                        {canCorrectModeration && (
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon-xs"
+                                aria-label="Tandai komentar tidak pantas"
+                                title="Tandai komentar tidak pantas"
+                                onClick={() =>
+                                    setModerationCommentId(comment.id)
+                                }
+                            >
+                                <Flag className="size-3.5" />
+                            </Button>
+                        )}
                         <span className="text-muted-foreground">
                             {comment.date}
                         </span>

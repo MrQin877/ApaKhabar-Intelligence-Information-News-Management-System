@@ -3,6 +3,7 @@
 namespace App\Services\News;
 
 use App\Models\Comment;
+use App\Models\CommentModerationAssessment;
 use App\Models\Like;
 use App\Models\News;
 use Illuminate\Support\Facades\DB;
@@ -36,8 +37,10 @@ class InteractionService
             throw ValidationException::withMessages(['content' => 'Komentar yang sama sudah dikirim.']);
         }
         $moderation = app(CommentModeration::class)->check($content);
+        $assessment = $moderation['_assessment'] ?? [];
+        unset($moderation['_assessment']);
 
-        return DB::transaction(function () use ($news, $userId, $content, $parentId, $hash, $moderation) {
+        return DB::transaction(function () use ($news, $userId, $content, $parentId, $hash, $moderation, $assessment) {
             // Serialize the duplicate check and insert, including concurrent submissions.
             News::whereKey($news->getKey())->lockForUpdate()->firstOrFail();
             if (Comment::where('submission_hash', $hash)->exists()) {
@@ -48,6 +51,7 @@ class InteractionService
                 'guest_name' => $userId ? null : 'guest'.random_int(100000, 999999), 'parentID' => $parentId,
                 'submission_hash' => $hash,
             ]));
+            CommentModerationAssessment::capture($comment, $assessment);
             DB::table('comment_moderation_history')->insert([
                 'comment_id' => $comment->getKey(), 'from_status' => null,
                 'to_status' => $comment->status, 'reason' => $comment->moderation_reason,

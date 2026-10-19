@@ -29,10 +29,15 @@ interface News {
 interface Props {
     news: News;
     comments: PublicComment[];
+    canCorrectModeration?: boolean;
     canRegister?: boolean;
 }
 
-export default function NewsDetails({ news, comments = [] }: Props) {
+export default function NewsDetails({
+    news,
+    comments = [],
+    canCorrectModeration = false,
+}: Props) {
     const imagePreviewTrigger = useRef<HTMLButtonElement>(null);
     const [imagePreviewOpen, setImagePreviewOpen] = useState(false);
     const { auth } = usePage<SharedData>().props;
@@ -152,6 +157,7 @@ export default function NewsDetails({ news, comments = [] }: Props) {
                         news={news}
                         comments={comments}
                         authenticated={!!auth.user}
+                        canCorrectModeration={canCorrectModeration}
                     />
                 </main>
             </div>

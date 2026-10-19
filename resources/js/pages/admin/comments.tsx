@@ -105,6 +105,7 @@ interface Entry {
     guest_name: string | null;
     content: string;
     status: string;
+    revision: number;
     reason: string | null;
     ai_flagged: boolean | null;
     categories: Record<string, boolean> | null;
@@ -398,6 +399,7 @@ export default function Comments({
                 {
                     action,
                     reason,
+                    expected_revision: selectedComment.revision,
                 },
             );
             setFeedback({

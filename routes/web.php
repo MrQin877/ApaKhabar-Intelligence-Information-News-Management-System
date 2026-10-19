@@ -73,6 +73,13 @@ Route::middleware(['auth', 'verified', 'role:villager'])->group(function () {
 
 });
 
+// Article moderation data is never included in public article responses.
+Route::middleware(['auth', 'verified', 'throttle:30,1'])->prefix('admin/news/{news}/moderation-comments')->group(function () {
+    Route::get('/', [\App\Http\Controllers\Admin\ModerationFeedbackController::class, 'index']);
+    Route::get('/{comment}', [\App\Http\Controllers\Admin\ModerationFeedbackController::class, 'show']);
+    Route::post('/{comment}/feedback', [\App\Http\Controllers\Admin\ModerationFeedbackController::class, 'store']);
+});
+
 // Admin portal — admin and moderator only
 
 Route::get('/admin', fn () => redirect()->route('admin.dashboard'))
