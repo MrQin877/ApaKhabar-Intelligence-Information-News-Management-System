@@ -1,35 +1,16 @@
 import {
-    DndContext,
-    DragOverlay,
-    KeyboardSensor,
-    PointerSensor,
-    closestCenter,
-    useSensor,
-    useSensors,
-} from '@dnd-kit/core';
-import type { DragEndEvent, DragOverEvent, DragStartEvent } from '@dnd-kit/core';
-import {
-    SortableContext,
-    rectSortingStrategy,
-    sortableKeyboardCoordinates,
-    useSortable,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
-import {
     Activity,
     ArrowUpRight,
     ChartNoAxesCombined,
     CircleHelp,
     Clock3,
-    Columns2,
     Eye,
     EyeOff,
     GripVertical,
-    RectangleHorizontal,
     Share2,
     Users,
 } from 'lucide-react';
-import { useId, useState } from 'react';
+import { useId } from 'react';
 import {
     Area,
     AreaChart,
@@ -42,6 +23,8 @@ import {
     XAxis,
     YAxis,
 } from 'recharts';
+import ChartGrid from '@/components/analytics/chart-grid';
+import type { GridCell } from '@/components/analytics/chart-grid';
 import { Badge } from '@/components/ui/badge';
 import {
     Card,
@@ -84,6 +67,7 @@ export type ReportWidget = {
     note: string;
     span?: WidgetSpan;
     height?: WidgetHeight;
+    grid?: GridCell;
     rows: ReportRow[];
     trend?: ReportRow[];
     heatmap?: { day: number; hour: number; value: number }[];
@@ -105,21 +89,21 @@ const CHART_PALETTE = [
     'var(--chart-3)',
     'var(--chart-5)',
     'var(--chart-4)',
-    '#0ea5e9',
-    '#8b5cf6',
-    '#64748b',
+    'var(--info-400)',
+    'var(--violet-500)',
+    'var(--greyscale-500)',
 ];
 
 const HEIGHT_CLASS: Record<WidgetHeight, string> = {
-    sm: 'h-36',
-    md: 'h-52',
-    lg: 'h-72',
+    sm: 'h-[var(--analytics-chart-height,9rem)]',
+    md: 'h-[var(--analytics-chart-height,13rem)]',
+    lg: 'h-[var(--analytics-chart-height,18rem)]',
 };
 
 const DONUT_SIZE_CLASS: Record<WidgetHeight, string> = {
-    sm: 'h-36 w-36',
-    md: 'h-48 w-48',
-    lg: 'h-60 w-60',
+    sm: 'h-[var(--analytics-donut-size,9rem)] w-[var(--analytics-donut-size,9rem)]',
+    md: 'h-[var(--analytics-donut-size,12rem)] w-[var(--analytics-donut-size,12rem)]',
+    lg: 'h-[var(--analytics-donut-size,15rem)] w-[var(--analytics-donut-size,15rem)]',
 };
 
 const BRAND_COLORS: Record<
@@ -127,22 +111,27 @@ const BRAND_COLORS: Record<
     { color: string; label: string; metricLabel: string; badgeClass: string }
 > = {
     facebook: {
-        color: '#1877F2',
+        color: 'var(--platform-facebook)',
         label: 'Facebook',
         metricLabel: 'Kunjungan Halaman Harian',
-        badgeClass: 'border-[#1877F2]/30 bg-[#1877F2]/10 text-[#1877F2]',
+        badgeClass:
+            'border-[var(--platform-facebook)]/30 bg-[var(--platform-facebook)]/10 text-[var(--platform-facebook)]',
     },
     instagram: {
-        color: '#E1306C',
+        color: 'var(--platform-instagram)',
         label: 'Instagram',
         metricLabel: 'Jangkauan Harian (Reach)',
-        badgeClass: 'border-[#E1306C]/30 bg-[#E1306C]/10 text-[#E1306C]',
+        badgeClass:
+            'border-[var(--platform-instagram)]/30 bg-[var(--platform-instagram)]/10 text-[var(--platform-instagram)]',
     },
 };
 
 const STATUS_LABELS: Record<
     string,
-    { text: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }
+    {
+        text: string;
+        variant: 'default' | 'secondary' | 'destructive' | 'outline';
+    }
 > = {
     ready: { text: 'Tersinkron', variant: 'default' },
     pending: { text: 'Menunggu Sinkronisasi', variant: 'secondary' },
@@ -205,7 +194,7 @@ function TrendPlot({
         >
             <ChartContainer
                 config={chartConfig}
-                className={`${HEIGHT_CLASS[height]} w-full aspect-auto transition-all duration-200`}
+                className={`${HEIGHT_CLASS[height]} analytics-plot aspect-auto w-full`}
             >
                 {area ? (
                     <AreaChart
@@ -329,8 +318,10 @@ function HorizontalBarDistribution({
         <div className="space-y-4">
             <ChartContainer
                 config={chartConfig}
-                className="w-full aspect-auto transition-all duration-200"
-                style={{ height: Math.max(baseHeight, sorted.length * 36) }}
+                className="analytics-plot aspect-auto w-full"
+                style={{
+                    height: `max(var(--analytics-chart-height, ${baseHeight}px), ${sorted.length * 36}px)`,
+                }}
             >
                 <BarChart
                     data={sorted}
@@ -376,6 +367,7 @@ function HorizontalBarDistribution({
                     const pct = total
                         ? Math.round((row.value / total) * 100)
                         : 0;
+
                     return (
                         <div
                             key={row.label}
@@ -385,9 +377,7 @@ function HorizontalBarDistribution({
                                 className="size-2 shrink-0 rounded-full"
                                 style={{
                                     background:
-                                        CHART_PALETTE[
-                                            i % CHART_PALETTE.length
-                                        ],
+                                        CHART_PALETTE[i % CHART_PALETTE.length],
                                 }}
                             />
                             <span className="font-medium">{row.label}</span>
@@ -434,7 +424,7 @@ function CitizenshipChart({
             {total > 0 ? (
                 <ChartContainer
                     config={chartConfig}
-                    className={`${HEIGHT_CLASS[height]} w-full aspect-auto transition-all duration-200`}
+                    className={`${HEIGHT_CLASS[height]} analytics-plot aspect-auto w-full`}
                 >
                     <BarChart
                         data={rows}
@@ -488,14 +478,14 @@ function CitizenshipChart({
                 <EmptyChartState />
             )}
 
-            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+            <div className="analytics-stat-grid">
                 {rows.map((row) => (
                     <div
                         key={row.label}
                         className="rounded-xl border bg-muted/20 p-3"
                     >
                         <div className="flex items-center justify-between gap-1">
-                            <span className="truncate text-xs font-medium text-muted-foreground">
+                            <span className="text-xs font-medium break-words text-muted-foreground">
                                 {row.label}
                             </span>
                             <Badge
@@ -549,13 +539,13 @@ function AgeDonutChart({
     ) satisfies ChartConfig;
 
     return (
-        <div className="flex flex-col items-center gap-5 sm:flex-row">
+        <div className="analytics-donut-layout">
             <div
                 className={`relative mx-auto shrink-0 transition-all duration-200 ${DONUT_SIZE_CLASS[height]}`}
             >
                 <ChartContainer
                     config={chartConfig}
-                    className="h-full w-full aspect-square"
+                    className="aspect-square h-full w-full"
                 >
                     <PieChart>
                         <ChartTooltip
@@ -602,19 +592,20 @@ function AgeDonutChart({
                 </div>
             </div>
 
-            <div className="grid w-full min-w-0 flex-1 grid-cols-2 gap-2">
+            <div className="analytics-legend grid w-full min-w-0 flex-1 grid-cols-2 gap-2">
                 {rows.map((row, i) => {
                     const pct = total
                         ? Math.round((row.value / total) * 100)
                         : 0;
                     const color = CHART_PALETTE[i % CHART_PALETTE.length];
+
                     return (
                         <div
                             key={row.label}
                             className="rounded-lg border bg-muted/15 p-2.5"
                         >
                             <div className="flex items-center justify-between gap-1.5 text-xs">
-                                <span className="flex items-center gap-1.5 truncate font-medium">
+                                <span className="flex items-center gap-1.5 font-medium break-words">
                                     <span
                                         className="size-2.5 shrink-0 rounded-sm"
                                         style={{ background: color }}
@@ -690,13 +681,13 @@ function BroadcastVisual({
     } satisfies ChartConfig;
 
     return (
-        <div className="flex flex-col items-center gap-5 sm:flex-row">
+        <div className="analytics-donut-layout">
             <div
                 className={`relative mx-auto shrink-0 transition-all duration-200 ${DONUT_SIZE_CLASS[height]}`}
             >
                 <ChartContainer
                     config={chartConfig}
-                    className="h-full w-full aspect-square"
+                    className="aspect-square h-full w-full"
                 >
                     <PieChart>
                         <ChartTooltip
@@ -737,6 +728,7 @@ function BroadcastVisual({
                             : idx === 1
                               ? 'var(--chart-3)'
                               : 'var(--chart-1)';
+
                     return (
                         <div
                             key={row.label}
@@ -885,7 +877,7 @@ function MetaAccountsVisual({
     );
 }
 
-function WidgetBody({
+export function WidgetBody({
     widget,
     height,
 }: {
@@ -936,7 +928,7 @@ function WidgetBody({
                 />
 
                 {widget.rows.length > 0 && (
-                    <div className="grid gap-2.5 border-t pt-4 sm:grid-cols-2">
+                    <div className="analytics-stat-grid border-t pt-4">
                         {widget.rows.map((r, i) => {
                             const maxVal = Math.max(
                                 1,
@@ -944,13 +936,14 @@ function WidgetBody({
                             );
                             const color =
                                 CHART_PALETTE[i % CHART_PALETTE.length];
+
                             return (
                                 <div
                                     key={r.label}
                                     className="rounded-xl border bg-muted/20 p-3"
                                 >
                                     <div className="flex items-center justify-between gap-2 text-xs">
-                                        <span className="flex items-center gap-1.5 truncate font-medium">
+                                        <span className="flex items-center gap-1.5 font-medium break-words">
                                             <span
                                                 className="size-2 shrink-0 rounded-full"
                                                 style={{
@@ -1023,72 +1016,86 @@ function WidgetBody({
                                 <span>Ramai</span>
                             </div>
                         </div>
-                        <div className="overflow-x-auto">
-                            <table className="w-full min-w-[640px] border-separate border-spacing-1 text-xs">
-                                <thead>
-                                    <tr className="text-muted-foreground">
-                                        <th className="w-10 text-left font-medium">
-                                            Hari
-                                        </th>
-                                        {Array.from({ length: 24 }, (_, h) => (
-                                            <th
-                                                key={h}
-                                                className="font-normal tabular-nums"
-                                            >
-                                                {h}
+                        <div className="analytics-heatmaps">
+                            {[0, 12].map((startHour) => (
+                                <table
+                                    key={startHour}
+                                    className="w-full table-fixed border-separate border-spacing-1 text-xs"
+                                >
+                                    <thead>
+                                        <tr className="text-muted-foreground">
+                                            <th className="w-10 text-left font-medium">
+                                                Hari
                                             </th>
-                                        ))}
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {[
-                                        'Sen',
-                                        'Sel',
-                                        'Rab',
-                                        'Kam',
-                                        'Jum',
-                                        'Sab',
-                                        'Min',
-                                    ].map((label, i) => (
-                                        <tr key={label}>
-                                            <th className="text-left font-medium text-muted-foreground">
-                                                {label}
-                                            </th>
-                                            {widget
-                                                .heatmap!.filter(
-                                                    (c) => c.day === i + 1,
-                                                )
-                                                .map((cell) => (
-                                                    <td
-                                                        key={cell.hour}
-                                                        title={`${label} ${cell.hour}:00 — ${cell.value} warga`}
-                                                        className="h-6 rounded-sm bg-primary text-center transition-opacity"
-                                                        style={{
-                                                            opacity: cell.value
-                                                                ? 0.3 +
-                                                                  (0.7 *
-                                                                      cell.value) /
-                                                                      Math.max(
-                                                                          1,
-                                                                          ...widget.heatmap!.map(
-                                                                              (
-                                                                                  c,
-                                                                              ) =>
-                                                                                  c.value,
-                                                                          ),
-                                                                      )
-                                                                : 0.08,
-                                                        }}
-                                                    >
-                                                        <span className="sr-only">
-                                                            {cell.value}
-                                                        </span>
-                                                    </td>
-                                                ))}
+                                            {Array.from(
+                                                { length: 12 },
+                                                (_, index) => index + startHour,
+                                            ).map((h) => (
+                                                <th
+                                                    key={h}
+                                                    className="font-normal tabular-nums"
+                                                >
+                                                    {h}
+                                                </th>
+                                            ))}
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                                    </thead>
+                                    <tbody>
+                                        {[
+                                            'Sen',
+                                            'Sel',
+                                            'Rab',
+                                            'Kam',
+                                            'Jum',
+                                            'Sab',
+                                            'Min',
+                                        ].map((label, i) => (
+                                            <tr key={label}>
+                                                <th className="text-left font-medium text-muted-foreground">
+                                                    {label}
+                                                </th>
+                                                {widget
+                                                    .heatmap!.filter(
+                                                        (c) =>
+                                                            c.day === i + 1 &&
+                                                            c.hour >=
+                                                                startHour &&
+                                                            c.hour <
+                                                                startHour + 12,
+                                                    )
+                                                    .map((cell) => (
+                                                        <td
+                                                            key={cell.hour}
+                                                            title={`${label} ${cell.hour}:00 — ${cell.value} warga`}
+                                                            className="h-6 rounded-sm bg-primary text-center transition-opacity"
+                                                            style={{
+                                                                opacity:
+                                                                    cell.value
+                                                                        ? 0.3 +
+                                                                          (0.7 *
+                                                                              cell.value) /
+                                                                              Math.max(
+                                                                                  1,
+                                                                                  ...widget.heatmap!.map(
+                                                                                      (
+                                                                                          c,
+                                                                                      ) =>
+                                                                                          c.value,
+                                                                                  ),
+                                                                              )
+                                                                        : 0.08,
+                                                            }}
+                                                        >
+                                                            <span className="sr-only">
+                                                                {cell.value}
+                                                            </span>
+                                                        </td>
+                                                    ))}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            ))}
                         </div>
                     </div>
                 )}
@@ -1098,7 +1105,7 @@ function WidgetBody({
 
     if (widget.id === 'engagement') {
         return (
-            <div className="flex items-center justify-between gap-4 rounded-xl border border-dashed bg-muted/15 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-dashed bg-muted/15 p-4">
                 <div className="flex items-center gap-3">
                     <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border bg-card">
                         <Share2 className="size-5 text-muted-foreground" />
@@ -1118,69 +1125,31 @@ function WidgetBody({
     }
 
     if (widget.accounts) {
-        return <MetaAccountsVisual accounts={widget.accounts} height={height} />;
+        return (
+            <MetaAccountsVisual accounts={widget.accounts} height={height} />
+        );
     }
 
     return <HorizontalBarDistribution rows={widget.rows} height={height} />;
 }
 
-function SortableWidgetCard({
+function WidgetCard({
     widget,
     editable = false,
-    span = 1,
     height = 'md',
     sharedWithModerator = false,
-    onChangeSpan,
-    onChangeHeight,
     onToggleModerator,
 }: {
     widget: ReportWidget;
     editable?: boolean;
-    span?: WidgetSpan;
     height?: WidgetHeight;
     sharedWithModerator?: boolean;
-    onChangeSpan?: (id: string, span: WidgetSpan) => void;
-    onChangeHeight?: (id: string, height: WidgetHeight) => void;
     onToggleModerator?: (id: string) => void;
 }) {
-    const {
-        attributes,
-        listeners,
-        setNodeRef,
-        transform,
-        transition,
-        isDragging,
-    } = useSortable({
-        id: widget.id,
-        disabled: !editable,
-        animateLayoutChanges: () => true,
-    });
-
-    const style: React.CSSProperties = {
-        transform: CSS.Translate.toString(transform),
-        transition:
-            transition ?? 'transform 250ms cubic-bezier(0.22, 1, 0.36, 1)',
-    };
-
     return (
-        <Card
-            ref={setNodeRef}
-            style={style}
-            className={`w-full min-w-0 gap-0 self-start overflow-hidden py-0 shadow-xs transition-colors ${
-                span === 2 ? 'xl:col-span-2' : 'xl:col-span-1'
-            } ${
-                editable
-                    ? 'border-2 border-primary/40 hover:border-primary/70'
-                    : ''
-            } ${
-                isDragging
-                    ? 'z-20 border-dashed border-primary bg-primary/5 opacity-30'
-                    : ''
-            }`}
-        >
+        <Card className="analytics-widget flex h-full min-w-0 flex-col gap-0 py-0 shadow-xs">
             <CardHeader
-                {...(editable ? { ...attributes, ...listeners } : {})}
-                className={`flex flex-wrap items-center justify-between gap-2 border-b bg-muted/20 px-4 py-3 sm:px-5 ${
+                className={`analytics-drag-handle flex shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-muted/20 px-4 py-3 sm:px-5 ${
                     editable
                         ? 'cursor-grab touch-none select-none active:cursor-grabbing'
                         : ''
@@ -1196,7 +1165,7 @@ function SortableWidgetCard({
                             Geser
                         </span>
                     )}
-                    <CardTitle className="truncate text-base font-semibold">
+                    <CardTitle className="text-base font-semibold break-words">
                         {widget.title}
                     </CardTitle>
                 </div>
@@ -1207,80 +1176,13 @@ function SortableWidgetCard({
                 >
                     {editable && (
                         <>
-                            {/* Column Span Switch: 1 Kol vs 2 Kol */}
-                            <div
-                                className="inline-flex items-center rounded-lg border bg-card p-0.5 text-xs"
-                                role="group"
-                                aria-label={`Lebar kartu ${widget.title}`}
-                            >
-                                <button
-                                    type="button"
-                                    onClick={() => onChangeSpan?.(widget.id, 1)}
-                                    className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition ${
-                                        span === 1
-                                            ? 'bg-primary text-primary-foreground shadow-2xs'
-                                            : 'text-muted-foreground hover:text-foreground'
-                                    }`}
-                                    title="1 Kolom (Setengah Lebar)"
-                                >
-                                    <Columns2 className="size-3" />
-                                    1 Kol
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => onChangeSpan?.(widget.id, 2)}
-                                    className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition ${
-                                        span === 2
-                                            ? 'bg-primary text-primary-foreground shadow-2xs'
-                                            : 'text-muted-foreground hover:text-foreground'
-                                    }`}
-                                    title="2 Kolom (Lebar Penuh)"
-                                >
-                                    <RectangleHorizontal className="size-3" />
-                                    2 Kol
-                                </button>
-                            </div>
-
-                            {/* Chart Height Switch: S / M / L */}
-                            {widget.id !== 'engagement' && (
-                                <div
-                                    className="inline-flex items-center rounded-lg border bg-card p-0.5 text-xs"
-                                    role="group"
-                                    aria-label={`Tinggi grafik ${widget.title}`}
-                                >
-                                    {(
-                                        [
-                                            ['sm', 'S'],
-                                            ['md', 'M'],
-                                            ['lg', 'L'],
-                                        ] as const
-                                    ).map(([val, label]) => (
-                                        <button
-                                            key={val}
-                                            type="button"
-                                            onClick={() =>
-                                                onChangeHeight?.(widget.id, val)
-                                            }
-                                            className={`rounded-md px-2 py-1 text-xs font-medium transition ${
-                                                height === val
-                                                    ? 'bg-primary text-primary-foreground shadow-2xs'
-                                                    : 'text-muted-foreground hover:text-foreground'
-                                            }`}
-                                            title={`Ukuran Grafik ${label}`}
-                                        >
-                                            {label}
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
-
                             {/* Moderator Visibility Toggle */}
                             <button
                                 type="button"
                                 onClick={() => onToggleModerator?.(widget.id)}
                                 className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-medium transition ${
                                     sharedWithModerator
-                                        ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                                        ? 'border-success-border bg-success-bg text-success-text'
                                         : 'bg-card text-muted-foreground hover:text-foreground'
                                 }`}
                                 title="Tampilkan di Dasbor Moderator"
@@ -1318,7 +1220,7 @@ function SortableWidgetCard({
                 </div>
             </CardHeader>
 
-            <CardContent className="p-5">
+            <CardContent className="analytics-widget-body min-h-0 flex-1 p-5">
                 <WidgetBody widget={widget} height={height} />
             </CardContent>
         </Card>
@@ -1330,67 +1232,29 @@ export default function ReportWidgets({
     editable = false,
     moderatorWidgets = [],
     sizes = {},
-    onReorder,
-    onChangeSpan,
-    onChangeHeight,
+    grid,
+    onGridChange,
     onToggleModerator,
 }: {
     widgets: ReportWidget[];
     editable?: boolean;
     moderatorWidgets?: string[];
     sizes?: Record<string, { span: WidgetSpan; height: WidgetHeight }>;
-    onReorder?: (activeId: string, overId: string) => void;
-    onChangeSpan?: (id: string, span: WidgetSpan) => void;
-    onChangeHeight?: (id: string, height: WidgetHeight) => void;
+    grid?: Record<string, GridCell>;
+    onGridChange?: (cells: Record<string, GridCell>) => void;
     onToggleModerator?: (id: string) => void;
 }) {
-    const [activeId, setActiveId] = useState<string | null>(null);
-
-    const sensors = useSensors(
-        useSensor(PointerSensor, {
-            activationConstraint: {
-                distance: 5,
-            },
-        }),
-        useSensor(KeyboardSensor, {
-            coordinateGetter: sortableKeyboardCoordinates,
-        }),
-    );
-
     const overview = widgets.find((w) => w.id === 'overview');
     const chartWidgets = widgets.filter((w) => w.id !== 'overview');
-    const activeWidget = activeId
-        ? chartWidgets.find((w) => w.id === activeId)
-        : null;
 
     const totalVillagers = overview?.rows[0]?.value ?? 0;
     const icons = [Users, ArrowUpRight, Activity, Clock3];
     const kpiColors = [
         'text-primary bg-primary/10 border-primary/20',
         'text-teal-500 bg-teal-500/10 border-teal-500/20',
-        'text-amber-500 bg-amber-500/10 border-amber-500/20',
-        'text-indigo-500 bg-indigo-500/10 border-indigo-500/20',
+        'text-warning-500 bg-warning-500/10 border-warning-500/20',
+        'text-violet-500 bg-violet-500/10 border-violet-500/20',
     ];
-
-    function handleDragStart(event: DragStartEvent) {
-        setActiveId(String(event.active.id));
-    }
-
-    function handleDragOver(event: DragOverEvent) {
-        const { active, over } = event;
-        if (!over || active.id === over.id) {
-            return;
-        }
-        onReorder?.(String(active.id), String(over.id));
-    }
-
-    function handleDragEnd(event: DragEndEvent) {
-        const { active, over } = event;
-        if (over && active.id !== over.id) {
-            onReorder?.(String(active.id), String(over.id));
-        }
-        setActiveId(null);
-    }
 
     return (
         <TooltipProvider>
@@ -1409,7 +1273,7 @@ export default function ReportWidgets({
                                     }
                                     className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-medium transition ${
                                         moderatorWidgets.includes('overview')
-                                            ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                                            ? 'border-success-border bg-success-bg text-success-text'
                                             : 'bg-card text-muted-foreground hover:text-foreground'
                                     }`}
                                 >
@@ -1480,73 +1344,28 @@ export default function ReportWidgets({
                     </div>
                 )}
 
-                <DndContext
-                    sensors={sensors}
-                    collisionDetection={closestCenter}
-                    onDragStart={handleDragStart}
-                    onDragOver={handleDragOver}
-                    onDragEnd={handleDragEnd}
-                    onDragCancel={() => setActiveId(null)}
+                <ChartGrid
+                    widgets={chartWidgets}
+                    cells={grid}
+                    editable={editable}
+                    onChange={onGridChange}
                 >
-                    <SortableContext
-                        items={chartWidgets.map((w) => w.id)}
-                        strategy={rectSortingStrategy}
-                    >
-                        <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
-                            {chartWidgets.map((widget) => {
-                                const cfg = sizes[widget.id];
-                                const span: WidgetSpan =
-                                    cfg?.span ?? widget.span ?? 1;
-                                const height: WidgetHeight =
-                                    cfg?.height ?? widget.height ?? 'md';
-
-                                return (
-                                    <SortableWidgetCard
-                                        key={widget.id}
-                                        widget={widget}
-                                        editable={editable}
-                                        span={span}
-                                        height={height}
-                                        sharedWithModerator={moderatorWidgets.includes(
-                                            widget.id,
-                                        )}
-                                        onChangeSpan={onChangeSpan}
-                                        onChangeHeight={onChangeHeight}
-                                        onToggleModerator={onToggleModerator}
-                                    />
-                                );
-                            })}
-                        </div>
-                    </SortableContext>
-
-                    <DragOverlay adjustScale={false}>
-                        {activeWidget ? (
-                            <Card className="w-full gap-0 overflow-hidden border-2 border-primary bg-card py-0 opacity-95 shadow-2xl ring-4 ring-primary/20">
-                                <CardHeader className="flex flex-row items-center justify-between gap-2 border-b bg-primary/10 px-5 py-3.5">
-                                    <div className="flex items-center gap-2">
-                                        <span className="inline-flex items-center gap-1 rounded-md border bg-card px-2 py-1 text-xs font-medium text-primary">
-                                            <GripVertical className="size-3.5" />
-                                            Memindahkan...
-                                        </span>
-                                        <CardTitle className="text-base font-semibold">
-                                            {activeWidget.title}
-                                        </CardTitle>
-                                    </div>
-                                </CardHeader>
-                                <CardContent className="p-5">
-                                    <WidgetBody
-                                        widget={activeWidget}
-                                        height={
-                                            sizes[activeWidget.id]?.height ??
-                                            activeWidget.height ??
-                                            'md'
-                                        }
-                                    />
-                                </CardContent>
-                            </Card>
-                        ) : null}
-                    </DragOverlay>
-                </DndContext>
+                    {(widget) => (
+                        <WidgetCard
+                            widget={widget}
+                            editable={editable}
+                            height={
+                                sizes[widget.id]?.height ??
+                                widget.height ??
+                                'md'
+                            }
+                            sharedWithModerator={moderatorWidgets.includes(
+                                widget.id,
+                            )}
+                            onToggleModerator={onToggleModerator}
+                        />
+                    )}
+                </ChartGrid>
             </div>
         </TooltipProvider>
     );

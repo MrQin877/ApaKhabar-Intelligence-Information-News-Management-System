@@ -1,4 +1,3 @@
-import { arrayMove } from '@dnd-kit/sortable';
 import { Head, router, useForm, usePage } from '@inertiajs/react';
 import {
     Check,
@@ -7,16 +6,14 @@ import {
     LayoutGrid,
     RefreshCw,
     RotateCcw,
-    Save,
+    Undo2,
     SlidersHorizontal,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
-import ReportWidgets from '@/components/analytics/report-widgets';
-import type {
-    ReportWidget,
-    WidgetHeight,
-    WidgetSpan,
-} from '@/components/analytics/report-widgets';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { ReportWidget } from '@/components/analytics/report-widgets';
+import SectionDashboard, {
+    useDashboardWidth,
+} from '@/components/analytics/section-dashboard';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -36,11 +33,8 @@ import {
     TooltipTrigger,
 } from '@/components/ui/tooltip';
 import AppLayout from '@/layouts/app-layout';
-
-type LayoutState = {
-    order: string[];
-    sizes: Record<string, { span: WidgetSpan; height: WidgetHeight }>;
-};
+import { defaultSections } from '@/lib/analytics-sections';
+import type { SectionLayout } from '@/lib/analytics-sections';
 
 type Props = {
     widgets: ReportWidget[];
@@ -49,40 +43,12 @@ type Props = {
     configuration: {
         widgets: string[];
         period_days: number;
-        layout?: LayoutState;
+        layout?: SectionLayout;
         updated_at: string | null;
         meta_connection_ids: number[];
     };
     connections: { id: number; platform: string; account_name: string }[];
 };
-
-function buildInitialLayout(
-    widgets: ReportWidget[],
-    configured?: LayoutState,
-): LayoutState {
-    const allIds = widgets.map((w) => w.id);
-    const order = configured?.order?.length
-        ? [
-              ...configured.order.filter((id) => allIds.includes(id)),
-              ...allIds.filter((id) => !configured.order.includes(id)),
-          ]
-        : allIds;
-
-    const sizes: Record<string, { span: WidgetSpan; height: WidgetHeight }> =
-        {};
-    for (const w of widgets) {
-        const saved = configured?.sizes?.[w.id];
-        sizes[w.id] = {
-            span:
-                saved?.span ??
-                w.span ??
-                (w.id === 'categories' || w.id === 'activity' ? 2 : 1),
-            height: saved?.height ?? w.height ?? 'md',
-        };
-    }
-
-    return { order, sizes };
-}
 
 export default function Analytics({
     widgets,
@@ -92,8 +58,8 @@ export default function Analytics({
     connections,
 }: Props) {
     const initialLayout = useMemo(
-        () => buildInitialLayout(widgets, configuration.layout),
-        [widgets, configuration.layout],
+        () => configuration.layout ?? defaultSections(),
+        [configuration.layout],
     );
 
     const form = useForm({
@@ -108,126 +74,108 @@ export default function Analytics({
     const [range, setRange] = useState(filters);
     const { errors } = usePage().props;
 
-    const orderedWidgets = useMemo(() => {
-        const byId = new Map(widgets.map((w) => [w.id, w]));
-        const result: ReportWidget[] = [];
-        for (const id of form.data.layout.order) {
-            const item = byId.get(id);
-            if (item) {
-                result.push(item);
-                byId.delete(id);
-            }
-        }
-        for (const rest of byId.values()) {
-            result.push(rest);
-        }
-        return result;
-    }, [widgets, form.data.layout.order]);
+    const { ref: dashboardRef } = useDashboardWidth();
+    const orderedWidgets = widgets;
+    const [savedLayout, setSavedLayout] = useState(
+        JSON.stringify(initialLayout),
+    );
+    const history = useRef<SectionLayout[]>([]);
+    const [undoCount, setUndoCount] = useState(0);
+    const [saving, setSaving] = useState(false);
+    const [saveError, setSaveError] = useState(false);
+    const layoutKey = JSON.stringify(form.data.layout);
+    const dirty = layoutKey !== savedLayout;
 
-    function handleReorder(activeId: string, overId: string) {
-        const currentOrder = form.data.layout.order;
-        const oldIndex = currentOrder.indexOf(activeId);
-        const newIndex = currentOrder.indexOf(overId);
-        if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) {
+    function changeLayout(next: SectionLayout) {
+        if (JSON.stringify(next) === layoutKey) {
             return;
         }
-        const nextOrder = arrayMove(currentOrder, oldIndex, newIndex);
-        form.setData('layout', {
-            ...form.data.layout,
-            order: nextOrder,
-        });
-    }
 
-    function handleChangeSpan(id: string, span: WidgetSpan) {
-        form.setData('layout', {
-            ...form.data.layout,
-            sizes: {
-                ...form.data.layout.sizes,
-                [id]: {
-                    ...(form.data.layout.sizes[id] ?? {
-                        span: 1,
-                        height: 'md',
-                    }),
-                    span,
-                },
-            },
-        });
+        history.current.push(structuredClone(form.data.layout));
+        history.current = history.current.slice(-30);
+        setUndoCount(history.current.length);
+        setSaveError(false);
+        form.setData('layout', next);
     }
+    function undoLayout() {
+        const previous = history.current.pop();
 
-    function handleChangeHeight(id: string, height: WidgetHeight) {
-        form.setData('layout', {
-            ...form.data.layout,
-            sizes: {
-                ...form.data.layout.sizes,
-                [id]: {
-                    ...(form.data.layout.sizes[id] ?? {
-                        span: 1,
-                        height: 'md',
-                    }),
-                    height,
-                },
-            },
-        });
-    }
-
-    function handleToggleModerator(id: string) {
-        const exists = form.data.widgets.includes(id);
-        form.setData(
-            'widgets',
-            exists
-                ? form.data.widgets.filter((k) => k !== id)
-                : [...form.data.widgets, id],
-        );
-    }
-
-    function applyPreset(preset: 'balanced' | 'wide' | 'compact') {
-        const nextSizes: Record<
-            string,
-            { span: WidgetSpan; height: WidgetHeight }
-        > = {};
-        for (const id of form.data.layout.order) {
-            if (preset === 'wide') {
-                nextSizes[id] = { span: 2, height: 'md' };
-            } else if (preset === 'compact') {
-                nextSizes[id] = { span: 1, height: 'sm' };
-            } else {
-                nextSizes[id] = {
-                    span: id === 'categories' || id === 'activity' ? 2 : 1,
-                    height: 'md',
-                };
-            }
+        if (previous) {
+            form.setData('layout', previous);
+            setUndoCount(history.current.length);
+            setSaveError(false);
         }
-        form.setData('layout', {
-            ...form.data.layout,
-            sizes: nextSizes,
-        });
     }
+    // Serialize saves: edits made during a request are sent after it finishes.
+    // Only committed gestures enter this queue; previews never write settings.
+    useEffect(() => {
+        if (!dirty || saving || saveError) {
+            return;
+        }
 
-    function resetLayout() {
-        form.setData({
-            widgets: configuration.widgets,
-            period_days: configuration.period_days,
-            layout: initialLayout,
-        });
-        setEditMode(false);
-    }
+        const timer = window.setTimeout(() => {
+            setSaving(true);
+            router.put(
+                '/admin/analytics/dashboard',
+                {
+                    widgets: configuration.widgets,
+                    period_days: configuration.period_days,
+                    layout: JSON.parse(layoutKey),
+                },
+                {
+                    preserveScroll: true,
+                    preserveState: true,
+                    onSuccess: () => {
+                        setSavedLayout(layoutKey);
+                    },
+                    onError: () => setSaveError(true),
+                    onCancel: () => setSaveError(true),
+                    onFinish: () => setSaving(false),
+                },
+            );
+        }, 400);
 
-    function saveLayout() {
-        form.put('/admin/analytics/dashboard', {
-            preserveScroll: true,
-            onSuccess: () => setEditMode(false),
-        });
-    }
+        return () => window.clearTimeout(timer);
+    }, [
+        layoutKey,
+        dirty,
+        saving,
+        saveError,
+        configuration.widgets,
+        configuration.period_days,
+    ]);
+    useEffect(() => {
+        if (!dirty && !saving) {
+            return;
+        }
 
-    function move(index: number, step: number) {
-        const next = [...form.data.widgets];
-        [next[index], next[index + step]] = [next[index + step], next[index]];
-        form.setData('widgets', next);
-    }
+        const warn = (event: BeforeUnloadEvent) => {
+            event.preventDefault();
+        };
+        window.addEventListener('beforeunload', warn);
+        const remove = router.on('before', (event) => {
+            if (
+                event.detail.visit.method === 'get' &&
+                !window.confirm(
+                    'Tata letak belum tersimpan. Tinggalkan halaman?',
+                )
+            ) {
+                event.preventDefault();
+            }
+        });
+
+        return () => {
+            window.removeEventListener('beforeunload', warn);
+            remove();
+        };
+    }, [dirty, saving]);
 
     return (
         <Dialog>
-            <div className="mx-auto w-full max-w-[1600px] space-y-5 p-4 md:p-6">
+            <div
+                ref={dashboardRef}
+                className="mx-auto w-full max-w-[1600px] space-y-5 p-4 md:p-6"
+            >
                 <Head title="Analisis" />
                 <header className="flex flex-wrap items-center justify-between gap-4">
                     <div>
@@ -248,10 +196,11 @@ export default function Analytics({
                             type="button"
                             variant={editMode ? 'default' : 'outline'}
                             className="gap-2"
+                            disabled={form.processing}
                             onClick={() => setEditMode(!editMode)}
                         >
                             <LayoutGrid className="size-4" />
-                            {editMode ? 'Selesai Atur' : 'Atur Tata Letak'}
+                            {editMode ? 'Selesai' : 'Atur Tata Letak'}
                         </Button>
                         <a
                             className="inline-flex h-9 items-center gap-2 rounded-md border bg-background px-3.5 text-sm font-medium transition hover:bg-muted"
@@ -269,100 +218,130 @@ export default function Analytics({
                     </div>
                 </header>
 
-                {editMode && (
-                    <div className="sticky top-3 z-30 flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-primary/50 bg-card/95 p-4 shadow-lg backdrop-blur-md">
+                {(editMode || dirty || saving || saveError) && (
+                    <div className="sticky top-3 z-30 flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card/95 p-3 backdrop-blur">
                         <div className="space-y-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                                <Badge className="bg-primary text-primary-foreground">
-                                    Mode Atur Tata Letak
-                                </Badge>
-                                <span className="text-xs font-medium text-muted-foreground">
-                                    Tahan & geser kartu untuk memindahkan
-                                    urutan secara langsung
-                                </span>
-                            </div>
-                            <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
-                                <span className="text-muted-foreground">
-                                    Preset cepat:
-                                </span>
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-7 text-xs"
-                                    onClick={() => applyPreset('balanced')}
-                                >
-                                    Seimbang (Default)
-                                </Button>
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-7 text-xs"
-                                    onClick={() => applyPreset('wide')}
-                                >
-                                    Semua Lebar (2 Kolom)
-                                </Button>
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-7 text-xs"
-                                    onClick={() => applyPreset('compact')}
-                                >
-                                    Ringkas (S)
-                                </Button>
-                            </div>
+                            <p className="text-sm font-medium">
+                                {editMode
+                                    ? 'Atur tata letak'
+                                    : 'Status tata letak'}
+                            </p>
+                            <p
+                                role="status"
+                                className="text-xs text-muted-foreground"
+                            >
+                                {saveError
+                                    ? 'Belum tersimpan. Perubahan tetap tersedia untuk dicoba lagi.'
+                                    : saving || dirty
+                                      ? 'Menyimpan perubahan…'
+                                      : 'Tersimpan otomatis'}
+                            </p>
                         </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                            {saveError && (
+                                <Button
+                                    size="sm"
+                                    onClick={() => setSaveError(false)}
+                                >
+                                    Coba lagi
+                                </Button>
+                            )}
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={!undoCount}
+                                onClick={undoLayout}
+                            >
+                                <Undo2 className="size-4" />
+                                Urungkan
+                            </Button>
+                            {editMode && (
+                                <>
+                                    <label className="text-xs">
+                                        Susunan
+                                        <select
+                                            aria-label="Preset tata letak"
+                                            className="ml-2 rounded border bg-background p-2"
+                                            value=""
+                                            onChange={(e) => {
+                                                const preset = e.target.value;
+                                                changeLayout({
+                                                    ...form.data.layout,
+                                                    sections:
+                                                        form.data.layout.sections.map(
+                                                            (section) => ({
+                                                                ...section,
+                                                                widgets:
+                                                                    section.widgets.map(
+                                                                        (
+                                                                            w,
+                                                                        ) => ({
+                                                                            ...w,
+                                                                            size:
+                                                                                preset ===
+                                                                                'detail'
+                                                                                    ? 'large'
+                                                                                    : preset ===
+                                                                                            'summary' &&
+                                                                                        w.id ===
+                                                                                            'overview'
+                                                                                      ? 'wide'
+                                                                                      : 'small',
+                                                                        }),
+                                                                    ),
+                                                            }),
+                                                        ),
+                                                });
+                                            }}
+                                        >
+                                            <option value="" disabled>
+                                                Pilih preset
+                                            </option>
+                                            <option value="summary">
+                                                Ringkasan
+                                            </option>
+                                            <option value="balanced">
+                                                Seimbang
+                                            </option>
+                                            <option value="detail">
+                                                Detail
+                                            </option>
+                                        </select>
+                                    </label>
+                                    <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        onClick={() =>
+                                            changeLayout(defaultSections())
+                                        }
+                                    >
+                                        <RotateCcw className="size-4" />
+                                        Default
+                                    </Button>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                )}
 
-                        <div className="flex flex-wrap items-center gap-2.5">
-                            <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                                Periode Dasbor:
-                                <select
-                                    className="h-8 rounded-md border bg-background px-2.5 text-xs text-foreground"
-                                    value={form.data.period_days}
-                                    onChange={(e) =>
-                                        form.setData(
-                                            'period_days',
-                                            Number(e.target.value),
-                                        )
-                                    }
-                                >
-                                    {[7, 14, 30, 90, 180, 365].map((n) => (
-                                        <option key={n} value={n}>
-                                            {n} hari terakhir
-                                        </option>
-                                    ))}
-                                </select>
-                            </label>
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="gap-1.5"
-                                onClick={resetLayout}
-                            >
-                                <RotateCcw className="size-3.5" />
-                                Batal
-                            </Button>
-                            <Button
-                                type="button"
-                                size="sm"
-                                className="gap-1.5"
-                                disabled={form.processing}
-                                onClick={saveLayout}
-                            >
-                                <Save className="size-3.5" />
-                                Simpan Tata Letak
-                            </Button>
-                        </div>
+                {Object.keys(form.errors).length > 0 && (
+                    <div
+                        role="alert"
+                        className="rounded-xl border border-danger-border bg-danger-bg p-4 text-sm text-danger-text"
+                    >
+                        <p className="font-medium">
+                            Pengaturan belum disimpan.
+                        </p>
+                        {Object.entries(form.errors).map(([key, message]) => (
+                            <p key={key}>{message}</p>
+                        ))}
                     </div>
                 )}
 
                 {form.recentlySuccessful && !editMode && (
                     <div
                         role="status"
-                        className="flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2.5 text-xs font-medium text-emerald-600 dark:text-emerald-400"
+                        className="flex items-center gap-2 rounded-xl border border-success-border bg-success-bg px-4 py-2.5 text-xs font-medium text-success-text"
                     >
                         <Check className="size-4" />
                         Tata letak & pengaturan dasbor berhasil disimpan.
@@ -466,15 +445,11 @@ export default function Analytics({
                         ),
                 )}
 
-                <ReportWidgets
-                    widgets={orderedWidgets}
+                <SectionDashboard
+                    widgets={widgets}
+                    layout={form.data.layout}
                     editable={editMode}
-                    moderatorWidgets={form.data.widgets}
-                    sizes={form.data.layout.sizes}
-                    onReorder={handleReorder}
-                    onChangeSpan={handleChangeSpan}
-                    onChangeHeight={handleChangeHeight}
-                    onToggleModerator={handleToggleModerator}
+                    onChange={changeLayout}
                 />
 
                 <DialogContent className="flex max-h-[90dvh] flex-col overflow-hidden p-0 sm:max-w-3xl">
@@ -569,41 +544,11 @@ export default function Analytics({
                                         ))}
                                     </select>
                                 </label>
-                                <ol className="space-y-2">
-                                    {form.data.widgets.map((key, i) => (
-                                        <li
-                                            key={key}
-                                            className="flex items-center gap-3 text-sm"
-                                        >
-                                            <span className="min-w-0 flex-1">
-                                                {i + 1}. {catalog[key]}
-                                            </span>
-                                            <Button
-                                                type="button"
-                                                variant="outline"
-                                                size="sm"
-                                                disabled={i === 0}
-                                                onClick={() => move(i, -1)}
-                                                aria-label={`Naikkan ${catalog[key]}`}
-                                            >
-                                                ↑
-                                            </Button>
-                                            <Button
-                                                type="button"
-                                                variant="outline"
-                                                size="sm"
-                                                disabled={
-                                                    i ===
-                                                    form.data.widgets.length - 1
-                                                }
-                                                onClick={() => move(i, 1)}
-                                                aria-label={`Turunkan ${catalog[key]}`}
-                                            >
-                                                ↓
-                                            </Button>
-                                        </li>
-                                    ))}
-                                </ol>
+                                <p className="text-xs text-muted-foreground">
+                                    Urutan mengikuti tata letak di halaman
+                                    Analisis. Widget yang dihapus dari tata
+                                    letak tidak muncul di dasbor moderator.
+                                </p>
                                 {Object.values(form.errors).map((error) => (
                                     <p
                                         key={error}
@@ -613,7 +558,11 @@ export default function Analytics({
                                     </p>
                                 ))}
                                 <div className="flex flex-wrap gap-3">
-                                    <Button disabled={form.processing}>
+                                    <Button
+                                        disabled={
+                                            form.processing || saving || dirty
+                                        }
+                                    >
                                         Simpan pengaturan
                                     </Button>
                                     <Button
@@ -642,14 +591,14 @@ export default function Analytics({
                                             periode yang dipilih di atas dan
                                             sumber berita.
                                         </p>
-                                        <ReportWidgets
+                                        <SectionDashboard
                                             widgets={form.data.widgets.flatMap(
                                                 (id) =>
                                                     orderedWidgets.filter(
                                                         (w) => w.id === id,
                                                     ),
                                             )}
-                                            sizes={form.data.layout.sizes}
+                                            layout={form.data.layout}
                                         />
                                         {!form.data.widgets.length && (
                                             <p>
@@ -710,8 +659,8 @@ export default function Analytics({
                                                     backgroundColor:
                                                         c.platform ===
                                                         'facebook'
-                                                            ? '#1877F2'
-                                                            : '#E1306C',
+                                                            ? 'var(--platform-facebook)'
+                                                            : 'var(--platform-instagram)',
                                                 }}
                                             />
                                             <span className="font-medium capitalize">

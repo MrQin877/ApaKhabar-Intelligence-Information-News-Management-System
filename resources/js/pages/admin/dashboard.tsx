@@ -1,13 +1,16 @@
 import { Head, Link, usePage } from '@inertiajs/react';
-import ReportWidgets from '@/components/analytics/report-widgets';
 import type { ReportWidget } from '@/components/analytics/report-widgets';
+import SectionDashboard from '@/components/analytics/section-dashboard';
 import AppLayout from '@/layouts/app-layout';
+import type { SectionLayout } from '@/lib/analytics-sections';
 import type { SharedData } from '@/types';
 export default function Dashboard({
     widgets,
     period,
+    layout,
 }: {
     widgets: ReportWidget[];
+    layout: SectionLayout;
     period: { from: string; to: string };
 }) {
     const { auth } = usePage<SharedData>().props;
@@ -35,7 +38,7 @@ export default function Dashboard({
                 )}
             </div>
             {widgets.length ? (
-                <ReportWidgets widgets={widgets} />
+                <SectionDashboard widgets={widgets} layout={layout} />
             ) : (
                 <div className="rounded-xl border border-dashed p-10 text-center text-muted-foreground">
                     Admin belum membagikan ringkasan analisis. Gunakan menu

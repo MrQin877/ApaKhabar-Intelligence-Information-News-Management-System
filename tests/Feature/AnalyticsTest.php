@@ -8,7 +8,9 @@ use App\Models\User;
 use App\Models\UserRole;
 use App\Services\Analytics\AnalyticsReport;
 use App\Services\Analytics\MetaInsights;
+use App\Services\Analytics\SectionLayout;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Queue;
@@ -71,6 +73,7 @@ test('admin can customize widget layout order, column span, and chart height', f
         ->where('widgets.0.id', 'broadcast')
         ->where('widgets.0.span', 2)
         ->where('widgets.1.id', 'age')
+        ->where('widgets.1.span', 1)
     );
 });
 test('demographics exclude officers and keep unknown groups and exact birthday boundaries', function () {
@@ -168,4 +171,86 @@ test('category periods use the reporting timezone while lifetime views stay labe
     $outside->forceFill(['created_at' => '2026-10-19 00:59:00'])->save();
     $report = app(AnalyticsReport::class)->build(['categories'], '2026-10-19', '2026-10-19');
     expect($report[0]['rows'][0]['value'])->toBe(1)->and($report[0]['rows'][0]['lifetime_views'])->toBe(10);
+});
+
+test('grid positions and dimensions persist independently from moderator visibility', function () {
+    $this->actingAs(analyticsUser())->put('/admin/analytics/dashboard', [
+        'widgets' => ['age'], 'period_days' => 30,
+        'layout' => ['grid' => [
+            'age' => ['x' => 0, 'y' => 0, 'w' => 4, 'h' => 5],
+            'categories' => ['x' => 4, 'y' => 0, 'w' => 8, 'h' => 7],
+        ]],
+    ])->assertRedirect()->assertSessionHasNoErrors();
+    $this->get('/admin/analytics')->assertInertia(fn (Assert $page) => $page
+        ->where('configuration.layout.version', 2)
+        ->where('configuration.layout.sections.0.id', 'migrated')
+        ->where('configuration.layout.sections.0.widgets.1.id', 'categories')
+        ->where('configuration.layout.sections.0.widgets.1.size', 'large'));
+    $this->actingAs(analyticsUser('moderator'))->get('/admin/dashboard')
+        ->assertInertia(fn (Assert $page) => $page->has('widgets', 1)
+            ->where('widgets.0.id', 'age')->where('widgets.0.grid.w', 4));
+});
+
+test('grid rejects invalid dimensions and positions', function ($cell) {
+    $this->actingAs(analyticsUser())->put('/admin/analytics/dashboard', [
+        'widgets' => [], 'period_days' => 30, 'layout' => ['grid' => ['age' => $cell]],
+    ])->assertSessionHasErrors();
+})->with([
+    [['x' => 0, 'y' => 0, 'w' => 3, 'h' => 4]],
+    [['x' => 8, 'y' => 0, 'w' => 6, 'h' => 4]],
+    [['x' => 0, 'y' => -1, 'w' => 6, 'h' => 4]],
+    [['x' => 0, 'y' => 0, 'w' => 6, 'h' => 101]],
+]);
+
+test('section layouts persist shared across admins without changing permissions and filter moderator payload', function () {
+    $layout = ['version' => 2, 'sections' => [
+        ['id' => 'citizens', 'title' => 'Warga', 'order' => 0, 'columns' => 2, 'widgets' => [
+            ['id' => 'age', 'size' => 'medium', 'order' => 0],
+            ['id' => 'citizenship', 'size' => 'large', 'order' => 1],
+        ]],
+        ['id' => 'private', 'title' => 'Admin', 'order' => 1, 'columns' => 1, 'widgets' => [['id' => 'meta', 'size' => 'medium', 'order' => 0]]],
+    ]];
+    $this->actingAs(analyticsUser())->put('/admin/analytics/dashboard', ['widgets' => ['age'], 'period_days' => 14, 'layout' => $layout])->assertSessionHasNoErrors();
+    expect(AnalyticsSetting::current()->layout)->toBe($layout);
+    $this->actingAs(analyticsUser())->get('/admin/analytics')->assertInertia(fn (Assert $page) => $page->where('configuration.layout', $layout)->has('widgets', 9));
+    $this->actingAs(analyticsUser('moderator'))->get('/admin/dashboard')->assertInertia(fn (Assert $page) => $page
+        ->has('widgets', 1)->where('widgets.0.id', 'age')->has('layout.sections', 1)->has('layout.sections.0.widgets', 1)
+        ->where('layout.sections.0.widgets.0.id', 'age')->missing('configuration')->missing('connections'));
+    $this->put('/admin/analytics/dashboard', ['widgets' => ['meta'], 'period_days' => 14, 'layout' => $layout])->assertForbidden();
+});
+
+test('section validation rejects duplicates unknown identities unsupported sizes and oversized sections', function () {
+    $this->actingAs(analyticsUser());
+    $section = ['id' => 'one', 'title' => '', 'order' => 0, 'columns' => 1, 'widgets' => [['id' => 'age', 'size' => 'large', 'order' => 0]]];
+    $payload = ['widgets' => [], 'period_days' => 30, 'layout' => ['version' => 2, 'sections' => [$section]]];
+    $this->put('/admin/analytics/dashboard', $payload)->assertSessionHasErrors('layout.sections.0.widgets.0.size');
+    $payload['layout']['sections'][0]['widgets'][0]['size'] = 'medium';
+    $payload['layout']['sections'][] = [...$payload['layout']['sections'][0], 'id' => 'two', 'order' => 1];
+    $this->put('/admin/analytics/dashboard', $payload)->assertSessionHasErrors('layout.sections.0.widgets.0.id');
+    $payload['layout']['sections'] = [$section];
+    $payload['layout']['sections'][0]['widgets'][0]['id'] = 'unknown';
+    $this->put('/admin/analytics/dashboard', $payload)->assertSessionHasErrors('layout.sections.0.widgets.0.id');
+    $payload['layout']['sections'] = [];
+    $this->put('/admin/analytics/dashboard', $payload)->assertSessionHasNoErrors();
+    expect(AnalyticsSetting::current()->resolvedSections()['sections'])->toBe([]);
+});
+
+test('legacy layout migration preserves identities and backs up original on first version two save', function () {
+    $old = ['order' => ['broadcast', 'age'], 'grid' => ['broadcast' => ['x' => 0, 'y' => 0, 'w' => 12, 'h' => 12]]];
+    AnalyticsSetting::current()->update(['layout' => $old, 'widgets' => ['age']]);
+    $layout = AnalyticsSetting::current()->resolvedSections();
+    expect($layout['sections'][0]['widgets'][0])->toBe(['id' => 'broadcast', 'size' => 'large', 'order' => 0]);
+    expect($layout['sections'][0]['widgets'])->toHaveCount(9);
+    expect(AnalyticsSetting::current()->layout)->toBe($old);
+    $this->actingAs(analyticsUser())->put('/admin/analytics/dashboard', ['widgets' => ['age'], 'period_days' => 30, 'layout' => $layout])->assertSessionHasNoErrors();
+    $history = DB::table('analytics_setting_changes')->get()->map(fn ($r) => json_decode($r->configuration, true));
+    expect($history->firstWhere('migration_backup', true)['layout'])->toBe($old);
+    expect(AnalyticsSetting::current()->widgets)->toBe(['age']);
+});
+
+test('loading version two drops unknown and duplicate widgets safely without restoring removed widgets', function () {
+    $layout = SectionLayout::resolve(['version' => 2, 'sections' => [
+        ['id' => 'one', 'columns' => 1, 'widgets' => [['id' => 'age', 'size' => 'large'], ['id' => 'unknown'], ['id' => 'age']]],
+    ]]);
+    expect($layout['sections'][0]['widgets'])->toBe([['id' => 'age', 'size' => 'medium', 'order' => 0]]);
 });

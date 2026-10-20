@@ -64,6 +64,7 @@ class AnalyticsReport
                     'title' => self::WIDGETS[$widget],
                     'span' => $size['span'] ?? 1,
                     'height' => $size['height'] ?? 'md',
+                    'grid' => $size['grid'] ?? null,
                     ...$data,
                 ];
             }

@@ -47,3 +47,93 @@ Apply the two `2026_10_19` migrations, rebuild frontend assets, and restart long
 
 Focused tests: `php artisan test tests/Feature/AnalyticsTest.php tests/Feature/Auth/RegistrationTest.php tests/Feature/Settings`.
 Frontend: `npm run build`.
+
+## Section dashboard (layout version 2)
+
+The shared analytics layout stores ordered sections (`id`, optional `title`,
+`columns`, `order`) and ordered widget references (`id`, `size`, `order`). Widget
+references never own analytics records or moderator permissions. Admin editing
+uses a draft; Save persists it, Cancel restores server configuration, and Reset
+only replaces the draft until saved.
+
+Sections use 1–3 logical columns. Small is 1×1, Medium 1×2, Wide 2×1, and Large
+2×2. Each widget has an allowed preset list in `analytics-sections.ts` and
+`SectionLayout.php`. A monotonic row-major first-fit scan prevents overlap and
+preserves reading order instead of filling earlier holes with later widgets.
+Rows have a 280px minimum plus 16px gaps and can grow for wrapping content.
+Changing a section to one column converts Wide to Small where supported,
+otherwise Medium; Large converts to Medium. Responsive presentation applies the
+same rule without saving it: below 1200px, at most two columns; below 900px,
+one column with editing disabled. These thresholds use the dashboard container.
+
+Charts use the existing shadcn ChartContainer/ChartTooltip components with
+Recharts. Compact cards show a limited labeled breakdown and a separate detail
+view exposes the full original report. Cards do not scroll or clip their data;
+the expanded dialog may scroll as a separate reading surface.
+
+Legacy grid layouts are converted on read into a `migrated` section preserving
+widget identity and saved order. Width/height map to compatible presets. The
+original stored layout is unchanged until the first version-2 save, when it is
+also retained as a migration backup in `analytics_setting_changes`. Missing
+layouts receive default sections. Version-2 layouts preserve intentional widget
+removals; unknown IDs and duplicates are discarded on load and rejected on save.
+Moderator responses filter both report data and section widget references on the
+server, remove empty sections, and reindex the remaining items.
+
+Validation: analytics feature tests cover shared persistence, permissions,
+legacy conversion/backups and malformed layouts; JS tests exercise all preset
+footprints across column counts, deterministic packing, moves and draft isolation.
+Interactive browser testing was discontinued at the user's request; final chart
+rendering and drag interactions have not been visually verified.
+
+### Widget visualization mapping
+
+The section dashboard and expanded view share `widget-visualizations.tsx`:
+Overview uses four KPI cards; publication categories use horizontal bars and a
+separate daily area chart; age uses all eight ordered vertical bars; citizenship
+uses a donut plus gender stacks; ethnicity uses wrapped labels and horizontal
+bars; activity uses `rows` for its area chart and backend weekday/hour cells for
+the heatmap; broadcasts use three KPIs and a recorded-notification read rate;
+Meta uses separate platform cards and separate series per metric; engagement
+uses the backend empty-state note. Charts reuse shadcn ChartContainer, tooltips,
+legends, Card and Progress. Large breakdowns remain available in the expanded
+view. Heatmaps explicitly allow horizontal scrolling on narrow containers.
+
+Date-only chart labels are kept as strings to avoid timezone shifts. Heatmap
+hours are already bucketed by the server's analytics timezone (shown in its
+note). Meta sync timestamps use the browser's local timezone because the page
+props do not provide a user timezone preference. No observations are generated
+for missing dates. Single observations render as points. Animation is disabled
+for chart series, including for users who prefer reduced motion.
+
+### Direct layout editing (current)
+
+All nine widgets now support Compact (1×1), Wide (2×1), Tall (1×2), and
+Large (2×2). Rows are exactly 260px with 16px gaps; two-row cards are 536px.
+The same maximum applies to every widget. Responsive rendering limits width
+without changing the stored desktop layout. Existing sections remain intact.
+
+In edit mode, drag a title to reorder or move between sections. Drag the corner
+to preview a snapped size, then release to apply it; arrow keys on the corner
+resize without a pointer. A cancelled gesture does not modify the layout.
+Adding a widget takes one selection, and removal has Undo. Layout changes
+save automatically through a serialized queue after completed gestures, with
+visible pending/error states, Retry, and navigation protection for unsaved work.
+Moderator visibility and period remain explicit settings, separate from layout
+editing; the dashboard follows section order rather than a second order control.
+
+Bounded cards preserve the existing chart families: age donut, citizenship
+gender stacks, ethnicity horizontal bars, publication trend chart, activity area
+chart/heatmap, and separate Meta time series. Compact cards omit secondary
+breakdowns with a Detail action; expanded reports retain full rows and notes.
+No prior-period comparisons or other fabricated metrics are introduced.
+
+Bounded chart contents now observe their actual available width and height.
+At 560px content width, Meta platforms and publication/activity panels sit
+side by side; narrower cards stack them. Each social platform receives an
+explicit height budget, with miniature axes-free charts in compact stacks.
+Tooltips retain observations; full axes, sync details and all metrics remain
+in Detail. Age legends, KPI columns, distribution row counts and plot heights
+also adapt to the measured content area. The compact activity heatmap retains
+all 24 hourly cells and seven days, showing fewer hour labels rather than
+combining or dropping observations.
