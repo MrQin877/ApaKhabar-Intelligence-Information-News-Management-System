@@ -204,3 +204,14 @@ test('report categories reach moderation and duplicate reports preserve the orig
         ->and(DB::table('comment_reports')->value('reason'))->toBe('Spam: Pesan berulang');
     $this->getJson($this->url)->assertJsonPath('data.comments_list.0.reported_by_user', true);
 });
+
+test('public comments retain deep reply targets and expose an avatar fallback', function () {
+    $user = User::factory()->create();
+    $root = Comment::create(['newsID' => $this->article->getKey(), 'userID' => $user->getKey(), 'content' => 'Root', 'status' => 'published']);
+    $reply = Comment::create(['newsID' => $this->article->getKey(), 'userID' => $user->getKey(), 'parentID' => $root->getKey(), 'content' => 'Reply', 'status' => 'published']);
+    $nested = Comment::create(['newsID' => $this->article->getKey(), 'userID' => $user->getKey(), 'parentID' => $reply->getKey(), 'content' => 'Nested reply', 'status' => 'published']);
+    $comments = collect($this->getJson($this->url)->assertOk()->json('data.comments_list'))->keyBy('id');
+    expect($comments[(string) $nested->getKey()]['parent_id'])->toBe((string) $reply->getKey())
+        ->and($comments[(string) $root->getKey()])->toHaveKey('avatar', null)
+        ->and($comments[(string) $reply->getKey()]['author'])->toBe($user->name);
+});

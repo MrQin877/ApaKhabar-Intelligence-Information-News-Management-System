@@ -68,11 +68,9 @@ function SidebarProvider({
   const [openMobile, setOpenMobile] = React.useState(false)
 
   React.useEffect(() => {
-    const breakpoint = window.matchMedia('(max-width: 767px)')
-    const closeDrawer = () => setOpenMobile(false)
-    breakpoint.addEventListener('change', closeDrawer)
-    return () => breakpoint.removeEventListener('change', closeDrawer)
-  }, [])
+    // Use the same responsive state as rendering and the toggle, not a second media query.
+    setOpenMobile(false)
+  }, [isMobile])
 
   // This is the internal state of the sidebar.
   // We use openProp and setOpenProp for control from outside the component.

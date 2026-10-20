@@ -2,6 +2,7 @@ import { Link, router } from '@inertiajs/react';
 import { Eye, Flag, Heart, Share2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import AdminCommentFeedback from '@/components/admin-comment-feedback';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -11,11 +12,16 @@ import {
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { csrfPost } from '@/lib/csrf-request';
-import { copyArticleLink, visibleReadingClock } from '@/lib/news-engagement';
+import {
+    commentThreads,
+    copyArticleLink,
+    visibleReadingClock,
+} from '@/lib/news-engagement';
 
 export interface PublicComment {
     id: string;
     author: string;
+    avatar?: string | null;
     parent_id?: string | null;
     content: string;
     date: string;
@@ -281,13 +287,15 @@ export default function NewsEngagement({
                         onSuccess: (page) => {
                             const updated = page.props
                                 .comments as PublicComment[];
-                            const count = updated.filter(
-                                (comment) => comment.parent_id === parentId,
-                            ).length;
+                            const threads = commentThreads(updated);
+                            const rootId =
+                                threads.rootIds.get(parentId) ?? parentId;
+                            const count =
+                                threads.replies.get(rootId)?.length ?? 0;
                             // Reveal the newly appended reply, including when older replies were collapsed.
                             setExpanded((values) => ({
                                 ...values,
-                                [parentId]: Math.max(3, count),
+                                [rootId]: Math.max(3, count),
                             }));
                         },
                         onError: () =>
@@ -367,15 +375,14 @@ export default function NewsEngagement({
         'rounded-lg border border-green-600 bg-green-600 px-4 py-2 text-sm text-white enabled:hover:border-green-700 enabled:hover:bg-green-700 disabled:cursor-not-allowed disabled:border-gray-300 disabled:bg-gray-300 disabled:text-gray-500 dark:disabled:border-gray-700 dark:disabled:bg-gray-700 dark:disabled:text-gray-400';
     const action =
         'inline-flex items-center gap-1 rounded text-xs text-muted-foreground no-underline transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50';
-    const children = new Map<string, PublicComment[]>();
+    const threads = commentThreads(comments);
 
-    for (const comment of comments) {
-        const parent = comment.parent_id ?? '';
-        children.set(parent, [...(children.get(parent) ?? []), comment]);
-    }
-
-    function renderComment(comment: PublicComment) {
-        const replies = children.get(comment.id) ?? [];
+    function renderComment(comment: PublicComment, isReply = false) {
+        const replies = isReply ? [] : (threads.replies.get(comment.id) ?? []);
+        const recipient =
+            isReply && comment.parent_id
+                ? threads.byId.get(comment.parent_id)
+                : undefined;
         const visible = expanded[comment.id] ?? 0;
         const reaction = commentLikes[comment.id] ?? {
             liked: comment.liked_by_user,
@@ -391,16 +398,33 @@ export default function NewsEngagement({
             >
                 <div className="group/comment space-y-2">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-                        <strong className="break-words">
+                        <Avatar className="size-8 shrink-0">
+                            <AvatarImage
+                                src={comment.avatar ?? undefined}
+                                alt={comment.author}
+                            />
+                            <AvatarFallback>
+                                {Array.from(
+                                    comment.author.trim(),
+                                )[0]?.toLocaleUpperCase('id') || 'T'}
+                            </AvatarFallback>
+                        </Avatar>
+                        <strong className="min-w-0 break-words">
                             {comment.author}
                         </strong>
                         <button
                             type="button"
-                            disabled={isReported}
+                            disabled={!canCorrectModeration && isReported}
                             className={`${action} focus-visible:opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-focus-within/comment:opacity-100 [@media(hover:hover)]:group-hover/comment:opacity-100`}
                             onClick={() => {
                                 if (!authenticated) {
                                     setPrompt(true);
+
+                                    return;
+                                }
+
+                                if (canCorrectModeration) {
+                                    setModerationCommentId(comment.id);
 
                                     return;
                                 }
@@ -412,24 +436,19 @@ export default function NewsEngagement({
                             }}
                         >
                             <Flag size={13} aria-hidden="true" />
-                            {isReported ? 'Dilaporkan' : 'Laporkan'}
+                            {canCorrectModeration
+                                ? 'Tandai Admin'
+                                : isReported
+                                  ? 'Dilaporkan'
+                                  : 'Laporkan'}
                         </button>
-                        {canCorrectModeration && (
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon-xs"
-                                aria-label="Tandai komentar tidak pantas"
-                                title="Tandai komentar tidak pantas"
-                                onClick={() =>
-                                    setModerationCommentId(comment.id)
-                                }
-                            >
-                                <Flag className="size-3.5" />
-                            </Button>
-                        )}
                     </div>
                     <p className="text-sm break-words whitespace-pre-wrap">
+                        {recipient && (
+                            <span className="font-medium">
+                                @{recipient.author}:{' '}
+                            </span>
+                        )}
                         {comment.content}
                     </p>
                     <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -567,7 +586,9 @@ export default function NewsEngagement({
                             hidden={!visible}
                             className="space-y-3 border-l border-border pl-2 sm:pl-4"
                         >
-                            {replies.slice(0, visible).map(renderComment)}
+                            {replies
+                                .slice(0, visible)
+                                .map((reply) => renderComment(reply, true))}
                             {visible > 0 && visible < replies.length && (
                                 <button
                                     type="button"
@@ -687,7 +708,7 @@ export default function NewsEngagement({
                     Belum ada komentar. Jadilah yang pertama!
                 </p>
             )}
-            {(children.get('') ?? []).map(renderComment)}
+            {threads.roots.map((comment) => renderComment(comment))}
             <Dialog open={prompt} onOpenChange={setPrompt}>
                 <DialogContent>
                     <DialogTitle>Masuk diperlukan</DialogTitle>
@@ -784,6 +805,7 @@ export default function NewsEngagement({
                             </Button>
                             <Button
                                 type="submit"
+                                className={primaryButton}
                                 disabled={busy || !reportCategory}
                             >
                                 {busy ? 'Mengirim...' : 'Kirim Laporan'}

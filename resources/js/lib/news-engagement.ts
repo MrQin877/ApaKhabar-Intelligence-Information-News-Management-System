@@ -45,3 +45,39 @@ export async function copyArticleLink(
         return `Tidak dapat menyalin otomatis. Salin tautan ini: ${url}`;
     }
 }
+
+/** Group descendants under their original comment without changing reply targets. */
+export function commentThreads<
+    T extends { id: string; parent_id?: string | null },
+>(comments: T[]) {
+    const byId = new Map(comments.map((comment) => [comment.id, comment]));
+    const roots: T[] = [];
+    const replies = new Map<string, T[]>();
+    const rootIds = new Map<string, string>();
+
+    for (const comment of comments) {
+        let root = comment;
+        const seen = new Set([root.id]);
+
+        while (root.parent_id && byId.has(root.parent_id)) {
+            const parent = byId.get(root.parent_id)!;
+
+            if (seen.has(parent.id)) {
+                break;
+            }
+
+            seen.add(parent.id);
+            root = parent;
+        }
+
+        rootIds.set(comment.id, root.id);
+
+        if (root.id === comment.id) {
+            roots.push(comment);
+        } else {
+            replies.set(root.id, [...(replies.get(root.id) ?? []), comment]);
+        }
+    }
+
+    return { roots, replies, rootIds, byId };
+}

@@ -412,7 +412,7 @@ export default function AdminCommentFeedback({
                         </Button>
                         <Button
                             type="button"
-                            variant={flagging ? 'destructive' : 'default'}
+                            className="border border-green-600 bg-green-600 text-white enabled:hover:border-green-700 enabled:hover:bg-green-700 disabled:cursor-not-allowed disabled:border-gray-300 disabled:bg-gray-300 disabled:text-gray-500 dark:disabled:border-gray-700 dark:disabled:bg-gray-700 dark:disabled:text-gray-400"
                             disabled={busy || !allowed || !category}
                             onClick={() => void submit()}
                         >

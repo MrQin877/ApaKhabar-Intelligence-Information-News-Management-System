@@ -67,6 +67,7 @@ class NewsService
             'id' => (string) $comment->getKey(), 'content' => $comment->content,
             'author' => $comment->author?->name ?? $comment->guest_name ?? 'Tamu',
             'user' => $comment->author?->name ?? $comment->guest_name ?? 'Tamu',
+            'avatar' => $comment->author?->avatar,
             'parent_id' => $comment->parentID ? (string) $comment->parentID : null,
             'date' => $comment->created_at?->locale('id')->diffForHumans(),
             'likes_count' => $comment->likes_count,

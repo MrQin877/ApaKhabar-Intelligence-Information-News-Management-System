@@ -164,7 +164,7 @@ export function NavMain({ items = [] }: { items: NavItem[] }) {
                                         <span
                                             role="status"
                                             aria-label="Komentar menunggu peninjauan"
-                                            className="absolute top-1.5 right-1.5 size-2 rounded-full bg-destructive"
+                                            className="absolute top-1/2 right-1.5 size-2 -translate-y-1/2 rounded-full bg-destructive"
                                         />
                                     )}
                                 </Link>
