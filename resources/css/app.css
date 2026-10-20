@@ -738,3 +738,26 @@
 @container (min-width: 700px) {
     .bounded-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
+
+/* Native corner grip: transparent hit target, with only diagonal ridges visible. */
+.analytics-resize-grip { cursor: nwse-resize; }
+.analytics-resize-ridges {
+    position: absolute;
+    right: 3px;
+    bottom: 3px;
+    width: 13px;
+    height: 13px;
+    opacity: 0.8;
+    background: repeating-linear-gradient(135deg, transparent 0 3px, currentColor 3px 4px, transparent 4px 6px);
+    clip-path: polygon(100% 0, 100% 100%, 0 100%);
+}
+
+/* Analytics-local palette; no changes to other product surfaces. */
+.analytics-redesign {
+    --chart-1: #16a34a;
+    --chart-2: #0d9488;
+    --chart-3: #f59e0b;
+    --chart-4: #8b5cf6;
+    --chart-5: #eb1414;
+    --primary: #15803d;
+}

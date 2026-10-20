@@ -19,11 +19,10 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import {
     GripVertical,
-    MoveDiagonal2,
     Plus,
     X,
     Settings2,
-    Maximize2,
+    CircleHelp,
     ArrowUp,
     ArrowDown,
 } from 'lucide-react';
@@ -38,6 +37,12 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipProvider,
+    TooltipTrigger,
+} from '@/components/ui/tooltip';
 import {
     defaultSections,
     footprints,
@@ -92,7 +97,6 @@ function Tile({
     style,
     onResize,
     onRemove,
-    onDetail,
     onMove,
 }: {
     widget: ReportWidget;
@@ -103,7 +107,6 @@ function Tile({
     style: CSSProperties;
     onResize: (size: WidgetSize) => void;
     onRemove: () => void;
-    onDetail: () => void;
     onMove: (step: number) => void;
 }) {
     const {
@@ -134,7 +137,7 @@ function Tile({
                 setNodeRef(el);
             }}
             data-layout-widget={widget.id}
-            className={`section-widget relative flex min-w-0 flex-col rounded-xl border bg-card ${isDragging ? 'z-20 opacity-50 ring-2 ring-primary' : ''}`}
+            className={`section-widget analytics-redesign relative flex min-w-0 flex-col rounded-xl border border-neutral-200 bg-card dark:border-neutral-800 ${isDragging ? 'z-20 opacity-50 ring-2 ring-primary' : ''}`}
             style={{
                 ...style,
                 transform: CSS.Translate.toString(transform),
@@ -158,6 +161,22 @@ function Tile({
                         {widget.title}
                     </h3>
                 )}
+                <TooltipProvider>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <button
+                                type="button"
+                                aria-label={`Definisi ${widget.title}`}
+                                className="rounded p-1.5 text-muted-foreground hover:text-foreground"
+                            >
+                                <CircleHelp className="size-4" />
+                            </button>
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-xs text-xs">
+                            {widget.note}
+                        </TooltipContent>
+                    </Tooltip>
+                </TooltipProvider>
                 {editable && (
                     <button
                         type="button"
@@ -172,7 +191,7 @@ function Tile({
             <div className="min-h-0 flex-1 px-3 pt-2">
                 <AnalyticsWidgetRenderer widget={widget} size={size} bounded />
             </div>
-            <footer className="flex h-9 shrink-0 items-center gap-1 px-3 text-xs text-muted-foreground">
+            <footer className="flex h-6 shrink-0 items-center gap-1 pr-9 pl-3 text-xs text-muted-foreground">
                 <span className="mr-auto">{labels[size]}</span>
                 {editable && columns === 1 && (
                     <>
@@ -194,19 +213,10 @@ function Tile({
                         </button>
                     </>
                 )}
-                <button
-                    type="button"
-                    onClick={onDetail}
-                    className="flex items-center gap-1 rounded p-1 hover:bg-muted"
-                    aria-label={`Lihat detail ${widget.title}`}
-                >
-                    <Maximize2 className="size-3" />
-                    Detail
-                </button>
                 {editable && (
                     <button
                         type="button"
-                        className="touch-none rounded bg-primary/10 p-1.5 text-primary"
+                        className="analytics-resize-grip absolute right-1 bottom-1 size-6 touch-none border-0 bg-transparent p-0 text-neutral-400 hover:text-emerald-500 focus-visible:text-emerald-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
                         style={{ cursor: 'nwse-resize' }}
                         aria-label={`Ubah ukuran ${widget.title}. Tarik sudut atau gunakan tombol panah.`}
                         onPointerDown={(e) => {
@@ -228,6 +238,7 @@ function Tile({
                                 next: size,
                             };
                             setResizeColumnWidth(gesture.current.width);
+                            setNotice(labels[size]);
                             setResizing(size);
                         }}
                         onPointerMove={(e) => {
@@ -318,20 +329,23 @@ function Tile({
                             );
                         }}
                     >
-                        <MoveDiagonal2 className="size-4" />
+                        <span
+                            aria-hidden="true"
+                            className="analytics-resize-ridges"
+                        />
                     </button>
                 )}
             </footer>
             {editable && resizing && (
                 <div
                     aria-hidden="true"
-                    className="pointer-events-none absolute top-0 left-0 z-30 rounded-xl border-2 border-primary bg-primary/10"
+                    className="pointer-events-none absolute -top-px -left-px z-30 rounded-xl border-2 border-dashed border-emerald-500/60 bg-emerald-500/[0.03]"
                     style={{
                         width: pw * resizeColumnWidth + (pw - 1) * GRID_GAP,
                         height: ph * ROW_HEIGHT + (ph - 1) * GRID_GAP,
                     }}
                 >
-                    <span className="rounded bg-primary px-2 py-1 text-xs text-primary-foreground">
+                    <span className="absolute right-2 bottom-2 rounded border bg-card px-2 py-0.5 text-xs text-muted-foreground">
                         {notice || labels[resizing]}
                     </span>
                 </div>
@@ -369,7 +383,6 @@ export default function SectionDashboard({
     onChange?: (layout: SectionLayout) => void;
 }) {
     const { ref, width } = useDashboardWidth();
-    const [detail, setDetail] = useState<ReportWidget | null>(null);
     const [adding, setAdding] = useState<string | null>(null);
     const [active, setActive] = useState<string | null>(null);
     const [manage, setManage] = useState<DashboardSection | null>(null);
@@ -568,13 +581,6 @@ export default function SectionDashboard({
                                                         ),
                                                 })
                                             }
-                                            onDetail={() =>
-                                                setDetail(
-                                                    widgets.find(
-                                                        (w) => w.id === cell.id,
-                                                    )!,
-                                                )
-                                            }
                                             onMove={(step) => {
                                                 const index =
                                                     section.widgets.findIndex(
@@ -626,7 +632,7 @@ export default function SectionDashboard({
                 })}
                 <DragOverlay>
                     {active ? (
-                        <div className="rounded-xl border bg-card p-4 text-sm shadow-lg">
+                        <div className="rounded-xl border border-neutral-200 bg-card p-4 text-sm shadow-lg dark:border-neutral-800">
                             {widgets.find((w) => w.id === active)?.title}
                         </div>
                     ) : null}
@@ -784,28 +790,6 @@ export default function SectionDashboard({
                                 Hapus bagian kosong
                             </Button>
                         </>
-                    )}
-                </DialogContent>
-            </Dialog>
-            <Dialog
-                open={!!detail}
-                onOpenChange={(open) => {
-                    if (!open) {
-                        setDetail(null);
-                    }
-                }}
-            >
-                <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-4xl">
-                    <DialogHeader>
-                        <DialogTitle>{detail?.title}</DialogTitle>
-                        <DialogDescription>{detail?.note}</DialogDescription>
-                    </DialogHeader>
-                    {detail && (
-                        <AnalyticsWidgetRenderer
-                            widget={detail}
-                            size="large"
-                            expanded
-                        />
                     )}
                 </DialogContent>
             </Dialog>

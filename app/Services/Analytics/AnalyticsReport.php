@@ -43,7 +43,10 @@ class AnalyticsReport
                     ['label' => 'Pendaftaran dalam periode', 'value' => $villagers()->whereBetween('created_at', [$recordStart, $recordEnd])->count()],
                     ['label' => 'Warga aktif dalam periode', 'value' => $activity()->distinct()->count('user_id')],
                     ['label' => 'Profil lengkap (lahir & kewarganegaraan)', 'value' => $villagers()->whereNotNull('date_of_birth')->whereNotNull('citizenship')->count()],
-                ], 'note' => 'Populasi akun terdaftar, bukan sensus penduduk. Profil dihitung saat ini.'],
+                ], 'registration_previous' => $villagers()->whereBetween('created_at', [
+                    CarbonImmutable::parse($from, $zone)->subDays((int) CarbonImmutable::parse($from, $zone)->diffInDays(CarbonImmutable::parse($to, $zone)) + 1)->timezone(config('app.timezone')),
+                    $recordStart->subSecond(),
+                ])->count(), 'note' => 'Populasi akun terdaftar, bukan sensus penduduk. Profil dihitung saat ini. Perbandingan pendaftaran memakai periode sebelumnya dengan jumlah hari yang sama.'],
                 'categories' => $this->categories($source, $recordStart, $recordEnd),
                 'age' => $this->ages($villagers()->get(['date_of_birth'])),
                 'citizenship' => $this->citizenship($villagers()),

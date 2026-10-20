@@ -52,8 +52,8 @@ const CHART_PALETTE = [
     'var(--chart-1)',
     'var(--chart-2)',
     'var(--chart-3)',
-    'var(--chart-5)',
     'var(--chart-4)',
+    'var(--chart-5)',
     'var(--info-400)',
     'var(--violet-500)',
     'var(--greyscale-500)',
@@ -204,7 +204,8 @@ export function TimeChart({
     return (
         <ChartContainer
             config={chartConfig}
-            className="analytics-plot aspect-auto w-full min-w-0"
+            className="analytics-plot aspect-auto w-full min-w-0 shrink-0"
+            initialDimension={{ width: 320, height }}
             style={{ height }}
         >
             {area ? (
@@ -946,7 +947,13 @@ function Heatmap({
 
     return (
         <div className={compact ? 'space-y-1' : 'space-y-2.5 border-t pt-4'}>
-            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+            <div
+                className={
+                    compact
+                        ? 'hidden'
+                        : 'flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground'
+                }
+            >
                 <span className="font-medium text-foreground">
                     {compact
                         ? 'Warga unik · Hari / jam'
@@ -1197,6 +1204,118 @@ function ResponsiveWidget({
     );
 }
 
+function SummaryChip({ children }: { children: React.ReactNode }) {
+    return (
+        <span className="inline-flex min-w-0 items-center gap-1 rounded-md bg-primary/5 px-2 py-1 text-[11px] leading-tight text-foreground">
+            {children}
+        </span>
+    );
+}
+
+/** Keep long distributions inside the card; more rows fit as its height grows. */
+function InlineBreakdown({
+    rows,
+    total,
+    limit,
+    progress = true,
+}: {
+    rows: ReportRow[];
+    total: number;
+    limit: number;
+    progress?: boolean;
+}) {
+    const [page, setPage] = useState(0);
+    const pages = Math.max(1, Math.ceil(rows.length / limit));
+    const current = Math.min(page, pages - 1);
+    const shown = rows.slice(current * limit, (current + 1) * limit);
+
+    return (
+        <div className="min-w-0 space-y-2">
+            <div className="grid gap-2">
+                {shown.map((r, i) => {
+                    const percent = total ? (r.value / total) * 100 : 0;
+
+                    return (
+                        <div key={r.label} className="min-w-0 space-y-1">
+                            <div className="flex items-center gap-1.5 text-[11px]">
+                                <span
+                                    className="size-2 shrink-0 rounded-sm"
+                                    style={{
+                                        background:
+                                            CHART_PALETTE[
+                                                (current * limit + i) %
+                                                    CHART_PALETTE.length
+                                            ],
+                                    }}
+                                />
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <button
+                                            type="button"
+                                            className="min-w-0 truncate text-left"
+                                        >
+                                            {r.label}
+                                        </button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                        {r.label}: {count(r.value)} ·{' '}
+                                        {percent.toFixed(1)}%
+                                    </TooltipContent>
+                                </Tooltip>
+                                <span className="ml-auto shrink-0 tabular-nums">
+                                    {count(r.value)} · {percent.toFixed(1)}%
+                                </span>
+                            </div>
+                            {progress && (
+                                <div className="h-1.5 rounded-full bg-muted">
+                                    <div
+                                        className="h-full rounded-full"
+                                        style={{
+                                            width: `${percent}%`,
+                                            background:
+                                                CHART_PALETTE[
+                                                    (current * limit + i) %
+                                                        CHART_PALETTE.length
+                                                ],
+                                        }}
+                                    />
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
+            </div>
+            {pages > 1 && (
+                <div className="flex items-center justify-between gap-1 text-[11px] text-muted-foreground">
+                    <button
+                        type="button"
+                        aria-label="Kelompok sebelumnya"
+                        disabled={!current}
+                        onClick={() => setPage(current - 1)}
+                        className="rounded border px-2 py-0.5 disabled:opacity-40"
+                    >
+                        ←
+                    </button>
+                    <span>
+                        {current * limit + 1}–
+                        {Math.min((current + 1) * limit, rows.length)} dari{' '}
+                        {rows.length}
+                    </span>
+                    <button
+                        type="button"
+                        aria-label="Kelompok berikutnya"
+                        disabled={current === pages - 1}
+                        onClick={() => setPage(current + 1)}
+                        className="rounded border px-2 py-0.5 disabled:opacity-40"
+                    >
+                        →
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+}
+
 function BoundedWidget({
     widget,
     box,
@@ -1205,459 +1324,65 @@ function BoundedWidget({
     size: WidgetSize;
     box: { width: number; height: number };
 }) {
-    const tall = box.height > 300;
-    const wide = box.width >= 560;
-    const split = wide;
-    const scope = ['age', 'citizenship', 'ethnicity'].includes(widget.id)
-        ? 'Profil warga saat ini'
-        : 'Periode terpilih';
-    const rows = widget.rows;
-    const total = rows.reduce((n, r) => n + r.value, 0);
-    const plotHeight = Math.max(95, box.height - 46);
-    const chart = {
-        value: { label: 'Jumlah', color: 'var(--chart-1)' },
-    } satisfies ChartConfig;
-    const ordered =
-        widget.id === 'ethnicity'
-            ? [...rows].sort((a, b) => b.value - a.value)
-            : rows;
-    const shown = ordered.slice(
-        0,
-        Math.max(3, Math.floor((plotHeight - 30) / 32)),
-    );
+    const tall = box.height > 300,
+        wide = box.width >= 560;
+    const rows = widget.rows,
+        total = rows.reduce((sum, r) => sum + r.value, 0);
+    const percent = (value: number, denominator = total) =>
+        denominator ? ((value / denominator) * 100).toFixed(1) : '0.0';
+    const [rankPage, setRankPage] = useState(0);
 
     if (widget.id === 'overview') {
+        const icons = [Users, ArrowUpRight, Activity, Clock3];
+
         return (
             <div
-                className="bounded-kpis grid h-full content-start gap-x-3 gap-y-2"
+                className="grid h-full content-start gap-2"
                 style={{
                     gridTemplateColumns: `repeat(${wide ? 4 : 2},minmax(0,1fr))`,
                 }}
             >
-                {rows.map((r, i) => (
-                    <div key={r.label} className="min-h-0 min-w-0">
-                        <p
-                            className="truncate text-[11px] text-muted-foreground"
-                            title={r.label}
-                        >
-                            {[
-                                'Warga terdaftar',
-                                'Pendaftaran baru',
-                                'Warga aktif',
-                                'Profil lengkap',
-                            ][i] ?? r.label}
-                        </p>
-                        <p className="text-xl font-semibold tabular-nums">
-                            {count(r.value)}
-                        </p>
-                        <p className="truncate text-[10px] text-muted-foreground">
-                            {i === 0
-                                ? 'Profil saat ini'
-                                : i === 3
-                                  ? `${rows[0]?.value ? Math.round((r.value / rows[0].value) * 100) : 0}% · Lahir & kewarganegaraan`
-                                  : 'Dalam periode terpilih'}
-                        </p>
-                    </div>
-                ))}
-            </div>
-        );
-    }
-
-    if (widget.id === 'engagement') {
-        return (
-            <div className="flex h-full items-start gap-3 py-3">
-                <Share2 className="size-5 shrink-0 text-muted-foreground" />
-                <div>
-                    <p className="text-sm font-medium">Segera hadir</p>
-                    <p className="text-xs text-muted-foreground">
-                        Interaksi dan komentar warga belum tersedia.
-                    </p>
-                </div>
-            </div>
-        );
-    }
-
-    if (widget.id === 'age') {
-        const config = Object.fromEntries(
-            rows.map((r, i) => [
-                r.label,
-                {
-                    label: r.label,
-                    color: CHART_PALETTE[i % CHART_PALETTE.length],
-                },
-            ]),
-        ) satisfies ChartConfig;
-
-        return (
-            <div className="space-y-1">
-                <p className="text-[11px] text-muted-foreground">
-                    {scope} · {count(total)} warga
-                </p>
-                <div
-                    className={`flex ${tall && !wide ? 'flex-col' : ''} items-center gap-2`}
-                >
-                    <ChartContainer
-                        config={config}
-                        className="aspect-square shrink-0"
-                        style={{
-                            width: tall
-                                ? Math.min(200, box.width * (wide ? 0.4 : 0.7))
-                                : Math.min(120, box.width * 0.4),
-                            height: tall
-                                ? Math.min(200, box.width * (wide ? 0.4 : 0.7))
-                                : Math.min(120, box.width * 0.4),
-                        }}
-                    >
-                        <PieChart accessibilityLayer>
-                            <ChartTooltip
-                                content={
-                                    <ChartTooltipContent nameKey="label" />
-                                }
-                            />
-                            <Pie
-                                data={
-                                    total
-                                        ? rows
-                                        : [
-                                              {
-                                                  label: 'Belum ada data',
-                                                  value: 1,
-                                              },
-                                          ]
-                                }
-                                dataKey="value"
-                                nameKey="label"
-                                innerRadius="62%"
-                                outerRadius="88%"
-                                isAnimationActive={false}
-                                stroke="none"
-                            >
-                                {(total ? rows : [{ label: 'empty' }]).map(
-                                    (r, i) => (
-                                        <Cell
-                                            key={r.label}
-                                            fill={
-                                                total
-                                                    ? CHART_PALETTE[
-                                                          i %
-                                                              CHART_PALETTE.length
-                                                      ]
-                                                    : 'var(--muted)'
-                                            }
-                                        />
-                                    ),
-                                )}
-                            </Pie>
-                        </PieChart>
-                    </ChartContainer>
-                    <div
-                        className="grid min-w-0 flex-1 gap-1 self-stretch text-[11px]"
-                        style={{
-                            gridTemplateColumns:
-                                wide && !tall
-                                    ? 'repeat(2,minmax(0,1fr))'
-                                    : undefined,
-                        }}
-                    >
-                        {rows.slice(0, tall || wide ? 8 : 4).map((r, i) => (
-                            <div
-                                key={r.label}
-                                className="flex min-w-0 items-center gap-1"
-                            >
-                                <span
-                                    className="size-2 shrink-0 rounded-sm"
-                                    style={{
-                                        background:
-                                            CHART_PALETTE[
-                                                i % CHART_PALETTE.length
-                                            ],
-                                    }}
-                                />
-                                <span className="truncate">{r.label}</span>
-                                <span className="ml-auto shrink-0 tabular-nums">
-                                    {count(r.value)} ·{' '}
-                                    {total
-                                        ? Math.round((r.value / total) * 100)
-                                        : 0}
-                                    %
-                                </span>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-                {!tall && !wide && rows.length > 4 && (
-                    <p className="text-[11px] text-muted-foreground">
-                        +{rows.length - 4} kelompok di Detail · Semua kelompok
-                        dalam donut
-                    </p>
-                )}
-            </div>
-        );
-    }
-
-    if (widget.id === 'citizenship' || widget.id === 'ethnicity') {
-        const stacked = widget.id === 'citizenship';
-        const config = stacked
-            ? {
-                  male: { label: 'Laki-laki', color: 'var(--chart-1)' },
-                  female: { label: 'Perempuan', color: 'var(--chart-2)' },
-                  unspecified: {
-                      label: 'Tidak disebutkan',
-                      color: 'var(--chart-3)',
-                  },
-              }
-            : chart;
-
-        return (
-            <div>
-                <p className="truncate text-[11px] text-muted-foreground">
-                    {scope} · {count(total)} warga
-                </p>
-                <ChartContainer
-                    config={config}
-                    className="aspect-auto w-full"
-                    style={{ height: plotHeight }}
-                >
-                    <BarChart
-                        data={stacked ? rows : shown}
-                        layout="vertical"
-                        accessibilityLayer
-                        margin={{ left: 0, right: 8, top: 8, bottom: 0 }}
-                    >
-                        <CartesianGrid
-                            horizontal={false}
-                            strokeDasharray="3 3"
-                        />
-                        <XAxis
-                            type="number"
-                            allowDecimals={false}
-                            tickLine={false}
-                            axisLine={false}
-                            tick={{ fontSize: 10 }}
-                        />
-                        <YAxis
-                            type="category"
-                            dataKey="label"
-                            width={75}
-                            tickLine={false}
-                            axisLine={false}
-                            tick={{ fontSize: 10 }}
-                            tickFormatter={(v) =>
-                                String(v).length > 12
-                                    ? `${String(v).slice(0, 11)}…`
-                                    : v
-                            }
-                        />
-                        <ChartTooltip content={<ChartTooltipContent />} />
-                        {(stacked
-                            ? ['male', 'female', 'unspecified']
-                            : ['value']
-                        ).map((key, i) => (
-                            <Bar
-                                key={key}
-                                dataKey={key}
-                                stackId="total"
-                                fill={CHART_PALETTE[i]}
-                                maxBarSize={20}
-                                isAnimationActive={false}
-                            />
-                        ))}
-                    </BarChart>
-                </ChartContainer>
-                <p className="truncate text-[10px] text-muted-foreground">
-                    {stacked
-                        ? 'Laki-laki · Perempuan · Tidak disebutkan — arahkan ke batang'
-                        : rows.length > shown.length
-                          ? `${shown.length} dari ${rows.length} kelompok · Selengkapnya di Detail`
-                          : 'Jumlah warga per kelompok'}
-                </p>
-            </div>
-        );
-    }
-
-    if (widget.id === 'categories' || widget.id === 'activity') {
-        const activity = widget.id === 'activity';
-
-        return (
-            <div className="space-y-1">
-                <p className="truncate text-[11px] text-muted-foreground">
-                    {activity
-                        ? 'Warga unik per hari · Tidak dijumlahkan antarhari'
-                        : `${count(total)} publikasi · Periode terpilih`}
-                </p>
-                <div
-                    className="grid min-w-0 gap-3"
-                    style={{
-                        gridTemplateColumns: split
-                            ? 'minmax(0,1fr) minmax(0,1fr)'
-                            : undefined,
-                    }}
-                >
-                    <TimeChart
-                        rows={activity ? rows : (widget.trend ?? [])}
-                        area={activity}
-                        metric={activity ? 'Warga unik' : 'Publikasi'}
-                        height={Math.max(
-                            90,
-                            split
-                                ? box.height - 35
-                                : tall
-                                  ? activity
-                                      ? box.height - 235
-                                      : box.height - 190
-                                  : box.height - 52,
-                        )}
-                    />
-                    {(tall || split) && activity ? (
-                        <Heatmap widget={widget} compact />
-                    ) : tall || split ? (
-                        <div className="space-y-2">
-                            {shown.slice(0, 5).map((r) => (
-                                <div
-                                    className="flex items-center justify-between gap-2 text-xs"
-                                    key={r.label}
-                                >
-                                    <span className="truncate">{r.label}</span>
-                                    <span className="tabular-nums">
-                                        {count(r.value)}
-                                    </span>
-                                </div>
-                            ))}
-                        </div>
-                    ) : (
-                        <p className="truncate text-[10px] text-muted-foreground">
-                            {activity
-                                ? 'Peta hari/jam tersedia di ukuran Tall atau Detail'
-                                : rows.some(
-                                        (r) => r.lifetime_views !== undefined,
-                                    )
-                                  ? `${count(rows.reduce((n, r) => n + (r.lifetime_views ?? 0), 0))} tayangan sepanjang waktu · Bukan pembaca unik`
-                                  : 'Kategori lengkap tersedia di Detail'}
-                        </p>
-                    )}
-                </div>
-            </div>
-        );
-    }
-
-    if (widget.id === 'broadcast') {
-        const rate = notificationReadRate(
-            rows[2]?.value ?? 0,
-            rows[1]?.value ?? 0,
-        );
-
-        return (
-            <div className="space-y-3">
-                <p className="text-[11px] text-muted-foreground">
-                    Status baca saat ini · Siaran dalam periode
-                </p>
-                <div
-                    className="grid gap-3"
-                    style={{
-                        gridTemplateColumns: wide
-                            ? 'minmax(0,1fr) minmax(0,1fr)'
-                            : undefined,
-                    }}
-                >
-                    <div className="grid grid-cols-3 gap-2">
-                        {rows.map((r, i) => (
-                            <div key={r.label}>
-                                <p className="text-lg font-semibold tabular-nums">
-                                    {count(r.value)}
-                                </p>
-                                <p className="text-[10px] text-muted-foreground">
-                                    {['Siaran', 'Tercatat', 'Dibaca'][i]}
-                                </p>
-                            </div>
-                        ))}
-                    </div>
-                    <div>
-                        <p className="text-xs">
-                            {count(rows[2]?.value ?? 0)} dari{' '}
-                            {count(rows[1]?.value ?? 0)} notifikasi dibaca
-                        </p>
-                        <div className="mt-2 h-2 rounded bg-muted">
-                            <div
-                                className="h-full rounded bg-primary"
-                                style={{ width: `${rate ?? 0}%` }}
-                            />
-                        </div>
-                    </div>
-                </div>
-                <p className="text-[10px] text-muted-foreground">
-                    Tercatat bukan bukti pengiriman perangkat.
-                </p>
-            </div>
-        );
-    }
-
-    if (widget.id === 'meta') {
-        return (
-            <div
-                className="grid h-full min-h-0 gap-2"
-                style={{
-                    gridTemplateColumns: wide
-                        ? `repeat(${Math.max(1, widget.accounts?.length ?? 1)},minmax(0,1fr))`
-                        : undefined,
-                    gridTemplateRows: wide
-                        ? 'minmax(0,1fr)'
-                        : `repeat(${Math.max(1, widget.accounts?.length ?? 1)},minmax(0,1fr))`,
-                }}
-            >
-                {widget.accounts?.map((a) => {
-                    const group = groupMetrics(a.rows)[0];
-                    const shareHeight = wide
-                        ? box.height
-                        : (box.height -
-                              8 * ((widget.accounts?.length ?? 1) - 1)) /
-                          Math.max(1, widget.accounts?.length ?? 1);
-                    const miniature = shareHeight < 120;
-                    const chartHeight = Math.max(
-                        24,
-                        shareHeight - (miniature ? 34 : 52),
-                    );
+                {rows.map((r, i) => {
+                    const Icon = icons[i % 4];
 
                     return (
-                        <div key={a.platform} className="min-h-0 min-w-0">
-                            <div className="flex items-center justify-between gap-2 text-[11px]">
-                                <span className="truncate font-medium capitalize">
-                                    {a.platform} ·{' '}
-                                    {a.account ?? 'Belum dipilih'}
+                        <div
+                            key={r.label}
+                            className="min-w-0 rounded-xl border border-neutral-200 p-2 dark:border-neutral-800"
+                        >
+                            <div className="flex items-center justify-between gap-1">
+                                <span className="truncate text-[11px] text-muted-foreground">
+                                    {[
+                                        'Total warga',
+                                        'Pendaftaran baru',
+                                        'Pembaca aktif',
+                                        'Profil lengkap',
+                                    ][i] ?? r.label}
                                 </span>
-                                <span className="shrink-0 text-muted-foreground">
-                                    {STATUS_LABELS[a.status]?.text ?? a.status}
+                                <span className="rounded bg-primary/10 p-1 text-primary">
+                                    <Icon className="size-3" />
                                 </span>
                             </div>
-                            {group ? (
-                                <>
-                                    <p className="truncate text-[10px] text-muted-foreground">
-                                        {group.metric} ·{' '}
-                                        {a.last_sync
-                                            ? `Sinkron ${new Date(a.last_sync).toLocaleDateString('id-ID')}`
-                                            : 'Belum sinkron'}
-                                    </p>
-                                    {!miniature && (
-                                        <p className="text-[11px] font-medium">
-                                            {count(
-                                                group.rows.at(-1)?.value ?? 0,
-                                            )}{' '}
-                                            · Pengamatan terakhir
-                                        </p>
-                                    )}
-                                    <TimeChart
-                                        rows={group.rows}
-                                        metric={group.metric}
-                                        height={chartHeight}
-                                        miniature={miniature}
-                                        color={BRAND_COLORS[a.platform]?.color}
-                                    />
-                                </>
-                            ) : (
-                                <p
-                                    className="truncate text-[11px] text-muted-foreground"
-                                    title={a.note}
-                                >
-                                    {a.note || 'Belum ada data.'}
+                            <p className="text-2xl font-semibold tabular-nums">
+                                {count(r.value)}
+                            </p>
+                            <p className="truncate text-[10px] text-muted-foreground">
+                                {i === 0
+                                    ? 'Profil saat ini'
+                                    : i === 1
+                                      ? widget.registration_previous ===
+                                        undefined
+                                          ? 'Dalam periode terpilih'
+                                          : `${r.value - widget.registration_previous >= 0 ? '+' : ''}${count(r.value - widget.registration_previous)} vs periode sebelumnya`
+                                      : `${percent(r.value, rows[0]?.value ?? 0)}% dari warga`}
+                            </p>
+                            {tall && (
+                                <p className="mt-3 text-xs text-muted-foreground">
+                                    {i === 3
+                                        ? 'Tanggal lahir dan kewarganegaraan terisi.'
+                                        : i === 2
+                                          ? 'Warga unik yang membuka feed atau berita.'
+                                          : r.label}
                                 </p>
                             )}
                         </div>
@@ -1667,7 +1392,587 @@ function BoundedWidget({
         );
     }
 
-    return <p className="text-xs text-muted-foreground">{widget.note}</p>;
+    if (widget.id === 'age') {
+        const known = rows.filter((r) => r.label !== 'Belum mengisi'),
+            top = [...known].sort((a, b) => b.value - a.value)[0];
+        const donut = tall
+            ? Math.min(wide ? 220 : 180, box.width * 0.65)
+            : Math.min(110, box.width * 0.34);
+        const config = Object.fromEntries(
+            rows.map((r, i) => [
+                r.label,
+                {
+                    label: r.label,
+                    color: CHART_PALETTE[i % CHART_PALETTE.length],
+                },
+            ]),
+        );
+
+        return (
+            <div className="flex h-full flex-col gap-2">
+                <SummaryChip>
+                    {top?.value
+                        ? `Kelompok terbesar: ${top.label} · ${percent(top.value)}%`
+                        : 'Belum ada data usia'}
+                </SummaryChip>
+                <div
+                    className="flex min-h-0 flex-1 items-center gap-3"
+                    style={{ flexDirection: tall && !wide ? 'column' : 'row' }}
+                >
+                    <div
+                        className="relative shrink-0"
+                        style={{ width: donut, height: donut }}
+                    >
+                        <ChartContainer
+                            config={config}
+                            className="aspect-square h-full w-full"
+                        >
+                            <PieChart accessibilityLayer>
+                                <ChartTooltip
+                                    content={
+                                        <ChartTooltipContent nameKey="label" />
+                                    }
+                                />
+                                <Pie
+                                    data={
+                                        total
+                                            ? rows
+                                            : [
+                                                  {
+                                                      label: 'Belum ada data',
+                                                      value: 1,
+                                                  },
+                                              ]
+                                    }
+                                    dataKey="value"
+                                    nameKey="label"
+                                    innerRadius="68%"
+                                    outerRadius="96%"
+                                    stroke="none"
+                                    isAnimationActive={false}
+                                >
+                                    {(total ? rows : [{ label: 'empty' }]).map(
+                                        (r, i) => (
+                                            <Cell
+                                                key={r.label}
+                                                fill={
+                                                    total
+                                                        ? CHART_PALETTE[
+                                                              i %
+                                                                  CHART_PALETTE.length
+                                                          ]
+                                                        : 'var(--muted)'
+                                                }
+                                            />
+                                        ),
+                                    )}
+                                </Pie>
+                            </PieChart>
+                        </ChartContainer>
+                        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                            <strong
+                                className={
+                                    tall
+                                        ? 'text-2xl tabular-nums'
+                                        : 'text-sm tabular-nums'
+                                }
+                            >
+                                {count(total)}
+                            </strong>
+                            <span className="text-[10px] text-muted-foreground">
+                                Total warga
+                            </span>
+                        </div>
+                    </div>
+                    <div
+                        className="grid w-full min-w-0 flex-1 gap-x-3 gap-y-1"
+                        style={{
+                            gridTemplateColumns:
+                                wide || tall
+                                    ? 'repeat(2,minmax(0,1fr))'
+                                    : 'minmax(0,1fr)',
+                        }}
+                    >
+                        {rows.map((r, i) => (
+                            <div key={r.label} className="min-w-0">
+                                <div className="flex items-center gap-1 text-[10px]">
+                                    <span
+                                        className="size-1.5 shrink-0 rounded-sm"
+                                        style={{
+                                            background:
+                                                CHART_PALETTE[
+                                                    i % CHART_PALETTE.length
+                                                ],
+                                        }}
+                                    />
+                                    <span className="truncate" title={r.label}>
+                                        {r.label}
+                                    </span>
+                                    <span className="ml-auto shrink-0 tabular-nums">
+                                        {count(r.value)} · {percent(r.value)}%
+                                    </span>
+                                </div>
+                                {tall && (
+                                    <div className="mt-1 h-1 rounded bg-muted">
+                                        <div
+                                            className="h-full rounded"
+                                            style={{
+                                                background:
+                                                    CHART_PALETTE[
+                                                        i % CHART_PALETTE.length
+                                                    ],
+                                                width: `${percent(r.value)}%`,
+                                            }}
+                                        />
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    if (widget.id === 'citizenship') {
+        const male = rows.reduce((n, r) => n + (r.male ?? 0), 0),
+            female = rows.reduce((n, r) => n + (r.female ?? 0), 0),
+            unknown = total - male - female;
+        const wni = rows.find((r) => r.label === 'WNI')?.value ?? 0;
+        const config = {
+            male: { label: 'Laki-laki', color: 'var(--chart-1)' },
+            female: { label: 'Perempuan', color: 'var(--chart-2)' },
+            unspecified: { label: 'Tidak disebutkan', color: 'var(--chart-3)' },
+        };
+
+        return (
+            <div className="flex h-full flex-col gap-1">
+                <div className="flex flex-wrap gap-1">
+                    <SummaryChip>
+                        {percent(male)}% L · {percent(female)}% P ·{' '}
+                        {percent(unknown)}% belum diisi
+                    </SummaryChip>
+                    <SummaryChip>WNI {percent(wni)}%</SummaryChip>
+                </div>
+                <div
+                    className="grid min-h-0 flex-1 gap-3"
+                    style={{
+                        gridTemplateColumns: wide
+                            ? 'minmax(0,1.2fr) minmax(0,1fr)'
+                            : undefined,
+                    }}
+                >
+                    <ChartContainer
+                        config={config}
+                        className="aspect-auto w-full"
+                        style={{
+                            height: Math.max(
+                                70,
+                                wide
+                                    ? box.height - 40
+                                    : tall
+                                      ? 220
+                                      : box.height - 58,
+                            ),
+                        }}
+                    >
+                        <BarChart
+                            data={rows}
+                            layout="vertical"
+                            accessibilityLayer
+                            margin={{ left: 0, right: 5, top: 4, bottom: 0 }}
+                        >
+                            <CartesianGrid
+                                horizontal={false}
+                                strokeDasharray="3 3"
+                            />
+                            <XAxis
+                                type="number"
+                                allowDecimals={false}
+                                tickLine={false}
+                                axisLine={false}
+                                tick={{ fontSize: 10 }}
+                            />
+                            <YAxis
+                                type="category"
+                                dataKey="label"
+                                width={70}
+                                tickLine={false}
+                                axisLine={false}
+                                tick={{ fontSize: 10 }}
+                                tickFormatter={(v) =>
+                                    v === 'Dua Kewarganegaraan'
+                                        ? 'Ganda'
+                                        : v === 'Belum mengisi'
+                                          ? 'Belum diisi'
+                                          : v
+                                }
+                            />
+                            <ChartTooltip content={<ChartTooltipContent />} />
+                            {['male', 'female', 'unspecified'].map((key, i) => (
+                                <Bar
+                                    key={key}
+                                    dataKey={key}
+                                    stackId="gender"
+                                    fill={CHART_PALETTE[i]}
+                                    maxBarSize={26}
+                                    isAnimationActive={false}
+                                />
+                            ))}
+                        </BarChart>
+                    </ChartContainer>
+                    {(wide || tall) && (
+                        <InlineBreakdown rows={rows} total={total} limit={4} />
+                    )}
+                </div>
+            </div>
+        );
+    }
+
+    if (widget.id === 'ethnicity') {
+        const filled =
+                total -
+                (rows.find((r) => r.label === 'Belum mengisi')?.value ?? 0),
+            sorted = [...rows].sort((a, b) => b.value - a.value);
+        const limit = tall
+            ? Math.max(4, Math.floor((box.height - 75) / 34))
+            : 3;
+
+        return (
+            <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                    <SummaryChip>{percent(filled)}% terisi</SummaryChip>
+                    <span className="text-[11px] text-muted-foreground">
+                        {count(total)} warga
+                    </span>
+                </div>
+                <InlineBreakdown rows={sorted} total={total} limit={limit} />
+            </div>
+        );
+    }
+
+    if (widget.id === 'categories') {
+        const limit = wide
+            ? Math.max(3, Math.floor((box.height - 110) / 36))
+            : tall
+              ? 6
+              : 2;
+
+        return (
+            <div className="flex h-full flex-col gap-2">
+                <div className="flex items-center justify-between gap-2">
+                    <p className="whitespace-nowrap">
+                        <strong className="text-xl font-semibold tabular-nums">
+                            {count(total)}
+                        </strong>{' '}
+                        <span className="text-[11px] text-muted-foreground">
+                            publikasi
+                        </span>
+                    </p>
+                    {rows.some((r) => r.lifetime_views !== undefined) && (
+                        <SummaryChip>
+                            {count(
+                                rows.reduce(
+                                    (n, r) => n + (r.lifetime_views ?? 0),
+                                    0,
+                                ),
+                            )}{' '}
+                            tayangan sepanjang waktu
+                        </SummaryChip>
+                    )}
+                </div>
+                <div
+                    className="grid min-h-0 flex-1 gap-2"
+                    style={{
+                        gridTemplateColumns: wide
+                            ? 'minmax(0,1fr) minmax(0,1fr)'
+                            : undefined,
+                    }}
+                >
+                    <TimeChart
+                        rows={widget.trend ?? []}
+                        area
+                        metric="Publikasi"
+                        height={
+                            wide
+                                ? box.height - 42
+                                : tall
+                                  ? Math.max(120, box.height - 280)
+                                  : Math.max(40, box.height - 140)
+                        }
+                        miniature={!tall && !wide}
+                    />
+                    <InlineBreakdown
+                        rows={rows}
+                        total={total}
+                        limit={limit}
+                        progress={tall || wide}
+                    />
+                </div>
+            </div>
+        );
+    }
+
+    if (widget.id === 'broadcast') {
+        const recorded = rows[1]?.value ?? 0,
+            read = rows[2]?.value ?? 0,
+            rate = notificationReadRate(read, recorded);
+
+        return (
+            <div className="flex h-full flex-col gap-3">
+                <p className="text-[11px] text-muted-foreground">
+                    Siaran dalam periode · Status baca saat ini
+                </p>
+                <div
+                    className="grid flex-1 content-start gap-2"
+                    style={{
+                        gridTemplateColumns: wide
+                            ? 'repeat(3,minmax(0,1fr))'
+                            : undefined,
+                    }}
+                >
+                    {rows.map((r, i) => (
+                        <div key={r.label} className="flex items-center gap-2">
+                            <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] text-primary">
+                                {i + 1}
+                            </span>
+                            <span className="text-xs">
+                                {
+                                    [
+                                        'Siaran dikirim',
+                                        'Notifikasi tercatat',
+                                        'Telah dibaca',
+                                    ][i]
+                                }
+                            </span>
+                            <strong className="ml-auto text-sm tabular-nums">
+                                {count(r.value)}
+                            </strong>
+                        </div>
+                    ))}
+                </div>
+                <div className="rounded-lg bg-primary/5 px-2 py-1.5 text-[11px]">
+                    {rate === null
+                        ? 'Belum ada notifikasi tercatat'
+                        : `${rate.toFixed(1)}% dibaca · ${count(read)} dari ${count(recorded)} notifikasi`}
+                </div>
+                {tall && (
+                    <p className="text-xs text-muted-foreground">
+                        Satu siaran dapat menghasilkan banyak notifikasi.
+                        Tercatat bukan bukti perangkat menerima notifikasi;
+                        waktu baca rata-rata belum tersedia.
+                    </p>
+                )}
+            </div>
+        );
+    }
+
+    if (widget.id === 'activity') {
+        const cells = widget.heatmap ?? [],
+            max = Math.max(0, ...cells.map((c) => c.value)),
+            peaks = cells.filter((c) => c.value === max && max > 0),
+            peak = peaks[0];
+        const day = [
+            '',
+            'Senin',
+            'Selasa',
+            'Rabu',
+            'Kamis',
+            'Jumat',
+            'Sabtu',
+            'Minggu',
+        ];
+
+        return (
+            <div className="flex h-full flex-col gap-2">
+                <SummaryChip>
+                    {peak
+                        ? `Puncak teramati: ${day[peak.day]} ${String(peak.hour).padStart(2, '0')}:00 · ${count(max)} warga${peaks.length > 1 ? ` (+${peaks.length - 1} waktu setara)` : ''}`
+                        : 'Belum ada aktivitas teramati'}
+                </SummaryChip>
+                <Heatmap widget={widget} compact />
+                {tall && (
+                    <>
+                        <p className="text-[11px] text-muted-foreground">
+                            Warga unik per hari · Tidak dijumlahkan antarhari
+                        </p>
+                        <TimeChart
+                            rows={rows}
+                            metric="Warga unik"
+                            height={Math.max(100, box.height - 205)}
+                        />
+                    </>
+                )}
+            </div>
+        );
+    }
+
+    if (widget.id === 'meta') {
+        const accounts = widget.accounts ?? [],
+            countAccounts = Math.max(1, accounts.length);
+
+        return (
+            <div
+                className="grid h-full min-h-0 gap-2"
+                style={{
+                    gridTemplateColumns: wide
+                        ? `repeat(${countAccounts},minmax(0,1fr))`
+                        : undefined,
+                    gridTemplateRows: wide
+                        ? 'minmax(0,1fr)'
+                        : `repeat(${countAccounts},minmax(0,1fr))`,
+                }}
+            >
+                {accounts.map((a) => {
+                    const groups = groupMetrics(a.rows),
+                        group =
+                            groups[
+                                Math.min(
+                                    rankPage,
+                                    Math.max(0, groups.length - 1),
+                                )
+                            ],
+                        all = group?.rows ?? [],
+                        points = all.slice(-7),
+                        latest = all.at(-1),
+                        previous = all.at(-2);
+                    const consecutive =
+                        latest &&
+                        previous &&
+                        Date.parse(latest.label) -
+                            Date.parse(previous.label) ===
+                            86400000;
+                    const delta =
+                        consecutive && previous.value > 0
+                            ? ((latest.value - previous.value) /
+                                  previous.value) *
+                              100
+                            : null;
+                    const height = wide
+                            ? box.height
+                            : (box.height - 8 * (countAccounts - 1)) /
+                              countAccounts,
+                        mini = height < 125;
+                    const brand = BRAND_COLORS[a.platform];
+
+                    return (
+                        <div
+                            key={a.platform}
+                            className="flex min-h-0 min-w-0 flex-col gap-0.5"
+                            style={
+                                {
+                                    '--social-color': brand?.color,
+                                } as React.CSSProperties
+                            }
+                        >
+                            <div className="flex items-center gap-1 text-[11px]">
+                                <span
+                                    className="size-2 rounded-sm"
+                                    style={{ background: brand?.color }}
+                                />
+                                <strong className="capitalize">
+                                    {a.platform}
+                                </strong>
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <button
+                                            type="button"
+                                            className="ml-auto truncate text-[10px] text-muted-foreground"
+                                        >
+                                            {STATUS_LABELS[a.status]?.text ??
+                                                a.status}
+                                        </button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                        {a.note} · Sinkron:{' '}
+                                        {a.last_sync
+                                            ? new Date(
+                                                  a.last_sync,
+                                              ).toLocaleString('id-ID')
+                                            : 'Belum pernah'}
+                                    </TooltipContent>
+                                </Tooltip>
+                            </div>
+                            {group ? (
+                                <>
+                                    <div className="flex min-w-0 items-center gap-1 text-[10px]">
+                                        <span className="truncate">
+                                            {group.metric}
+                                        </span>
+                                        <strong className="ml-auto text-sm tabular-nums">
+                                            {count(latest?.value ?? 0)}
+                                        </strong>
+                                        {delta !== null && (
+                                            <span className="shrink-0 text-[10px]">
+                                                {delta > 0 ? '+' : ''}
+                                                {delta.toFixed(1)}%
+                                            </span>
+                                        )}
+                                    </div>
+                                    <TimeChart
+                                        rows={points}
+                                        metric={group.metric}
+                                        height={Math.max(
+                                            24,
+                                            height - (mini ? 44 : 78),
+                                        )}
+                                        miniature={mini}
+                                        color={brand?.color}
+                                    />
+                                    {!mini && (
+                                        <p className="truncate text-[10px] text-muted-foreground">
+                                            {latest?.label} ·{' '}
+                                            {delta !== null
+                                                ? 'Δ vs hari sebelumnya'
+                                                : 'Tanpa pembanding harian'}{' '}
+                                            · {a.account}
+                                        </p>
+                                    )}
+                                    {groups.length > 1 && (
+                                        <button
+                                            type="button"
+                                            className="text-[10px] underline"
+                                            onClick={() =>
+                                                setRankPage(
+                                                    (rankPage + 1) %
+                                                        groups.length,
+                                                )
+                                            }
+                                        >
+                                            Metrik berikutnya
+                                        </button>
+                                    )}
+                                </>
+                            ) : (
+                                <p className="text-[11px] text-muted-foreground">
+                                    {a.note || 'Belum ada pengamatan.'}
+                                </p>
+                            )}
+                        </div>
+                    );
+                })}
+                {!accounts.length && (
+                    <p className="text-xs text-muted-foreground">
+                        Akun resmi belum dipilih.
+                    </p>
+                )}
+            </div>
+        );
+    }
+
+    return (
+        <div className="flex h-full flex-col justify-center gap-2">
+            <Share2 className="size-5 text-primary" />
+            <p className="text-lg font-semibold">Belum tersedia</p>
+            <p className="text-xs text-muted-foreground">
+                Skor interaksi dan umpan balik menunggu integrasi modul
+                engagement.
+            </p>
+            <span className="text-[11px] text-muted-foreground">
+                Tidak dihitung sebagai nol
+            </span>
+        </div>
+    );
 }
 
 export default function AnalyticsWidgetRenderer({
@@ -1718,7 +2023,7 @@ export default function AnalyticsWidgetRenderer({
                         ) : (
                             <p className="text-xs text-muted-foreground">
                                 Peta hari/jam tersedia saat kartu diperbesar
-                                atau di Lihat detail.
+                                pada kartu yang diperbesar.
                             </p>
                         )}
                     </div>
@@ -1750,7 +2055,7 @@ export default function AnalyticsWidgetRenderer({
                     widget.rows.length > limit && (
                         <p className="text-xs text-muted-foreground">
                             +{widget.rows.length - limit} kelompok lainnya
-                            tersedia di Lihat detail atau mode Tinggi.
+                            tersedia saat kartu diperbesar.
                         </p>
                     )}
             </div>

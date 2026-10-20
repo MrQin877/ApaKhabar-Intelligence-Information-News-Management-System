@@ -254,3 +254,16 @@ test('loading version two drops unknown and duplicate widgets safely without res
     ]]);
     expect($layout['sections'][0]['widgets'])->toBe([['id' => 'age', 'size' => 'medium', 'order' => 0]]);
 });
+
+test('registration comparison uses the preceding equal calendar period and excludes staff', function () {
+    config(['analytics.timezone' => 'Asia/Jakarta', 'app.timezone' => 'UTC']);
+    // Oct 1–7 in Jakarta: prior window is Sep 24 00:00 through Sep 30 23:59:59.
+    analyticsUser('villager')->forceFill(['created_at' => '2026-09-23 17:00:00'])->save();
+    analyticsUser('villager')->forceFill(['created_at' => '2026-09-30 16:59:59'])->save();
+    analyticsUser('villager')->forceFill(['created_at' => '2026-09-23 16:59:59'])->save();
+    analyticsUser('villager')->forceFill(['created_at' => '2026-09-30 17:00:00'])->save();
+    analyticsUser('moderator')->forceFill(['created_at' => '2026-09-25 00:00:00'])->save();
+    $report = app(AnalyticsReport::class)->build(['overview'], '2026-10-01', '2026-10-07')[0];
+    expect($report['registration_previous'])->toBe(2)
+        ->and($report['rows'][1]['value'])->toBe(1);
+});

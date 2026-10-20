@@ -137,3 +137,31 @@ in Detail. Age legends, KPI columns, distribution row counts and plot heights
 also adapt to the measured content area. The compact activity heatmap retains
 all 24 hourly cells and seven days, showing fewer hour labels rather than
 combining or dropping observations.
+
+### Approved information redesign (supersedes Detail-dialog behavior above)
+
+Dashboard cards no longer open a Detail dialog. Definitions live in the header
+info tooltip. Compact cards expose key figures directly; taller/wider cards
+show larger charts and breakdowns. Unbounded category/ethnicity lists use
+in-card paging, so every row remains accessible without exceeding 2×2.
+
+The card palette is analytics-scoped: Emerald, Teal, Amber, Violet and Coral;
+Facebook/Instagram retain their official colors. KPI cards show registered
+villagers, registrations, active readers and profile completeness. Registration
+comparison is the count difference against the preceding equal-length calendar
+period in the analytics timezone, excluding staff. No response velocity is
+invented. Age includes a centered total, dominant known age bucket, all counts
+and percentages. Citizenship includes male/female/unspecified ratios and WNI
+share; ethnicity includes completeness and ranked percentages. Publications
+use a gradient area chart plus category counts/percentages and lifetime views.
+Broadcast steps distinguish broadcasts from recorded/read notifications; they
+are not confirmed device delivery or a conversion funnel across equal units.
+Activity always shows all 168 heatmap cells and highlights the observed peak
+(with tie counts), not a guaranteed optimal send time. Meta cards show the last
+seven returned observations per metric; daily deltas appear only when consecutive
+calendar-day observations exist and the previous value is positive. Missing or
+failed observations remain unavailable. Engagement stays explicitly unavailable.
+
+Verification includes all four sizes at desktop, 390px and 320px widths, inline
+paging, definition tooltips and unavailable-data states using a temporary local
+component harness. It does not contact live Meta APIs or modify account data.

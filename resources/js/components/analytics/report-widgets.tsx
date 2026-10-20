@@ -62,6 +62,7 @@ export type ReportRow = {
 };
 
 export type ReportWidget = {
+    registration_previous?: number;
     id: string;
     title: string;
     note: string;
