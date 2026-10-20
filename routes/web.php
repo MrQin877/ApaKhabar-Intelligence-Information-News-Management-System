@@ -52,6 +52,7 @@ Route::post('/news/{id}/view', [EngagementController::class, 'view'])->middlewar
 Route::post('/news/{id}/comment', [CommentController::class, 'store'])->middleware('throttle:5,1')->name('news.comment');
 Route::middleware(['auth', 'throttle:30,1'])->group(function () {
     Route::post('/news/{id}/like', [PostLikeController::class, 'store'])->name('news.like');
+    Route::post('/comments/{id}/like', [CommentController::class, 'like'])->name('comments.like');
     Route::post('/comments/{id}/report', [EngagementController::class, 'report'])->name('comments.report');
     Route::post('/comments/{id}/replies', [CommentController::class, 'reply'])->middleware('throttle:5,1')->name('comments.reply');
 });

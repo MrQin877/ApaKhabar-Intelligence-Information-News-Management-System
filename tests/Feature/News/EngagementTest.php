@@ -143,7 +143,7 @@ test('admin decisions reports and history are protected and enforce transitions'
     expect($comment->fresh()->status)->toBe('published')->and(DB::table('comment_moderation_history')->count())->toBe(3);
     $comment->refresh()->update(['status' => 'pending_review']);
     $this->postJson($decision, ['action' => 'reject', 'reason' => 'Not acceptable'])->assertOk();
-    $this->postJson($decision, ['action' => 'restore', 'reason' => 'Cannot restore rejected'])->assertConflict();
+    $this->postJson($decision, ['action' => 'restore', 'reason' => 'Appeal accepted after rejection'])->assertOk();
     $comment->refresh()->update(['status' => 'pending_review']);
     $this->postJson($decision, ['action' => 'approve', 'reason' => 'Reviewed'])->assertOk();
 });
@@ -171,4 +171,36 @@ test('comment rate limiting applies before repeated moderation calls', function 
     }
     $this->postJson($this->url.'/comment', ['content' => 'One too many'])->assertStatus(429);
     Http::assertSentCount(5);
+});
+
+test('comment and reply likes persist with per-user counts and reject guests', function () {
+    $this->postJson('/comments/1/like')->assertUnauthorized();
+    $user = User::factory()->create();
+    $this->actingAs($user)->postJson($this->url.'/comment', ['content' => 'Komentar utama'])->assertCreated();
+    $parent = Comment::first();
+    $this->postJson('/comments/'.$parent->getKey().'/replies', ['content' => 'Balasan pertama'])->assertCreated();
+    foreach (Comment::all() as $comment) {
+        $endpoint = '/comments/'.$comment->getKey().'/like';
+        $this->postJson($endpoint)->assertOk()->assertJson(['liked' => true, 'likes_count' => 1]);
+        $this->actingAs(User::factory()->create())->postJson($endpoint)->assertOk()->assertJson(['liked' => true, 'likes_count' => 2]);
+        $this->postJson($endpoint)->assertOk()->assertJson(['liked' => false, 'likes_count' => 1]);
+        $this->actingAs($user);
+    }
+    $this->getJson($this->url)->assertJsonPath('data.comments_list.0.likes_count', 1)
+        ->assertJsonPath('data.comments_list.0.liked_by_user', true)
+        ->assertJsonPath('data.comments_list.1.likes_count', 1);
+    $parent->update(['status' => 'removed']);
+    $this->postJson('/comments/'.$parent->getKey().'/like')->assertNotFound();
+});
+
+test('report categories reach moderation and duplicate reports preserve the original', function () {
+    $this->actingAs(User::factory()->create())->postJson($this->url.'/comment', ['content' => 'Komentar untuk ditinjau'])->assertCreated();
+    $endpoint = '/comments/'.Comment::first()->getKey().'/report';
+    $this->postJson($endpoint, [])->assertUnprocessable();
+    $this->postJson($endpoint, ['category' => 'invalid'])->assertUnprocessable();
+    $this->postJson($endpoint, ['category' => 'Spam', 'details' => 'Pesan berulang'])->assertOk();
+    $this->postJson($endpoint, ['category' => 'Lainnya'])->assertOk();
+    expect(DB::table('comment_reports')->count())->toBe(1)
+        ->and(DB::table('comment_reports')->value('reason'))->toBe('Spam: Pesan berulang');
+    $this->getJson($this->url)->assertJsonPath('data.comments_list.0.reported_by_user', true);
 });

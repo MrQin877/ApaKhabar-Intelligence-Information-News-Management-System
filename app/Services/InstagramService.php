@@ -58,7 +58,7 @@ class InstagramService
             if (str_contains('/'.$relativePath.'/', '/../') || str_contains($relativePath, '\\')) {
                 throw ValidationException::withMessages(['platforms' => 'Path gambar Instagram tidak valid.']);
             }
-            $disk = Storage::disk($extension === 'png' ? 'public' : config('filesystems.news_media_disk', 'public'));
+            $disk = Storage::disk(config('filesystems.news_media_disk', 'public'));
             if (! $disk->exists($relativePath)) {
                 throw ValidationException::withMessages(['platforms' => 'Gambar Instagram tidak ditemukan.']);
             }

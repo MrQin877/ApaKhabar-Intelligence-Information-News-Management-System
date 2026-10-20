@@ -9,6 +9,7 @@ import {
     DialogDescription,
     DialogTitle,
 } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
 import { csrfPost } from '@/lib/csrf-request';
 import { copyArticleLink, visibleReadingClock } from '@/lib/news-engagement';
 
@@ -18,6 +19,9 @@ export interface PublicComment {
     parent_id?: string | null;
     content: string;
     date: string;
+    likes_count: number;
+    liked_by_user: boolean;
+    reported_by_user: boolean;
 }
 interface Props {
     news: {
@@ -68,6 +72,24 @@ export default function NewsEngagement({
     const [website, setWebsite] = useState('');
     const [challenge, setChallenge] = useState('');
     const [reportId, setReportId] = useState<string | null>(null);
+    const [reportCategory, setReportCategory] = useState('');
+    const [reportError, setReportError] = useState('');
+    const [reported, setReported] = useState<string[]>([]);
+    const [expanded, setExpanded] = useState<Record<string, number>>({});
+    const [commentLikes, setCommentLikes] = useState<
+        Record<string, { liked: boolean; likes_count: number }>
+    >({});
+    const [pendingLikes, setPendingLikes] = useState<string[]>([]);
+    const commentLikeRequests = useRef(new Set<string>());
+    const replyComposer = useRef<HTMLTextAreaElement>(null);
+    const [replyContent, setReplyContent] = useState('');
+    const [replyBusy, setReplyBusy] = useState(false);
+    const replySubmission = useRef(false);
+    const [replyNotice, setReplyNotice] = useState<{
+        parentId: string;
+        text: string;
+        error: boolean;
+    } | null>(null);
     const [reportReason, setReportReason] = useState('');
     const [replyId, setReplyId] = useState<string | null>(null);
     const submission = useRef(false);
@@ -139,6 +161,12 @@ export default function NewsEngagement({
         };
     }, [canonical]);
 
+    useEffect(() => {
+        if (replyId) {
+            replyComposer.current?.focus();
+        }
+    }, [replyId]);
+
     async function like() {
         if (!authenticated) {
             setPrompt(true);
@@ -196,14 +224,12 @@ export default function NewsEngagement({
         setMessage('');
 
         try {
-            const data = await engagementPost(
-                replyId
-                    ? `/comments/${replyId}/replies`
-                    : `${canonical}/comment`,
-                { content, website, challenge },
-            );
+            const data = await engagementPost(`${canonical}/comment`, {
+                content,
+                website,
+                challenge,
+            });
             setContent('');
-            setReplyId(null);
             setMessage(
                 data.message ??
                     (data.status === 'published'
@@ -218,8 +244,76 @@ export default function NewsEngagement({
             setBusy(false);
         }
     }
+    async function submitReply(parentId: string) {
+        if (replySubmission.current || !replyContent.trim()) {
+            return;
+        }
+
+        if (!authenticated) {
+            setPrompt(true);
+
+            return;
+        }
+
+        replySubmission.current = true;
+        setReplyBusy(true);
+        setReplyNotice(null);
+
+        try {
+            const data = await engagementPost(`/comments/${parentId}/replies`, {
+                content: replyContent,
+            });
+            setReplyContent('');
+            setReplyId(null);
+            setReplyNotice({
+                parentId,
+                error: false,
+                text:
+                    data.status === 'published'
+                        ? 'Balasan diterbitkan.'
+                        : 'Balasan menunggu peninjauan moderator.',
+            });
+
+            if (data.status === 'published') {
+                await new Promise<void>((resolve) => {
+                    router.reload({
+                        only: ['comments'],
+                        onSuccess: (page) => {
+                            const updated = page.props
+                                .comments as PublicComment[];
+                            const count = updated.filter(
+                                (comment) => comment.parent_id === parentId,
+                            ).length;
+                            // Reveal the newly appended reply, including when older replies were collapsed.
+                            setExpanded((values) => ({
+                                ...values,
+                                [parentId]: Math.max(3, count),
+                            }));
+                        },
+                        onError: () =>
+                            setReplyNotice({
+                                parentId,
+                                error: true,
+                                text: 'Balasan tersimpan, tetapi daftar belum diperbarui. Muat ulang halaman untuk melihatnya.',
+                            }),
+                        onFinish: () => resolve(),
+                    });
+                });
+            }
+        } catch (error) {
+            setReplyNotice({
+                parentId,
+                error: true,
+                text: (error as Error).message,
+            });
+        } finally {
+            replySubmission.current = false;
+            setReplyBusy(false);
+        }
+    }
+
     async function report() {
-        if (submission.current || !reportReason.trim()) {
+        if (submission.current || !reportCategory) {
             return;
         }
 
@@ -228,17 +322,271 @@ export default function NewsEngagement({
 
         try {
             const data = await engagementPost(`/comments/${reportId}/report`, {
-                reason: reportReason,
+                category: reportCategory,
+                details: reportReason.trim(),
             });
+            setReported((ids) => [...ids, reportId!]);
             setReportId(null);
             setReportReason('');
             setMessage(data.message);
         } catch (error) {
-            setMessage((error as Error).message);
+            setReportError((error as Error).message);
         } finally {
             submission.current = false;
             setBusy(false);
         }
+    }
+    async function likeComment(comment: PublicComment) {
+        if (!authenticated) {
+            setPrompt(true);
+
+            return;
+        }
+
+        if (commentLikeRequests.current.has(comment.id)) {
+            return;
+        }
+
+        commentLikeRequests.current.add(comment.id);
+        setPendingLikes((ids) => [...ids, comment.id]);
+
+        try {
+            const data = await engagementPost(
+                `/comments/${comment.id}/like`,
+                {},
+            );
+            setCommentLikes((values) => ({ ...values, [comment.id]: data }));
+        } catch (error) {
+            setMessage((error as Error).message);
+        } finally {
+            commentLikeRequests.current.delete(comment.id);
+            setPendingLikes((ids) => ids.filter((id) => id !== comment.id));
+        }
+    }
+    const primaryButton =
+        'rounded-lg border border-green-600 bg-green-600 px-4 py-2 text-sm text-white enabled:hover:border-green-700 enabled:hover:bg-green-700 disabled:cursor-not-allowed disabled:border-gray-300 disabled:bg-gray-300 disabled:text-gray-500 dark:disabled:border-gray-700 dark:disabled:bg-gray-700 dark:disabled:text-gray-400';
+    const action =
+        'inline-flex items-center gap-1 rounded text-xs text-muted-foreground no-underline transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50';
+    const children = new Map<string, PublicComment[]>();
+
+    for (const comment of comments) {
+        const parent = comment.parent_id ?? '';
+        children.set(parent, [...(children.get(parent) ?? []), comment]);
+    }
+
+    function renderComment(comment: PublicComment) {
+        const replies = children.get(comment.id) ?? [];
+        const visible = expanded[comment.id] ?? 0;
+        const reaction = commentLikes[comment.id] ?? {
+            liked: comment.liked_by_user,
+            likes_count: comment.likes_count,
+        };
+        const isReported =
+            comment.reported_by_user || reported.includes(comment.id);
+
+        return (
+            <article
+                key={comment.id}
+                className="min-w-0 space-y-3 rounded-xl bg-secondary p-4"
+            >
+                <div className="group/comment space-y-2">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                        <strong className="break-words">
+                            {comment.author}
+                        </strong>
+                        <button
+                            type="button"
+                            disabled={isReported}
+                            className={`${action} focus-visible:opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-focus-within/comment:opacity-100 [@media(hover:hover)]:group-hover/comment:opacity-100`}
+                            onClick={() => {
+                                if (!authenticated) {
+                                    setPrompt(true);
+
+                                    return;
+                                }
+
+                                setReportCategory('');
+                                setReportReason('');
+                                setReportError('');
+                                setReportId(comment.id);
+                            }}
+                        >
+                            <Flag size={13} aria-hidden="true" />
+                            {isReported ? 'Dilaporkan' : 'Laporkan'}
+                        </button>
+                        {canCorrectModeration && (
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon-xs"
+                                aria-label="Tandai komentar tidak pantas"
+                                title="Tandai komentar tidak pantas"
+                                onClick={() =>
+                                    setModerationCommentId(comment.id)
+                                }
+                            >
+                                <Flag className="size-3.5" />
+                            </Button>
+                        )}
+                    </div>
+                    <p className="text-sm break-words whitespace-pre-wrap">
+                        {comment.content}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        <span>{comment.date}</span>
+                        <span aria-hidden="true">&middot;</span>
+                        <button
+                            type="button"
+                            className={action}
+                            aria-label={`${reaction.liked ? 'Batal menyukai' : 'Sukai'} komentar: ${reaction.likes_count} suka`}
+                            aria-pressed={reaction.liked}
+                            disabled={pendingLikes.includes(comment.id)}
+                            onClick={() => void likeComment(comment)}
+                        >
+                            <Heart
+                                size={13}
+                                aria-hidden="true"
+                                fill={reaction.liked ? 'currentColor' : 'none'}
+                            />
+                            {reaction.likes_count}
+                        </button>
+                        <span aria-hidden="true">&middot;</span>
+                        <button
+                            type="button"
+                            className={action}
+                            disabled={replyBusy}
+                            aria-expanded={replyId === comment.id}
+                            aria-controls={
+                                replyId === comment.id
+                                    ? `reply-form-${comment.id}`
+                                    : undefined
+                            }
+                            onClick={() => {
+                                if (!authenticated) {
+                                    setPrompt(true);
+
+                                    return;
+                                }
+
+                                if (replyId !== comment.id) {
+                                    setReplyContent('');
+                                    setReplyNotice(null);
+                                    setReplyId(comment.id);
+                                } else {
+                                    replyComposer.current?.focus();
+                                }
+                            }}
+                        >
+                            Balas
+                        </button>
+                    </div>
+                </div>
+                {replyId === comment.id && (
+                    <form
+                        id={`reply-form-${comment.id}`}
+                        className="space-y-2 border-l border-border pl-3"
+                        aria-busy={replyBusy}
+                        onSubmit={(event) => {
+                            event.preventDefault();
+                            void submitReply(comment.id);
+                        }}
+                    >
+                        <label
+                            htmlFor={`reply-content-${comment.id}`}
+                            className="block text-xs font-medium break-words"
+                        >
+                            Membalas @{comment.author}
+                        </label>
+                        <Textarea
+                            ref={replyComposer}
+                            id={`reply-content-${comment.id}`}
+                            required
+                            maxLength={1000}
+                            rows={2}
+                            placeholder="Tulis balasan..."
+                            value={replyContent}
+                            disabled={replyBusy}
+                            onChange={(event) =>
+                                setReplyContent(event.target.value)
+                            }
+                            className="max-h-40 bg-background"
+                        />
+                        <div className="flex flex-wrap justify-end gap-2">
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                disabled={replyBusy}
+                                onClick={() => {
+                                    setReplyId(null);
+                                    setReplyContent('');
+                                    setReplyNotice(null);
+                                }}
+                            >
+                                Batal
+                            </Button>
+                            <Button
+                                type="submit"
+                                size="sm"
+                                className={primaryButton}
+                                disabled={replyBusy || !replyContent.trim()}
+                            >
+                                {replyBusy ? 'Mengirim...' : 'Kirim Balasan'}
+                            </Button>
+                        </div>
+                    </form>
+                )}
+                {replyNotice?.parentId === comment.id && (
+                    <p
+                        role={replyNotice.error ? 'alert' : 'status'}
+                        className={`text-xs break-words ${replyNotice.error ? 'text-destructive' : 'text-muted-foreground'}`}
+                    >
+                        {replyNotice.text}
+                    </p>
+                )}
+                {replies.length > 0 && (
+                    <div className="space-y-3">
+                        <button
+                            type="button"
+                            className={action}
+                            aria-expanded={visible > 0}
+                            aria-controls={`replies-${comment.id}`}
+                            onClick={() =>
+                                setExpanded((values) => ({
+                                    ...values,
+                                    [comment.id]: visible ? 0 : 3,
+                                }))
+                            }
+                        >
+                            {visible
+                                ? 'Sembunyikan balasan'
+                                : `Lihat ${replies.length} balasan`}
+                        </button>
+                        <div
+                            id={`replies-${comment.id}`}
+                            hidden={!visible}
+                            className="space-y-3 border-l border-border pl-2 sm:pl-4"
+                        >
+                            {replies.slice(0, visible).map(renderComment)}
+                            {visible > 0 && visible < replies.length && (
+                                <button
+                                    type="button"
+                                    className={action}
+                                    onClick={() =>
+                                        setExpanded((values) => ({
+                                            ...values,
+                                            [comment.id]: visible + 3,
+                                        }))
+                                    }
+                                >
+                                    Lihat balasan lainnya
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                )}
+            </article>
+        );
     }
     const button =
         'rounded-lg border border-border px-4 py-2 text-sm hover:bg-secondary disabled:opacity-50';
@@ -268,7 +616,7 @@ export default function NewsEngagement({
                 </button>
                 <button className={button} disabled={sharing} onClick={share}>
                     <Share2 className="mr-2 inline" size={16} />
-                    Share
+                    Bagikan
                 </button>
             </div>
             {message && (
@@ -296,21 +644,9 @@ export default function NewsEngagement({
                     void submit();
                 }}
             >
-                {replyId && (
-                    <p>
-                        Membalas komentar{' '}
-                        <button
-                            type="button"
-                            className="underline"
-                            onClick={() => setReplyId(null)}
-                        >
-                            Batal
-                        </button>
-                    </p>
-                )}
                 <div className="hidden" aria-hidden="true">
                     <label>
-                        Website
+                        Situs web
                         <input
                             tabIndex={-1}
                             autoComplete="off"
@@ -334,8 +670,9 @@ export default function NewsEngagement({
                     Komentar diperiksa otomatis menggunakan OpenAI dan dapat
                     ditinjau moderator sebelum diterbitkan.
                 </p>
-                <button
-                    className="rounded-lg border border-green-600 bg-green-600 px-4 py-2 text-sm text-white enabled:hover:border-green-700 enabled:hover:bg-green-700 disabled:cursor-not-allowed disabled:border-gray-300 disabled:bg-gray-300 disabled:text-gray-500 dark:disabled:border-gray-700 dark:disabled:bg-gray-700 dark:disabled:text-gray-400"
+                <Button
+                    type="submit"
+                    className={primaryButton}
                     disabled={
                         busy ||
                         !content.trim() ||
@@ -343,79 +680,27 @@ export default function NewsEngagement({
                     }
                 >
                     {busy ? 'Memproses...' : 'Kirim Komentar'}
-                </button>
+                </Button>
             </form>
             {comments.length === 0 && (
                 <p className="text-sm text-muted-foreground">
                     Belum ada komentar. Jadilah yang pertama!
                 </p>
             )}
-            {comments.map((comment) => (
-                <article
-                    key={comment.id}
-                    className="space-y-2 rounded-xl bg-secondary p-4"
-                >
-                    <div className="flex flex-wrap gap-3 text-sm">
-                        <strong>{comment.author}</strong>
-                        {canCorrectModeration && (
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon-xs"
-                                aria-label="Tandai komentar tidak pantas"
-                                title="Tandai komentar tidak pantas"
-                                onClick={() =>
-                                    setModerationCommentId(comment.id)
-                                }
-                            >
-                                <Flag className="size-3.5" />
-                            </Button>
-                        )}
-                        <span className="text-muted-foreground">
-                            {comment.date}
-                        </span>
-                    </div>
-                    {comment.parent_id && (
-                        <p className="text-xs text-muted-foreground">
-                            Balasan untuk{' '}
-                            {comments.find(
-                                (parent) => parent.id === comment.parent_id,
-                            )?.author ?? 'komentar'}
-                        </p>
-                    )}
-                    <p className="text-sm break-words whitespace-pre-wrap">
-                        {comment.content}
-                    </p>
-                    {authenticated && (
-                        <div className="flex gap-4">
-                            <button
-                                className="text-xs underline"
-                                onClick={() => setReplyId(comment.id)}
-                            >
-                                Balas
-                            </button>
-                            <button
-                                className="text-xs underline"
-                                onClick={() => setReportId(comment.id)}
-                            >
-                                Laporkan
-                            </button>
-                        </div>
-                    )}
-                </article>
-            ))}
+            {(children.get('') ?? []).map(renderComment)}
             <Dialog open={prompt} onOpenChange={setPrompt}>
                 <DialogContent>
-                    <DialogTitle>Login diperlukan</DialogTitle>
+                    <DialogTitle>Masuk diperlukan</DialogTitle>
                     <DialogDescription>
-                        Please log in or create an account to use this feature.
+                        Silakan masuk atau buat akun untuk menggunakan fitur
+                        ini.
                     </DialogDescription>
                     <div className="flex justify-end gap-3">
                         <Link
                             className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
                             href="/login"
                         >
-                            Login
+                            Masuk
                         </Link>
                     </div>
                 </DialogContent>
@@ -423,7 +708,7 @@ export default function NewsEngagement({
             <Dialog
                 open={reportId !== null}
                 onOpenChange={(open) => {
-                    if (!open) {
+                    if (!open && !busy) {
                         setReportId(null);
                     }
                 }}
@@ -433,20 +718,78 @@ export default function NewsEngagement({
                     <DialogDescription>
                         Jelaskan mengapa komentar ini perlu ditinjau.
                     </DialogDescription>
-                    <textarea
-                        aria-label="Alasan laporan"
-                        maxLength={500}
-                        value={reportReason}
-                        onChange={(e) => setReportReason(e.target.value)}
-                        className="rounded border p-3"
-                    />
-                    <button
-                        className={button}
-                        disabled={busy || !reportReason.trim()}
-                        onClick={report}
+                    <form
+                        className="space-y-4"
+                        onSubmit={(event) => {
+                            event.preventDefault();
+                            void report();
+                        }}
                     >
-                        Kirim laporan
-                    </button>
+                        <label className="block space-y-1 text-sm">
+                            <span>Kategori laporan (wajib)</span>
+                            <select
+                                required
+                                value={reportCategory}
+                                disabled={busy}
+                                onChange={(event) =>
+                                    setReportCategory(event.target.value)
+                                }
+                                className="block w-full rounded-md border border-border bg-background p-2"
+                            >
+                                <option value="">Pilih kategori</option>
+                                {[
+                                    'Penipuan / Scam',
+                                    'Pelecehan / Penghinaan',
+                                    'Ujaran Kebencian',
+                                    'Ancaman / Intimidasi',
+                                    'Spam',
+                                    'Konten Tidak Pantas',
+                                    'Lainnya',
+                                ].map((category) => (
+                                    <option key={category} value={category}>
+                                        {category}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
+                        <label className="block space-y-1 text-sm">
+                            <span>Keterangan tambahan (opsional)</span>
+                            <textarea
+                                maxLength={450}
+                                rows={3}
+                                disabled={busy}
+                                value={reportReason}
+                                onChange={(event) =>
+                                    setReportReason(event.target.value)
+                                }
+                                className="block w-full rounded-md border border-border bg-background p-3"
+                            />
+                        </label>
+                        {reportError && (
+                            <p
+                                role="alert"
+                                className="text-sm text-destructive"
+                            >
+                                {reportError}
+                            </p>
+                        )}
+                        <div className="flex justify-end gap-3">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                disabled={busy}
+                                onClick={() => setReportId(null)}
+                            >
+                                Batal
+                            </Button>
+                            <Button
+                                type="submit"
+                                disabled={busy || !reportCategory}
+                            >
+                                {busy ? 'Mengirim...' : 'Kirim Laporan'}
+                            </Button>
+                        </div>
+                    </form>
                 </DialogContent>
             </Dialog>
         </section>

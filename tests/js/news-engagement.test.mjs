@@ -8,12 +8,16 @@ const { copyArticleLink, visibleReadingClock } = await import(`data:text/javascr
 
 test('copy uses the public article URL and waits for successful clipboard write', async () => {
     let copied;
-    const result = await copyArticleLink(42, 'https://news.example', { writeText: async url => { copied = url; } });
+    const result = await copyArticleLink(42, 'https://news.example', { writeText: async url => {
+ copied = url;
+} });
     assert.equal(copied, 'https://news.example/news/42');
-    assert.equal(result, 'Link copied to clipboard!');
+    assert.equal(result, 'Tautan berhasil disalin!');
 });
 test('clipboard denial and unavailable API provide manual canonical link', async () => {
-    for (const clipboard of [undefined, { writeText: async () => { throw new Error('NotAllowedError'); } }]) {
+    for (const clipboard of [undefined, { writeText: async () => {
+ throw new Error('NotAllowedError');
+} }]) {
         const result = await copyArticleLink(42, 'https://news.example', clipboard);
         assert.match(result, /https:\/\/news.example\/news\/42/);
         assert.doesNotMatch(result, /Link copied/);
@@ -21,9 +25,17 @@ test('clipboard denial and unavailable API provide manual canonical link', async
 });
 test('hidden time does not qualify and visible reading emits only once', () => {
     const clock = visibleReadingClock(0);
-    for (let t = 250; t <= 10000; t += 250) assert.equal(clock.tick(t, false), false);
+
+    for (let t = 250; t <= 10000; t += 250) {
+assert.equal(clock.tick(t, false), false);
+}
+
     clock.reset(10000);
-    for (let t = 10250; t < 15500; t += 250) assert.equal(clock.tick(t, true), false);
+
+    for (let t = 10250; t < 15500; t += 250) {
+assert.equal(clock.tick(t, true), false);
+}
+
     assert.equal(clock.tick(15500, true), true);
     assert.equal(clock.tick(16000, true), false);
     assert.equal(clock.tick(20000, true), false);

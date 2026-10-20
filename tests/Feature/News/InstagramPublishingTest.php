@@ -409,3 +409,21 @@ test('Cloudinary probe still rejects unsupported image dimensions', function (in
     expect(fn () => app(InstagramImageService::class)->probeCloudinary('https://res.cloudinary.com/demo/image/upload/photo.jpg'))
         ->toThrow(ValidationException::class);
 })->with([[1080, 1920], [100, 100], [1200, 630]]);
+
+test('Instagram prepares WebP and PNG JPEG variants on the configured cloud disk', function (string $extension) {
+    Storage::fake('public');
+    Storage::fake('s3');
+    config(['filesystems.news_media_disk' => 's3']);
+    $image = imagecreatetruecolor(100, 100);
+    ob_start();
+    $extension === 'webp' ? imagewebp($image, null, 80) : imagepng($image);
+    $source = ob_get_clean();
+    imagedestroy($image);
+    Storage::disk('s3')->put('news-images/source.'.$extension, $source);
+    instagramSequence()->push(['id' => '111'])->push(['id' => '222']);
+    expect(app(InstagramService::class)->publish(Storage::disk('s3')->url('news-images/source.'.$extension), 'Keterangan berita'))->toBe('222');
+    $jpeg = Storage::disk('s3')->get('news-images/instagram/'.hash('sha256', $source).'.jpg');
+    expect(getimagesizefromstring($jpeg)['mime'])->toBe('image/jpeg')
+        ->and(Storage::disk('s3')->get('news-images/source.'.$extension))->toBe($source)
+        ->and(Storage::disk('public')->allFiles())->toBe([]);
+})->with(['webp', 'png']);

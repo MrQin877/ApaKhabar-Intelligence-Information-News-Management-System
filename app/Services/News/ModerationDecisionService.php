@@ -19,10 +19,10 @@ class ModerationDecisionService
             $from = $comment->status;
             $to = match ($action) {
                 'approve' => $from === 'pending_review' ? 'published' : null,
-                'reject' => $from === 'pending_review' ? 'rejected' : null,
+                'reject' => in_array($from, ['pending_review', 'removed'], true) ? 'rejected' : null,
                 'remove' => $from === 'published' ? 'removed' : null,
-                'restore' => $from === 'removed' ? 'published' : null,
-                'dismiss_reports' => $from,
+                'restore' => in_array($from, ['removed', 'rejected'], true) ? 'published' : null,
+                'dismiss_reports' => $from === 'published' && DB::table('comment_reports')->where('comment_id', $id)->whereNull('resolved_at')->exists() ? $from : null,
                 default => null,
             };
             abort_if($to === null, 409, 'Status komentar telah berubah. Muat ulang halaman.');

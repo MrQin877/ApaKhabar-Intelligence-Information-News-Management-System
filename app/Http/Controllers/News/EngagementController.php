@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 class EngagementController extends Controller
 {
@@ -68,12 +69,22 @@ class EngagementController extends Controller
 
     public function report(Request $request, string $id)
     {
-        $data = $request->validate(['reason' => 'required|string|max:500']);
+        $data = $request->validate([
+            'category' => ['required_without:reason', 'string', Rule::in([
+                'Penipuan / Scam', 'Pelecehan / Penghinaan', 'Ujaran Kebencian',
+                'Ancaman / Intimidasi', 'Spam', 'Konten Tidak Pantas', 'Lainnya',
+            ])],
+            'details' => 'nullable|string|max:450',
+            'reason' => 'required_without:category|string|max:500',
+        ]);
+        $reason = isset($data['category'])
+            ? $data['category'].(! empty($data['details']) ? ': '.trim($data['details']) : '')
+            : $data['reason'];
         $comment = Comment::where('status', 'published')->findOrFail($id);
         News::active()->findOrFail($comment->newsID);
         DB::table('comment_reports')->insertOrIgnore([
             'comment_id' => $comment->getKey(), 'user_id' => $request->user()->getKey(),
-            'reason' => $data['reason'], 'created_at' => now(),
+            'reason' => $reason, 'created_at' => now(),
         ]);
 
         return response()->json(['message' => 'Laporan diterima. Terima kasih.']);

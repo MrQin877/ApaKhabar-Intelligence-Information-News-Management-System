@@ -46,7 +46,11 @@ class NewsService
             ->latest('id')->value('image');
 
         $published = Comment::where('newsID', $news->getKey())
-            ->where('status', 'published')->with('author')->oldest()->get()->keyBy('commentID');
+            ->where('status', 'published')->with('author')->withCount('likes')
+            ->withExists([
+                'likes as liked_by_user' => fn ($query) => $query->where('users.userID', auth()->id()),
+                'reporters as reported_by_user' => fn ($query) => $query->where('users.userID', auth()->id()),
+            ])->oldest()->get()->keyBy('commentID');
         $comments = $published->filter(function ($comment) use ($published) {
             $parentId = $comment->parentID;
             $seen = [];
@@ -64,7 +68,10 @@ class NewsService
             'author' => $comment->author?->name ?? $comment->guest_name ?? 'Tamu',
             'user' => $comment->author?->name ?? $comment->guest_name ?? 'Tamu',
             'parent_id' => $comment->parentID ? (string) $comment->parentID : null,
-            'date' => optional($comment->created_at)->diffForHumans(),
+            'date' => $comment->created_at?->locale('id')->diffForHumans(),
+            'likes_count' => $comment->likes_count,
+            'liked_by_user' => (bool) $comment->liked_by_user,
+            'reported_by_user' => (bool) $comment->reported_by_user,
         ])->values();
 
         return [

@@ -40,7 +40,7 @@ export async function copyArticleLink(
 
         await clipboard.writeText(url);
 
-        return 'Link copied to clipboard!';
+        return 'Tautan berhasil disalin!';
     } catch {
         return `Tidak dapat menyalin otomatis. Salin tautan ini: ${url}`;
     }

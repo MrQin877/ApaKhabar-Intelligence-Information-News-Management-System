@@ -28,6 +28,23 @@ class InteractionService
         });
     }
 
+    public function likeComment(int $userId, string $commentId): array
+    {
+        return DB::transaction(function () use ($userId, $commentId) {
+            $comment = Comment::where('status', 'published')->lockForUpdate()->findOrFail($commentId);
+            News::active()->findOrFail($comment->newsID);
+            $query = DB::table('comment_likes')->where('comment_id', $commentId)->where('user_id', $userId);
+            $existing = $query->exists();
+            if ($existing) {
+                $query->delete();
+            } else {
+                DB::table('comment_likes')->insert(['comment_id' => $commentId, 'user_id' => $userId]);
+            }
+
+            return ['liked' => ! $existing, 'likes_count' => DB::table('comment_likes')->where('comment_id', $commentId)->count()];
+        });
+    }
+
     public function addComment(?int $userId, string $newsId, string $content, ?int $parentId = null): Comment
     {
         $news = News::active()->findOrFail($newsId);

@@ -38,6 +38,11 @@ class CommentController extends Controller
             : back();
     }
 
+    public function like(Request $request, string $id)
+    {
+        return response()->json($this->interactionService->likeComment($request->user()->getKey(), $id));
+    }
+
     public function reply(Request $request, $commentId)
     {
         $data = $request->validate(['content' => 'required|string|max:1000']);
