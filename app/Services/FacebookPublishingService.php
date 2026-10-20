@@ -84,9 +84,9 @@ class FacebookPublishingService
             }
             // Reuse JPEG preparation without applying Instagram's square normalization.
             try {
-                if (strtolower(pathinfo($path, PATHINFO_EXTENSION)) === 'png') {
+                if (in_array(strtolower(pathinfo($path, PATHINFO_EXTENSION)), ['png', 'webp'], true)) {
                     $prepared = app(InstagramImageService::class)->convertPngToJpeg($url);
-                    $bytes = Storage::disk('public')->get(substr($prepared, strlen('/storage/')));
+                    $bytes = $disk->get('news-images/instagram/'.basename(parse_url($prepared, PHP_URL_PATH)));
                 } else {
                     $bytes = $disk->get($path);
                 }

@@ -2,10 +2,13 @@
 
 use App\Models\IntelligentNewsDraft;
 use App\Models\News;
+use App\Models\NewsCategory;
 use App\Models\User;
 use App\Models\UserRole;
+use App\Services\CloudinaryService;
 use App\Services\FacebookPublishingService;
 use App\Services\News\MetaConnections;
+use App\Services\NewsImageOptimizer;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -15,7 +18,7 @@ beforeEach(function () {
     config(['services.facebook.page_id' => '12345', 'services.facebook.page_access_token' => 'facebook-private-token', 'services.facebook.graph_version' => 'v26.0']);
     Http::preventStrayRequests();
     $this->actingAs(User::factory()->create(['roleID' => UserRole::firstOrCreate(['name' => 'admin'])->getKey()]));
-    $this->article = ['headline' => 'Berita warga', 'content' => '<p>Kegiatan warga berlangsung dengan lancar hari ini.</p>',
+    $this->article = ['category_id' => NewsCategory::firstOrCreate(['name' => 'Pengumuman'], ['slug' => 'pengumuman', 'status' => 'active'])->getKey(), 'headline' => 'Berita warga', 'content' => '<p>Kegiatan warga berlangsung dengan lancar hari ini.</p>',
         'content_format' => 'html', 'intent' => 'publish', 'platforms' => ['facebook']];
 });
 
@@ -144,3 +147,22 @@ test('Facebook diagnostics record Meta details only in the file log', function (
         && $context['step'] === $step && $context['endpoint'] === 'https://graph.facebook.com/v26.0/12345/'.$step
         && ! str_contains(json_encode($context), 'unexpected-token'));
 })->with([[null, 'feed'], ['https://images.example.com/photo.jpg', 'photos']]);
+
+test('Facebook converts uncropped WebP locally to JPEG on the configured disk', function (string $diskName) {
+    Storage::fake('public');
+    Storage::fake($diskName);
+    config(['filesystems.news_media_disk' => $diskName]);
+    $image = imagecreatetruecolor(100, 50);
+    $source = NewsImageOptimizer::encodeWebp($image);
+    imagedestroy($image);
+    Storage::disk($diskName)->put('news-images/source.webp', $source);
+    $this->mock(CloudinaryService::class)->shouldReceive('uploadJpeg')->once()
+        ->withArgs(fn ($bytes) => getimagesizefromstring($bytes)['mime'] === 'image/jpeg')
+        ->andReturn('https://res.cloudinary.com/demo/image/upload/cover.jpg');
+    Http::fake(['graph.facebook.com/*' => Http::response(['id' => '12345_67890'])]);
+    expect(app(FacebookPublishingService::class)->publish(Storage::disk($diskName)->url('news-images/source.webp'), 'Berita'))->toBe('12345_67890');
+    expect(Storage::disk($diskName)->get('news-images/source.webp'))->toBe($source);
+    if ($diskName !== 'public') {
+        expect(Storage::disk('public')->allFiles())->toBe([]);
+    }
+})->with(['public', 's3']);

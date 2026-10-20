@@ -84,3 +84,7 @@ npm run build
 ```
 
 `composer test` also clears configuration and runs PHP formatting checks. Focused suites live under `tests/Feature/IntelligentNews`, `News`, `Broadcast`, `Auth`, and `Settings`. Tests using mocked providers validate application behavior; live model quality and real social publishing require separate verification. Never use real publishing as a routine automated smoke test.
+
+## News engagement and moderation
+
+See [news engagement setup, retention, moderation, and testing](docs/news-engagement.md). Run the new migrations before serving the updated UI. Configure server-side `OPENAI_API_KEY`; without it, comments remain pending for admin review.

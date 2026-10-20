@@ -665,7 +665,7 @@ class NewsCreatorController extends Controller
             'image' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:10240'],
         ]);
         $disk = config('filesystems.news_media_disk', 'public');
-        $path = $validated['image']->storePublicly('news-images', $disk);
+        $path = app(\App\Services\NewsImageOptimizer::class)->store($validated['image']);
 
         if (! $path) {
             return back()->withErrors(['image' => 'Gambar gagal disimpan. Silakan coba lagi.']);

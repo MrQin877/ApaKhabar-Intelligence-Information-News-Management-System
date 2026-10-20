@@ -50,17 +50,17 @@ beforeEach(function () {
     $this->actingAs(User::factory()->create(['roleID' => UserRole::firstOrCreate(['name' => 'admin'])->getKey()]));
 });
 
-test('crop settings survive draft reload and variants preserve original bytes with independent framing', function () {
+test('crop settings survive draft reload and variants preserve optimized originals with independent framing', function () {
     $article = cropArticle();
     $original = file_get_contents($article['cover_photo']->getRealPath());
     $this->post('/admin/news/manual', $article)->assertSessionHasNoErrors()->assertRedirect();
     $draft = IntelligentNewsDraft::sole();
     expect($draft->image_crops)->toBe(cropSettings());
-    expect(Storage::disk('public')->get('news-images/'.basename($draft->image)))->toBe($original);
+    expect(Storage::disk('public')->get('news-images/'.basename($draft->image)))->toBe(app(\App\Services\NewsImageOptimizer::class)->convert($original));
     foreach (NewsImageCropService::SIZES as $platform => [$width, $height]) {
         $bytes = Storage::disk('public')->get('news-images/crops/'.basename($draft->image_variants[$platform]));
         $info = getimagesizefromstring($bytes);
-        expect([$info[0], $info[1], $info[2]])->toBe([$width, $height, IMAGETYPE_JPEG]);
+        expect([$info[0], $info[1], $info[2]])->toBe([$width, $height, $platform === 'website' ? IMAGETYPE_WEBP : IMAGETYPE_JPEG]);
         $image = imagecreatefromstring($bytes);
         $color = imagecolorsforindex($image, imagecolorat($image, 10, 10));
         if ($platform === 'website') {
@@ -100,7 +100,7 @@ test('invalid and incomplete crops are rejected before storing images', function
     expect(Storage::disk('public')->allFiles())->toBe([]);
 });
 
-test('social crop types persist and generate matching dimensions without changing the original', function ($type, $ig, $fb) {
+test('social crop types persist and generate matching dimensions with optimized source dimensions', function ($type, $ig, $fb) {
     $article = cropArticle();
     [$width, $height] = match ($type) {
         'portrait' => [1080, 1350],
@@ -118,7 +118,7 @@ test('social crop types persist and generate matching dimensions without changin
         $bytes = Storage::disk('public')->get('news-images/crops/'.basename($draft->image_variants[$platform]));
         expect(array_slice(getimagesizefromstring($bytes), 0, 2))->toBe($size);
     }
-    expect(Storage::disk('public')->get('news-images/'.basename($draft->image)))->toBe($original);
+    expect(Storage::disk('public')->get('news-images/'.basename($draft->image)))->toBe(app(\App\Services\NewsImageOptimizer::class)->convert($original));
 })->with([
     ['portrait', [1080, 1350], [1080, 1350]],
     ['square', [1080, 1080], [1080, 1080]],

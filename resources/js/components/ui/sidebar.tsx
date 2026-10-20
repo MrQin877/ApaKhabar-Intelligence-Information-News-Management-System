@@ -67,6 +67,11 @@ function SidebarProvider({
   const isMobile = useIsMobile()
   const [openMobile, setOpenMobile] = React.useState(false)
 
+  React.useEffect(() => {
+    // Use the same responsive state as rendering and the toggle, not a second media query.
+    setOpenMobile(false)
+  }, [isMobile])
+
   // This is the internal state of the sidebar.
   // We use openProp and setOpenProp for control from outside the component.
   const [_open, _setOpen] = React.useState(defaultOpen)
@@ -178,10 +183,6 @@ function Sidebar({
   if (isMobile) {
     return (
       <Sheet open={openMobile} onOpenChange={setOpenMobile} {...props}>
-        <SheetHeader className="sr-only">
-          <SheetTitle>Sidebar</SheetTitle>
-          <SheetDescription>Displays the mobile sidebar.</SheetDescription>
-        </SheetHeader>
         <SheetContent
           data-sidebar="sidebar"
           data-slot="sidebar"
@@ -195,7 +196,7 @@ function Sidebar({
             if (!href || href.startsWith("#") || link.hasAttribute("download") || (link.target && link.target !== "_self")) return
             setOpenMobile(false)
           }}
-          className="bg-sidebar text-sidebar-foreground w-(--sidebar-width) p-0 [&>button]:hidden"
+          className="bg-sidebar text-sidebar-foreground w-(--sidebar-width) max-w-[calc(100vw-2rem)] p-0"
           style={
             {
               "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
@@ -203,7 +204,11 @@ function Sidebar({
           }
           side={side}
         >
-          <div className="flex h-full w-full flex-col">{children}</div>
+          <SheetHeader className="sr-only">
+            <SheetTitle>Navigasi admin</SheetTitle>
+            <SheetDescription>Pilih halaman dari menu navigasi.</SheetDescription>
+          </SheetHeader>
+          <div className="flex h-full min-h-0 w-full flex-col">{children}</div>
         </SheetContent>
       </Sheet>
     )

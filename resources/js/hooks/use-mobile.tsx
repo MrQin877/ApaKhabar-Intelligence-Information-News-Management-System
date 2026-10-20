@@ -1,11 +1,12 @@
 import { useSyncExternalStore } from 'react';
 
-const MOBILE_BREAKPOINT = 768;
+// Match Tailwind's md breakpoint exactly, including fractional viewport widths.
+const DESKTOP_MEDIA_QUERY = '(min-width: 48rem)';
 
 const mql =
     typeof window === 'undefined'
         ? undefined
-        : window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`);
+        : window.matchMedia(DESKTOP_MEDIA_QUERY);
 
 function mediaQueryListener(callback: (event: MediaQueryListEvent) => void) {
     if (!mql) {
@@ -20,7 +21,7 @@ function mediaQueryListener(callback: (event: MediaQueryListEvent) => void) {
 }
 
 function isSmallerThanBreakpoint(): boolean {
-    return mql?.matches ?? false;
+    return mql ? !mql.matches : false;
 }
 
 function getServerSnapshot(): boolean {

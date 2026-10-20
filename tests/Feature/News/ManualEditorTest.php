@@ -15,7 +15,7 @@ use Inertia\Testing\AssertableInertia as Assert;
 
 function manualCover(): File
 {
-    return UploadedFile::fake()->createWithContent('cover.png', base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII='));
+    return UploadedFile::fake()->image('cover.png', 100, 100);
 }
 
 function manualArticle(array $overrides = []): array
@@ -394,7 +394,6 @@ test('inline category creation returns an active selection shared by manual edit
     expect(NewsCategory::where('name', 'Kegiatan Komunitas')->count())->toBe(1);
 });
 
-
 test('manual publication and preview require a category but drafts may omit it', function () {
     $article = manualArticle(['category_id' => null]);
     $this->postJson('/admin/news/manual', [...$article, 'intent' => 'publish'])
@@ -414,7 +413,6 @@ test('manual publication rechecks the category in a cached preview', function ()
         ->assertUnprocessable()->assertJsonValidationErrors('category_id');
     expect(News::count())->toBe(0);
 });
-
 
 test('category creation returns the saved category and refreshed active dropdown options', function () {
     $active = NewsCategory::create(['name' => 'Existing active', 'slug' => 'existing-active', 'status' => 'active']);

@@ -6,6 +6,7 @@ use App\Models\IntelligenceInformation;
 use App\Services\PublicationPreviewFiles;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schedule;
 
@@ -117,3 +118,8 @@ Artisan::command(
 )->purpose(
     'Rebuild approved AI knowledge after an embedding model or agent collection migration',
 );
+
+Schedule::call(function () {
+    DB::table('news_viewers')->where('expires_at', '<', now())->delete();
+    DB::table('news_visits')->where('expires_at', '<', now())->delete();
+})->daily()->name('engagement-retention')->withoutOverlapping();

@@ -5,52 +5,49 @@ namespace App\Http\Controllers\News;
 use App\Http\Controllers\Controller;
 use App\Services\News\InteractionService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Validation\ValidationException;
 
 class CommentController extends Controller
 {
-    public function __construct(protected InteractionService $interactionService)
-    {
-    }
+    public function __construct(protected InteractionService $interactionService) {}
 
     public function store(Request $request, $id)
     {
-        $request->validate(['content' => 'required|string|max:1000']);
-
-        try {
-            $comment = $this->interactionService->addComment(auth()->id(), $id, $request->content);
-        } catch (\Throwable $e) {
-            if ($request->expectsJson()) {
-                return response()->json(['message' => 'News not found'], 404);
+        $data = $request->validate([
+            'content' => 'required|string|max:1000',
+            'website' => 'nullable|string|max:0', 'challenge' => 'nullable|string|max:2000',
+        ]);
+        if (! $request->user()) {
+            try {
+                $challenge = json_decode(Crypt::decryptString($data['challenge'] ?? ''), true);
+                $valid = (string) $challenge['news'] === (string) $id
+                    && hash_equals($challenge['session'], hash('sha256', $request->session()->getId()))
+                    && now()->timestamp - $challenge['time'] >= 3 && now()->timestamp - $challenge['time'] <= 7200;
+            } catch (\Throwable $e) {
+                $valid = false;
             }
-
-            abort(404);
+            if (! $valid) {
+                throw ValidationException::withMessages(['content' => 'Muat ulang artikel dan tunggu beberapa detik sebelum mengirim.']);
+            }
         }
+        $comment = $this->interactionService->addComment($request->user()?->getKey(), $id, $data['content']);
 
-        if ($request->expectsJson()) {
-            return response()->json($comment, 201);
-        }
+        return $request->expectsJson()
+            ? response()->json(['status' => $comment->status, 'message' => $comment->status === 'published' ? 'Komentar diterbitkan.' : 'Komentar menunggu peninjauan moderator.'], 201)
+            : back();
+    }
 
-        return back();
+    public function like(Request $request, string $id)
+    {
+        return response()->json($this->interactionService->likeComment($request->user()->getKey(), $id));
     }
 
     public function reply(Request $request, $commentId)
     {
-        $request->validate(['content' => 'required|string|max:1000']);
+        $data = $request->validate(['content' => 'required|string|max:1000']);
+        $comment = $this->interactionService->addReply($request->user()->getKey(), $commentId, $data['content']);
 
-        try {
-            $reply = $this->interactionService->addReply(auth()->id(), $commentId, $request->content);
-        } catch (\Throwable $e) {
-            if ($request->expectsJson()) {
-                return response()->json(['message' => 'Comment not found'], 404);
-            }
-
-            abort(404);
-        }
-
-        if ($request->expectsJson()) {
-            return response()->json($reply, 201);
-        }
-
-        return back();
+        return $request->expectsJson() ? response()->json(['status' => $comment->status], 201) : back();
     }
 }
