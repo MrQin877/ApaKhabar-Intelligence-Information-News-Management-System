@@ -39,3 +39,27 @@ Docker and real cloud delivery require deployment testing; fake S3 tests validat
 4. Expand the Network response to confirm actual MIME; a `.webp` filename alone is not proof. GD quality 80 is verified in code/tests and cannot reliably be inferred from browser file properties. WebP may be larger than a tiny/simple input; compression is not a guarantee of smaller size for every file.
 5. Check an older JPG/PNG article still displays unchanged. Upload a JPG/PNG OCR document and verify its original download is unchanged.
 6. Repeat on the deployed Apache/FPM/container and real storage/CDN. Live social posting requires the existing account configuration and explicit publishing action; automated tests mock external providers.
+
+
+## Verification checkpoint - 20 October 2026
+
+Status: **Partial verification**. All image-specific tests pass, but the broader selected suite has one unrelated category test failure, and live browser/container/cloud delivery is not verified.
+
+The resumed review found the previous WebP fixes already committed in `42e4cb1`; no production implementation was rewritten:
+
+- Instagram JPEG fallback writes and reads NEWS_MEDIA_DISK consistently for both PNG and WebP, including cloud storage, with image/jpeg metadata.
+- Facebook's uncropped local WebP sources are converted to JPEG with GD before the existing delivery integration.
+- Assistant image fixtures include required draft fields; manual cover fixtures now contain valid PNG bytes (the former fixture had an IDAT CRC error). Facebook publication fixtures include the required category. Production validation was not relaxed.
+
+Verification results:
+
+- Selected PHP suites: **167 passed, 1 failed, 1786 assertions**. Suites: WebpOptimizationTest, ManualEditorTest, ImageCropsTest, InstagramPublishingTest, FacebookPublishingTest, DocumentPreviewTest, UploadLimitsTest.
+- Remaining failure: ManualEditorTest, `AI category resolution ignores inactive and deleted categories including when none remain`. It expects null with no active categories, while NewsCreatorController::resolveCategoryId calls firstOrFail (line 730). This is unrelated to image processing and was left unchanged.
+- All 7 frontend image crop tests pass, including parity with PHP crop calculations.
+- `npm run build` passes (Vite build and TypeScript no-emit check).
+- PHP syntax checks pass for 12 relevant implementation/test/preflight files. Pint passes for the 8 previously changed PHP files.
+- Preflight passes on both C:/xampp/php/php.exe and C:/Testxampp/php/php.exe (PHP 8.2.12, GD JPEG/PNG/WebP, EXIF, fileinfo, mbstring, actual WebP alpha round trip).
+- `docker compose -f compose.translation.yaml config --quiet` passes. Docker daemon is unavailable. This Compose file only defines LibreTranslate; no application PHP Dockerfile exists to verify GD build flags.
+- S3 coverage uses fake storage; social-provider calls are mocked. No real cloud uploads or social posts were sent by verification.
+
+The browser checks above, Apache/FPM runtime checks, real bucket/CDN MIME delivery, and PHP application container checks remain manual deployment gates. WebP conversion itself is entirely local GD; existing Cloudinary/Meta delivery remains separate.

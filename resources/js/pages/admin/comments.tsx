@@ -15,19 +15,17 @@ import {
 import { useRef, useState } from 'react';
 import { engagementPost } from '@/components/news-engagement';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import {
-    AlertDialog,
-    AlertDialogAction,
-    AlertDialogCancel,
-    AlertDialogContent,
-    AlertDialogDescription,
-    AlertDialogFooter,
-    AlertDialogHeader,
-    AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -37,6 +35,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import AppLayout from '@/layouts/app-layout';
 import { cn } from '@/lib/utils';
@@ -224,14 +223,9 @@ function decisionNotes(event: History) {
 }
 
 export default function Comments({ comments, filters, counts }: Props) {
-    const [selectedId, setSelectedId] = useState<number | null | undefined>(
-        undefined,
-    );
+    const [selectedId, setSelectedId] = useState<number | null>(null);
     const selected =
-        selectedId === null
-            ? null
-            : (comments.data.find((item) => item.id === selectedId) ??
-              comments.data[0]);
+        comments.data.find((item) => item.id === selectedId) ?? null;
     const [search, setSearch] = useState(filters.search);
     const [from, setFrom] = useState(filters.from);
     const [until, setUntil] = useState(filters.until);
@@ -255,7 +249,7 @@ export default function Comments({ comments, filters, counts }: Props) {
                 preserveScroll: true,
                 onStart: () => setLoading(true),
                 onSuccess: () => {
-                    setSelectedId(undefined);
+                    setSelectedId(null);
                     setNotice(null);
                 },
                 onError: () =>
@@ -279,7 +273,12 @@ export default function Comments({ comments, filters, counts }: Props) {
             {
                 preserveState: true,
                 preserveScroll: true,
-                only: ['comments', 'counts', 'filters'],
+                only: [
+                    'comments',
+                    'counts',
+                    'filters',
+                    'moderationPendingCount',
+                ],
                 onStart: () => setLoading(true),
                 onFinish: () => {
                     setLoading(false);
@@ -320,52 +319,51 @@ export default function Comments({ comments, filters, counts }: Props) {
                         <AlertDescription>{notice.text}</AlertDescription>
                     </Alert>
                 )}
-                <div className="grid min-w-0 items-start gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
+                <div
+                    className={cn(
+                        'grid min-w-0 items-start gap-6',
+                        selected &&
+                            'lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]',
+                    )}
+                >
                     <section
                         className="min-w-0 space-y-4"
                         aria-label="Daftar moderasi"
                         aria-busy={loading}
                     >
-                        <div
-                            className="inline-flex rounded-lg bg-muted p-1"
-                            aria-label="Tampilan moderasi"
+                        <Tabs
+                            value={filters.tab}
+                            onValueChange={(tab) =>
+                                visit({
+                                    tab: tab as Filters['tab'],
+                                    source: 'all',
+                                    decision: 'all',
+                                })
+                            }
                         >
-                            <Button
-                                variant={
-                                    filters.tab === 'pending'
-                                        ? 'secondary'
-                                        : 'ghost'
-                                }
-                                aria-pressed={filters.tab === 'pending'}
-                                disabled={busy || loading}
-                                onClick={() =>
-                                    visit({
-                                        tab: 'pending',
-                                        source: 'all',
-                                        decision: 'all',
-                                    })
-                                }
+                            <TabsList
+                                aria-label="Tampilan moderasi"
+                                className="max-w-full"
                             >
-                                Perlu Ditinjau{' '}
-                                <span className="ml-1 rounded-full bg-background px-2 text-xs tabular-nums">
-                                    {counts.pending}
-                                </span>
-                            </Button>
-                            <Button
-                                variant={
-                                    filters.tab === 'history'
-                                        ? 'secondary'
-                                        : 'ghost'
-                                }
-                                aria-pressed={filters.tab === 'history'}
-                                disabled={busy || loading}
-                                onClick={() =>
-                                    visit({ tab: 'history', source: 'all' })
-                                }
-                            >
-                                Riwayat
-                            </Button>
-                        </div>
+                                <TabsTrigger
+                                    value="pending"
+                                    disabled={busy || loading}
+                                    className="data-[state=active]:border-primary data-[state=active]:ring-1 data-[state=active]:ring-primary/30 dark:data-[state=active]:border-primary"
+                                >
+                                    Perlu Ditinjau{' '}
+                                    <span className="rounded-full bg-background px-2 text-xs tabular-nums">
+                                        {counts.pending}
+                                    </span>
+                                </TabsTrigger>
+                                <TabsTrigger
+                                    value="history"
+                                    disabled={busy || loading}
+                                    className="data-[state=active]:border-primary data-[state=active]:ring-1 data-[state=active]:ring-primary/30 dark:data-[state=active]:border-primary"
+                                >
+                                    Riwayat
+                                </TabsTrigger>
+                            </TabsList>
+                        </Tabs>
                         <form
                             className="space-y-3"
                             onSubmit={(event) => {
@@ -685,11 +683,11 @@ export default function Comments({ comments, filters, counts }: Props) {
                             </div>
                         </div>
                     </section>
-                    <div
-                        ref={detail}
-                        className="min-w-0 scroll-mt-4 lg:sticky lg:top-4"
-                    >
-                        {selected ? (
+                    {selected && (
+                        <div
+                            ref={detail}
+                            className="min-w-0 scroll-mt-4 lg:sticky lg:top-4"
+                        >
                             <CommentDetails
                                 key={`${selected.id}-${selected.revision}`}
                                 comment={selected}
@@ -699,17 +697,16 @@ export default function Comments({ comments, filters, counts }: Props) {
                                 onClose={() => setSelectedId(null)}
                                 onSuccess={refresh}
                             />
-                        ) : (
-                            <div className="rounded-xl border border-dashed p-10 text-center text-sm text-muted-foreground">
-                                Pilih komentar untuk melihat detailnya.
-                            </div>
-                        )}
-                    </div>
+                        </div>
+                    )}
                 </div>
             </div>
         </AppLayout>
     );
 }
+
+const greenButton =
+    'border border-green-600 bg-green-600 text-white enabled:hover:border-green-700 enabled:hover:bg-green-700 disabled:cursor-not-allowed disabled:border-gray-300 disabled:bg-gray-300 disabled:text-gray-500 dark:disabled:border-gray-700 dark:disabled:bg-gray-700 dark:disabled:text-gray-400';
 
 function CommentDetails({
     comment,
@@ -729,7 +726,7 @@ function CommentDetails({
     const [notes, setNotes] = useState('');
     const [error, setError] = useState('');
     const [confirmation, setConfirmation] = useState<
-        'reject' | 'restore' | null
+        'approve' | 'reject' | 'restore' | null
     >(null);
     const submitting = useRef(false);
     const latest = comment.history.find((event) => event.moderator_id !== null);
@@ -1005,24 +1002,24 @@ function CommentDetails({
                         {pending ? (
                             <div className="grid grid-cols-2 gap-3">
                                 <Button
-                                    variant="outline"
-                                    className="text-destructive hover:text-destructive"
+                                    variant="destructive"
                                     disabled={busy}
                                     onClick={() => setConfirmation('reject')}
                                 >
                                     <X className="size-4" />
-                                    Tolak
+                                    Sembunyikan
                                 </Button>
                                 <Button
                                     disabled={busy}
-                                    onClick={() => void decide('approve')}
+                                    className={greenButton}
+                                    onClick={() => setConfirmation('approve')}
                                 >
                                     {busy ? (
                                         <Loader2 className="size-4 animate-spin" />
                                     ) : (
                                         <Check className="size-4" />
                                     )}
-                                    Setujui
+                                    Izinkan
                                 </Button>
                             </div>
                         ) : (
@@ -1047,7 +1044,11 @@ function CommentDetails({
                                 size="sm"
                                 onClick={() =>
                                     router.reload({
-                                        only: ['comments', 'counts'],
+                                        only: [
+                                            'comments',
+                                            'counts',
+                                            'moderationPendingCount',
+                                        ],
                                     })
                                 }
                             >
@@ -1062,7 +1063,7 @@ function CommentDetails({
                     </p>
                 )}
             </div>
-            <AlertDialog
+            <Dialog
                 open={confirmation !== null}
                 onOpenChange={(open) => {
                     if (!open && !busy) {
@@ -1070,28 +1071,35 @@ function CommentDetails({
                     }
                 }}
             >
-                <AlertDialogContent>
-                    <AlertDialogHeader>
-                        <AlertDialogTitle>
+                <DialogContent closeDisabled={busy}>
+                    <DialogHeader>
+                        <DialogTitle>
                             {confirmation === 'restore'
-                                ? 'Pulihkan komentar?'
-                                : 'Tolak komentar?'}
-                        </AlertDialogTitle>
-                        <AlertDialogDescription>
-                            {confirmation === 'restore'
-                                ? 'Komentar akan ditampilkan kembali jika berita dan komentar induknya masih tersedia. Tindakan ini akan dicatat dalam riwayat.'
-                                : 'Komentar akan disembunyikan dari pembaca. Komentar asli dan riwayat moderasi tetap disimpan.'}
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel disabled={busy}>
-                            Batal
-                        </AlertDialogCancel>
-                        <AlertDialogAction
+                                ? 'Pulihkan Komentar?'
+                                : confirmation === 'approve'
+                                  ? 'Izinkan Komentar?'
+                                  : 'Sembunyikan Komentar?'}
+                        </DialogTitle>
+                        <DialogDescription>
+                            {confirmation === 'reject'
+                                ? 'Komentar akan disembunyikan dari publik. Komentar asli dan riwayat tetap disimpan.'
+                                : 'Komentar akan terlihat oleh publik jika berita dan komentar induknya tersedia. Keputusan Anda akan dicatat dalam riwayat.'}
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                        <Button
+                            type="button"
+                            variant="outline"
                             disabled={busy}
-                            onClick={(event) => {
-                                event.preventDefault();
-
+                            onClick={() => setConfirmation(null)}
+                        >
+                            Batal
+                        </Button>
+                        <Button
+                            type="button"
+                            className={greenButton}
+                            disabled={busy}
+                            onClick={() => {
                                 if (confirmation) {
                                     void decide(confirmation);
                                 }
@@ -1101,11 +1109,13 @@ function CommentDetails({
                                 ? 'Memproses...'
                                 : confirmation === 'restore'
                                   ? 'Pulihkan Komentar'
-                                  : 'Tolak Komentar'}
-                        </AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
+                                  : confirmation === 'approve'
+                                    ? 'Izinkan Komentar'
+                                    : 'Sembunyikan Komentar'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </section>
     );
 }

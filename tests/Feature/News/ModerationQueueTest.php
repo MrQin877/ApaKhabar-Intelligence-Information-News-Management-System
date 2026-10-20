@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\HandleInertiaRequests;
 use App\Models\Comment;
 use App\Models\CommentModerationAssessment;
 use App\Models\CommentModerationFeedback;
@@ -7,6 +8,7 @@ use App\Models\News;
 use App\Models\User;
 use App\Models\UserRole;
 use App\Services\News\ModerationFeedbackService;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -121,4 +123,30 @@ test('non-admin users cannot read the private queue or make decisions', function
     $this->get('/admin/comments')->assertRedirect('/');
     $this->postJson('/admin/comments/'.$comment->getKey().'/decision', ['action' => 'approve'])->assertRedirect('/');
     expect($comment->fresh()->status)->toBe('pending_review');
+});
+
+test('shared pending indicator reflects every unresolved source and clears after decisions', function () {
+    $ai = queueComment($this);
+    $reported = queueComment($this, ['status' => 'published', 'ai_flagged' => false]);
+    $flagged = queueComment($this, ['status' => 'published', 'ai_flagged' => false]);
+    flagQueueComment($this, $flagged);
+    foreach ([$this->admin, User::factory()->create()] as $reporter) {
+        DB::table('comment_reports')->insert(['comment_id' => $reported->getKey(), 'user_id' => $reporter->getKey(), 'reason' => 'Spam', 'created_at' => now()]);
+    }
+    $this->get('/admin/comments')->assertInertia(fn (Assert $page) => $page->where('moderationPendingCount', 3));
+    $this->postJson('/admin/comments/'.$ai->getKey().'/decision', ['action' => 'approve', 'reason' => 'Diizinkan', 'expected_revision' => 0])->assertOk();
+    $this->postJson('/admin/comments/'.$reported->getKey().'/decision', ['action' => 'remove', 'reason' => 'Disembunyikan', 'expected_revision' => 0])->assertOk();
+    $this->postJson('/admin/comments/'.$flagged->getKey().'/decision', ['action' => 'reject', 'expected_revision' => 1])->assertOk();
+    $this->get('/admin/comments')->assertInertia(fn (Assert $page) => $page->where('moderationPendingCount', 0)->where('counts.pending', 0));
+    expect(Comment::count())->toBe(3)->and($ai->fresh()->status)->toBe('published')->and($reported->fresh()->status)->toBe('removed');
+    $this->assertDatabaseHas('comment_moderation_history', ['comment_id' => $reported->getKey(), 'moderator_id' => $this->admin->getKey(), 'reason' => 'remove: Disembunyikan']);
+    queueComment($this);
+    $this->get('/admin/comments', ['X-Inertia' => 'true', 'X-Inertia-Version' => app(HandleInertiaRequests::class)->version(Request::create('/admin/comments')), 'X-Inertia-Partial-Component' => 'admin/comments', 'X-Inertia-Partial-Data' => 'moderationPendingCount'])
+        ->assertOk()->assertJsonPath('props.moderationPendingCount', 1)->assertJsonMissingPath('props.comments');
+});
+
+test('moderation counts are hidden from ordinary readers', function () {
+    queueComment($this);
+    $this->actingAs(User::factory()->create());
+    $this->get('/')->assertInertia(fn (Assert $page) => $page->where('moderationPendingCount', 0));
 });
