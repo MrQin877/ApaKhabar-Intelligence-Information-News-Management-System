@@ -453,3 +453,24 @@
     padding-inline-start: 1rem;
     color: var(--muted-foreground);
 }
+
+@keyframes video-publication-ring-fill {
+    from {
+        stroke-dasharray: 0 100;
+    }
+    to {
+        stroke-dasharray: 100 100;
+    }
+}
+
+.video-publication-ring-fill {
+    stroke-dasharray: 0 100;
+    animation: video-publication-ring-fill 2.4s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .video-publication-ring-fill {
+        animation: none;
+        stroke-dasharray: 25 100;
+    }
+}

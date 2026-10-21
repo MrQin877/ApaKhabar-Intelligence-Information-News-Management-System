@@ -23,6 +23,21 @@ test('untouched editor and same-page polling never prompt; only a dirty exit doe
  assert.equal(m.render().open,false);
  assert.equal(m.before().prevented,true);assert.equal(m.render().open,true);m.cleanup();
 });
+test('sidebar prefetch and current-page visits do not prompt, but a different draft does',()=>{
+ const m=mount();m.render(true);
+ assert.equal(m.before('https://test/admin/other',{prefetch:true}).prevented,false);
+ assert.equal(m.render().open,false);
+ assert.equal(m.before('https://test/admin/editor').prevented,false);
+ assert.equal(m.before('https://test/admin/editor?draft=2').prevented,true);
+ assert.equal(m.render().open,true);
+ m.hook.continueEditing();assert.equal(m.render().open,false);
+ m.cleanup();
+});
+test('partial reload cannot switch to another draft without confirmation',()=>{
+ const m=mount();m.render(true);
+ assert.equal(m.before('https://test/admin/editor?draft=2',{preserveState:true,only:['videos']}).prevented,true);
+ m.cleanup();
+});
 test('cancel preserves dirty state and the first destination survives repeated exit attempts',()=>{
  const m=mount();m.render(true);m.before();m.before('https://test/third');m.render();m.hook.continueEditing();assert.equal(m.render().open,false);assert.equal(m.unload().prevented,true);
  m.before();m.render();m.hook.leave();assert.equal(m.visits,1);assert.equal(m.render().open,false);m.finish();assert.equal(m.before().prevented,true);m.cleanup();

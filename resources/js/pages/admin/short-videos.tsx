@@ -8,6 +8,8 @@ import {
     Film,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { FeedbackToast } from '@/components/feedback-toast';
+import type { Feedback } from '@/components/feedback-toast';
 import type { PublicationPreviewData } from '@/components/publication-preview';
 import { PublishNewsDialog } from '@/components/publish-news-dialog';
 import type {
@@ -70,6 +72,14 @@ function savedVideoState(video: ShortVideo | null) {
     };
 }
 type Result = { video: ShortVideo; result: PublishResult };
+class UploadError extends Error {
+    constructor(
+        message: string,
+        public fields: Record<string, string[]> = {},
+    ) {
+        super(message);
+    }
+}
 
 function upload(
     path: string,
@@ -112,12 +122,13 @@ function upload(
                     resolve(data);
                 } else {
                     reject(
-                        new Error(
+                        new UploadError(
                             Object.values(data.errors ?? {})
                                 .flat()
                                 .join(' ') ||
                                 data.message ||
                                 'Permintaan gagal.',
+                            data.errors ?? {},
                         ),
                     );
                 }
@@ -159,6 +170,8 @@ export function ShortVideos({
     const [title, setTitle] = useState(draft?.title ?? '');
     const [description, setDescription] = useState(draft?.description ?? '');
     const [source, setSource] = useState(draft?.video_url ?? '');
+    const [localFile, setLocalFile] = useState<File | null>(null);
+    const [localVideoError, setLocalVideoError] = useState(false);
     const [thumbnail, setThumbnail] = useState(draft?.thumbnail_url ?? '');
     const [duration, setDuration] = useState(draft?.metadata.duration ?? 0);
     const [offset, setOffset] = useState(draft?.frame_offset ?? 0);
@@ -170,6 +183,13 @@ export function ShortVideos({
     const [progress, setProgress] = useState<number | null>(null);
     const [message, setMessage] = useState('');
     const [error, setError] = useState('');
+    const [feedback, setFeedback] = useState<Feedback | null>(null);
+    const [touched, setTouched] = useState({
+        title: false,
+        description: false,
+    });
+    const [attempted, setAttempted] = useState(false);
+    const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
     const [dialog, setDialog] = useState(false);
     const [selected, setSelected] = useState<PublishPlatformId[]>(['website']);
     const [confirmation, setConfirmation] = useState<{
@@ -189,13 +209,13 @@ export function ShortVideos({
     const snapshot = editorSnapshot({
         title,
         description,
-        media: current?.video_url ?? (progress !== null ? 'uploading' : ''),
+        media: localFile ?? current?.video_url ?? '',
         offset,
         thumbnail:
-            coverMode === 'frame'
-                ? `frame:${offset}`
-                : coverMode === 'upload'
-                  ? 'custom'
+            coverMode === 'upload'
+                ? 'custom'
+                : localFile || coverMode === 'frame'
+                  ? `frame:${offset}`
                   : savedVideoState(current).thumbnail,
         cover: coverMode === 'upload' ? cover : null,
     });
@@ -203,6 +223,57 @@ export function ShortVideos({
         mode === 'editor' && snapshot !== savedSnapshot,
         busy,
     );
+    const titleError =
+        touched.title || attempted
+            ? !title.trim()
+                ? 'Judul video wajib diisi.'
+                : title.length > 255
+                  ? 'Judul maksimal 255 karakter.'
+                  : fieldErrors.title
+            : undefined;
+    const descriptionError =
+        touched.description || attempted
+            ? !description.trim()
+                ? 'Deskripsi video wajib diisi.'
+                : description.length > 10000
+                  ? 'Deskripsi maksimal 10000 karakter.'
+                  : fieldErrors.description
+            : undefined;
+    const publishHint = busy
+        ? 'Tunggu proses video selesai.'
+        : !localFile && !current
+          ? 'Pilih video terlebih dahulu.'
+          : localVideoError
+            ? 'Video lokal tidak dapat diputar. Pilih video MP4 yang valid.'
+            : localFile && !duration
+              ? 'Menunggu pratinjau video lokal.'
+              : localFile && (!Number.isFinite(duration) || duration > 900)
+                ? 'Durasi video harus maksimal 15 menit.'
+                : current && current.status !== 'draft'
+                  ? 'Video ini tidak tersedia sebagai draf.'
+                  : !title.trim() || !description.trim()
+                    ? 'Lengkapi judul dan deskripsi video.'
+                    : !localFile && !current?.thumbnail_url
+                      ? 'Sampul video belum tersedia.'
+                      : '';
+    const canPublish = !publishHint;
+    function showFailure(failure: unknown, fallback: string) {
+        const message = failure instanceof Error ? failure.message : fallback;
+        setError(message);
+
+        if (failure instanceof UploadError) {
+            setFieldErrors(
+                Object.fromEntries(
+                    Object.entries(failure.fields).map(([key, values]) => [
+                        key,
+                        values[0],
+                    ]),
+                ),
+            );
+        }
+
+        setFeedback({ variant: 'error', title: fallback, message });
+    }
 
     useEffect(
         () => () => {
@@ -227,61 +298,71 @@ export function ShortVideos({
         }
 
         if (file.type !== 'video/mp4' || file.size > 100 * 1024 * 1024) {
-            setError('Pilih MP4 H.264 maksimal 100 MB.');
+            showFailure(
+                new Error(
+                    file.size > 100 * 1024 * 1024
+                        ? 'Tinjau batas ukuran video yang diizinkan.'
+                        : 'Gunakan format video yang sesuai dengan persyaratan Instagram dan Facebook Reels.',
+                ),
+                file.size > 100 * 1024 * 1024
+                    ? 'Ukuran video terlalu besar'
+                    : 'Format video tidak didukung',
+            );
 
             return;
         }
 
-        void uploadVideo(file);
-    }
-    async function uploadVideo(file: File) {
-        if (!file || guard.current) {
-            return;
-        }
-
-        if (
-            !['video/mp4'].includes(file.type) ||
-            file.size > 100 * 1024 * 1024
-        ) {
-            setError('Pilih MP4 H.264 maksimal 100 MB.');
-
-            return;
-        }
-
-        guard.current = true;
-        setBusy(true);
         setError('');
-        setCurrent(null);
+        setFeedback(null);
+        setLocalFile(file);
+        setLocalVideoError(false);
         setDuration(0);
         setFrameOpen(false);
         setMessage('');
         setCover(null);
-        setCoverMode('keep');
+        setCoverMode('frame');
         setOffset(0);
         setThumbnail('');
         setSource(URL.createObjectURL(file));
+    }
+    async function ensureUploaded(): Promise<ShortVideo> {
+        if (!localFile) {
+            if (!current) {
+                throw new Error('Pilih video terlebih dahulu.');
+            }
+
+            return current;
+        }
+
+        const body = new FormData();
+        body.append('video', localFile);
+
+        if (current) {
+            body.append('short_video_id', String(current.id));
+        }
+
         setProgress(0);
 
         try {
-            const body = new FormData();
-            body.append('video', file);
             const data = await upload(
                 '/admin/short-videos/upload',
                 body,
                 setProgress,
             );
             setCurrent(data.video);
-            setThumbnail(data.video.thumbnail_url);
+            setSavedSnapshot(editorSnapshot(savedVideoState(data.video)));
+            setLocalFile(null);
+            setSource(data.video.video_url);
             setDuration(data.video.metadata.duration);
-            setMessage(
-                'Video tersimpan sebagai draf. Lengkapi judul dan deskripsi.',
-            );
+            setFeedback({
+                variant: 'success',
+                title: 'Video berhasil diunggah',
+                message: 'Video telah disimpan di Cloudinary.',
+            });
             refresh();
-        } catch (failure) {
-            setError((failure as Error).message);
+
+            return data.video;
         } finally {
-            guard.current = false;
-            setBusy(false);
             setProgress(null);
         }
     }
@@ -300,7 +381,7 @@ export function ShortVideos({
             setThumbnail(canvas.toDataURL('image/jpeg', 0.85));
         } catch {
             // Cloudinary frame delivery remains available when canvas CORS is restricted.
-            if (current) {
+            if (current && !localFile) {
                 setThumbnail(
                     current.video_url
                         .replace(
@@ -345,24 +426,29 @@ export function ShortVideos({
         setThumbnail(URL.createObjectURL(file));
     }
     async function save(): Promise<ShortVideo> {
-        if (!current) {
-            throw new Error('Unggah video terlebih dahulu.');
-        }
+        const replacingVideo = !!localFile;
+        const video = await ensureUploaded();
 
         const body = new FormData();
         body.append('title', title);
         body.append('description', description);
         body.append('frame_offset', String(offset));
-        body.append('cover_mode', coverMode);
+        body.append(
+            'cover_mode',
+            replacingVideo && coverMode === 'frame' && offset === 0
+                ? 'keep'
+                : coverMode,
+        );
 
         if (cover) {
             body.append('cover', cover);
         }
 
-        const data = await upload(`/admin/short-videos/${current.id}`, body);
+        const data = await upload(`/admin/short-videos/${video.id}`, body);
         setCurrent(data.video);
         setTitle(data.video.title);
         setDescription(data.video.description ?? '');
+        setFieldErrors({});
         setOffset(data.video.frame_offset);
         setSavedSnapshot(editorSnapshot(savedVideoState(data.video)));
         setThumbnail(data.video.thumbnail_url);
@@ -377,34 +463,80 @@ export function ShortVideos({
             return;
         }
 
+        if (!title.trim() || !description.trim()) {
+            setAttempted(true);
+            setFeedback({
+                variant: 'error',
+                title: 'Lengkapi informasi video',
+                message: 'Judul dan deskripsi wajib diisi.',
+            });
+
+            return;
+        }
+
         guard.current = true;
         setBusy(true);
         setError('');
+        setAttempted(true);
 
         try {
             await save();
-            setMessage('Draf berhasil disimpan.');
+            setFeedback({
+                variant: 'success',
+                message: 'Draf berhasil disimpan',
+            });
 
             if (unsaved.open) {
                 unsaved.leave();
             }
         } catch (failure) {
-            setError((failure as Error).message);
+            showFailure(failure, 'Gagal menyimpan draf');
         } finally {
             setBusy(false);
             guard.current = false;
         }
     }
     async function prepare(): Promise<PublicationPreviewData> {
-        const video = await save();
+        if (!source || !title.trim() || !description.trim()) {
+            throw new Error('Lengkapi video, judul, dan deskripsi.');
+        }
 
-        return metaRequest<PublicationPreviewData>(
-            `/admin/short-videos/${video.id}/preview`,
-            { platforms: selected },
-        );
+        const heading = title.trim();
+        const text = description.trim();
+        const following = text.slice(heading.length, heading.length + 1);
+        const alreadyStartsWithTitle =
+            text.slice(0, heading.length).toLocaleLowerCase() ===
+                heading.toLocaleLowerCase() &&
+            (!following || /^[\s\p{P}]$/u.test(following));
+        const caption = alreadyStartsWithTitle ? text : `${heading}\n\n${text}`;
+        const captionLength = Array.from(caption).length;
+
+        if (selected.includes('instagram') && captionLength > 2200) {
+            throw new Error(
+                'Judul dan deskripsi Instagram maksimal 2200 karakter.',
+            );
+        }
+
+        if (selected.includes('facebook') && captionLength > 10000) {
+            throw new Error(
+                'Judul dan deskripsi Facebook maksimal 10000 karakter.',
+            );
+        }
+
+        return {
+            token: 'local-preview',
+            title: heading,
+            content: text,
+            caption,
+            category: null,
+            images: { website: null, instagram: null, facebook: null },
+            issues: {},
+            video_url: source,
+            thumbnail_url: thumbnail || undefined,
+        };
     }
-    async function publish(token: string) {
-        if (!current || guard.current) {
+    async function publish() {
+        if (guard.current) {
             return;
         }
 
@@ -413,9 +545,14 @@ export function ShortVideos({
         setError('');
 
         try {
+            const video = await save();
+            const preview = await metaRequest<PublicationPreviewData>(
+                `/admin/short-videos/${video.id}/preview`,
+                { platforms: selected },
+            );
             const data = await metaRequest<Result>(
-                `/admin/short-videos/${current.id}/publish`,
-                { preview_token: token, platforms: selected },
+                `/admin/short-videos/${video.id}/publish`,
+                { preview_token: preview.token, platforms: selected },
             );
             setDialog(false);
             setSavedSnapshot(editorSnapshot(savedVideoState(data.video)));
@@ -432,7 +569,7 @@ export function ShortVideos({
             );
             refresh();
         } catch (failure) {
-            setError((failure as Error).message);
+            showFailure(failure, 'Gagal menerbitkan video');
         } finally {
             guard.current = false;
             setBusy(false);
@@ -497,7 +634,7 @@ export function ShortVideos({
                         <div className="space-y-2">
                             <Label htmlFor="short-video">Unggah Video</Label>
                             <div
-                                className={`relative rounded-xl border-2 border-dashed transition-colors ${dragging ? 'border-primary bg-primary/10' : current && source ? 'border-primary bg-muted/20' : 'border-border bg-muted/20 hover:border-primary/40'}`}
+                                className={`relative rounded-xl border-2 border-dashed transition-colors ${dragging ? 'border-primary bg-primary/10' : source ? 'border-primary bg-muted/20' : 'border-border bg-muted/20 hover:border-primary/40'}`}
                                 onDragOver={(event) => {
                                     event.preventDefault();
 
@@ -532,8 +669,8 @@ export function ShortVideos({
                                     className="sr-only"
                                     disabled={
                                         busy ||
-                                        !current ||
-                                        current.status !== 'draft'
+                                        !source ||
+                                        current?.status === 'published'
                                     }
                                     onChange={(event) => {
                                         selectCover(event.target.files?.[0]);
@@ -550,6 +687,47 @@ export function ShortVideos({
                                             preload="metadata"
                                             poster={thumbnail || undefined}
                                             className="max-h-56 w-full rounded-lg object-contain"
+                                            onLoadedMetadata={(event) => {
+                                                if (localFile) {
+                                                    setDuration(
+                                                        event.currentTarget
+                                                            .duration,
+                                                    );
+                                                }
+                                            }}
+                                            onLoadedData={(event) => {
+                                                if (
+                                                    !localFile ||
+                                                    coverMode !== 'frame' ||
+                                                    thumbnail
+                                                ) {
+                                                    return;
+                                                }
+
+                                                const video =
+                                                    event.currentTarget;
+                                                const canvas =
+                                                    document.createElement(
+                                                        'canvas',
+                                                    );
+                                                canvas.width = video.videoWidth;
+                                                canvas.height =
+                                                    video.videoHeight;
+                                                canvas
+                                                    .getContext('2d')
+                                                    ?.drawImage(video, 0, 0);
+                                                setThumbnail(
+                                                    canvas.toDataURL(
+                                                        'image/jpeg',
+                                                        0.85,
+                                                    ),
+                                                );
+                                            }}
+                                            onError={() => {
+                                                if (localFile) {
+                                                    setLocalVideoError(true);
+                                                }
+                                            }}
                                         />
                                         <button
                                             type="button"
@@ -597,9 +775,8 @@ export function ShortVideos({
                                                     className="h-8 rounded-full shadow-sm"
                                                     disabled={
                                                         busy ||
-                                                        !current ||
-                                                        current.status !==
-                                                            'draft'
+                                                        current?.status ===
+                                                            'published'
                                                     }
                                                 >
                                                     <Pencil className="size-3.5" />
@@ -680,16 +857,38 @@ export function ShortVideos({
                             <Input
                                 id="short-title"
                                 required
+                                aria-invalid={!!titleError}
+                                aria-describedby={
+                                    titleError ? 'short-title-error' : undefined
+                                }
                                 placeholder="Masukkan judul yang jelas"
                                 value={title}
                                 maxLength={255}
                                 disabled={
                                     busy || current?.status === 'published'
                                 }
-                                onChange={(event) =>
-                                    setTitle(event.target.value)
+                                onBlur={() =>
+                                    setTouched((value) => ({
+                                        ...value,
+                                        title: true,
+                                    }))
                                 }
+                                onChange={(event) => {
+                                    setTitle(event.target.value);
+                                    setFieldErrors((value) => ({
+                                        ...value,
+                                        title: '',
+                                    }));
+                                }}
                             />
+                            {titleError && (
+                                <p
+                                    id="short-title-error"
+                                    className="text-xs text-destructive"
+                                >
+                                    {titleError}
+                                </p>
+                            )}
                         </div>
                         <div className="space-y-2">
                             <Label htmlFor="short-description">
@@ -698,6 +897,12 @@ export function ShortVideos({
                             <Textarea
                                 id="short-description"
                                 required
+                                aria-invalid={!!descriptionError}
+                                aria-describedby={
+                                    descriptionError
+                                        ? 'short-description-error'
+                                        : undefined
+                                }
                                 placeholder="Tulis deskripsi video"
                                 rows={12}
                                 value={description}
@@ -705,10 +910,28 @@ export function ShortVideos({
                                 disabled={
                                     busy || current?.status === 'published'
                                 }
-                                onChange={(event) =>
-                                    setDescription(event.target.value)
+                                onBlur={() =>
+                                    setTouched((value) => ({
+                                        ...value,
+                                        description: true,
+                                    }))
                                 }
+                                onChange={(event) => {
+                                    setDescription(event.target.value);
+                                    setFieldErrors((value) => ({
+                                        ...value,
+                                        description: '',
+                                    }));
+                                }}
                             />
+                            {descriptionError && (
+                                <p
+                                    id="short-description-error"
+                                    className="text-xs text-destructive"
+                                >
+                                    {descriptionError}
+                                </p>
+                            )}
                             <p className="text-xs text-muted-foreground">
                                 Deskripsi digunakan sebagai caption. Instagram
                                 maksimal 2200 karakter.
@@ -719,8 +942,8 @@ export function ShortVideos({
                                 variant="outline"
                                 disabled={
                                     busy ||
-                                    !current ||
-                                    current.status !== 'draft'
+                                    (!current && !localFile) ||
+                                    current?.status === 'published'
                                 }
                                 onClick={() => void saveDraft()}
                             >
@@ -728,14 +951,15 @@ export function ShortVideos({
                             </Button>
                             <Button
                                 className="bg-brand-600 text-white hover:bg-brand-700"
-                                disabled={
-                                    busy ||
-                                    !current ||
-                                    current.status !== 'draft' ||
-                                    !title.trim() ||
-                                    !description.trim()
-                                }
-                                onClick={() => setDialog(true)}
+                                disabled={!canPublish}
+                                onClick={() => {
+                                    if (guard.current) {
+                                        return;
+                                    }
+
+                                    setAttempted(true);
+                                    setDialog(true);
+                                }}
                             >
                                 {busy && (
                                     <LoaderCircle className="animate-spin" />
@@ -743,6 +967,14 @@ export function ShortVideos({
                                 Publikasikan
                             </Button>
                         </div>
+                        {publishHint && (
+                            <p
+                                role="status"
+                                className="text-right text-xs text-muted-foreground"
+                            >
+                                {publishHint}
+                            </p>
+                        )}
                     </div>
                 )}
                 {mode === 'list' && (
@@ -764,6 +996,11 @@ export function ShortVideos({
                     />
                 )}
             </div>
+            <FeedbackToast
+                feedback={feedback}
+                onDismiss={() => setFeedback(null)}
+                duration={5000}
+            />
             <Dialog open={frameOpen} onOpenChange={setFrameOpen}>
                 <DialogContent className="max-h-[90dvh] overflow-y-auto">
                     <DialogTitle>Pilih Sampul dari Video</DialogTitle>
@@ -848,14 +1085,7 @@ export function ShortVideos({
                             {error}
                         </p>
                     )}
-                    <div className="flex flex-wrap justify-end gap-2">
-                        <Button
-                            variant="outline"
-                            disabled={busy}
-                            onClick={() => unsaved.continueEditing()}
-                        >
-                            Batal
-                        </Button>
+                    <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
                         <Button
                             variant="outline"
                             disabled={busy}
@@ -865,6 +1095,7 @@ export function ShortVideos({
                         </Button>
                         <Button
                             disabled={busy}
+                            className="bg-brand-600 text-white hover:bg-brand-700"
                             onClick={() => void saveDraft()}
                         >
                             {busy ? 'Menyimpan...' : 'Simpan sebagai Draf'}
@@ -887,12 +1118,10 @@ export function ShortVideos({
                     )
                 }
                 processing={busy}
-                contentReady={
-                    !!current && !!title.trim() && !!description.trim()
-                }
+                contentReady={canPublish}
                 error={error}
                 onPreparePreview={prepare}
-                onPublish={(token) => void publish(token)}
+                onPublish={() => void publish()}
             />
             <Dialog
                 open={!!confirmation}

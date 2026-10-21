@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\UserRole;
 use App\Services\Shorts\CloudinaryVideoService;
 use App\Services\Shorts\PublicationPermalink;
+use App\Services\Shorts\ReelCaption;
 use App\Services\Shorts\ReelPublisher;
 use App\Services\Shorts\VideoInspector;
 use Illuminate\Http\UploadedFile;
@@ -179,7 +180,24 @@ test('upload uses inspected metadata and Cloudinary urls rather than client meta
     $this->actingAs($u);
     $this->mock(VideoInspector::class)->shouldReceive('inspect')->once()->andReturn(shortMetadata());
     $this->mock(CloudinaryVideoService::class)->shouldReceive('upload')->once()->andReturn(['secure_url' => 'https://res.cloudinary.com/demo/video/upload/test.mp4', 'public_id' => 'test'])->getMock()->shouldReceive('frame')->andReturn('https://res.cloudinary.com/demo/video/upload/so_0/test.jpg');
-    $this->postJson('/admin/short-videos/upload', ['video' => UploadedFile::fake()->create('short.mp4', 100, 'video/mp4')])->assertCreated()->assertJsonPath('video.metadata.codec', 'h264');
+    $this->postJson('/admin/short-videos/upload', ['video' => UploadedFile::fake()->create('short.mp4', 100, 'video/mp4')])->assertCreated()->assertJsonPath('video.metadata.codec', 'h264')->assertJsonPath('video.status', 'draft');
+});
+test('uploading a replacement updates the owned draft instead of creating another record', function () {
+    $user = shortUser();
+    $draft = shortDraft($user);
+    $this->actingAs($user);
+    $this->mock(VideoInspector::class)->shouldReceive('inspect')->once()->andReturn(shortMetadata());
+    $this->mock(CloudinaryVideoService::class)->shouldReceive('upload')->once()->andReturn(['secure_url' => 'https://res.cloudinary.com/demo/video/upload/replacement.mp4', 'public_id' => 'replacement'])->getMock()->shouldReceive('frame')->once()->with('replacement', 0)->andReturn('https://res.cloudinary.com/demo/video/upload/so_0/replacement.jpg');
+    $this->postJson('/admin/short-videos/upload', ['short_video_id' => $draft->id, 'video' => UploadedFile::fake()->create('replacement.mp4', 100, 'video/mp4')])->assertOk()->assertJsonPath('video.id', $draft->id)->assertJsonPath('video.video_public_id', 'replacement');
+    expect(ShortVideo::query()->count())->toBe(1);
+});
+test('another user cannot replace an existing draft video', function () {
+    $owner = shortUser();
+    $draft = shortDraft($owner);
+    $this->actingAs(shortUser());
+    $this->mock(VideoInspector::class)->shouldNotReceive('inspect');
+    $this->mock(CloudinaryVideoService::class)->shouldNotReceive('upload');
+    $this->postJson('/admin/short-videos/upload', ['short_video_id' => $draft->id, 'video' => UploadedFile::fake()->create('replacement.mp4', 100, 'video/mp4')])->assertForbidden();
 });
 test('instagram waits for processing before publishing and never duplicates saved publication', function () {
     $u = shortUser();
@@ -200,6 +218,52 @@ test('instagram waits for processing before publishing and never duplicates save
     expect($p->fresh()->permalink)->toContain('/reel/');
     (new PublishShortVideo($p->id))->handle($service);
     Http::assertSentCount(5);
+});
+
+test('Instagram and Facebook send the same formatted title and description while MySQL fields remain separate', function () {
+    $user = shortUser();
+    $video = shortDraft($user);
+    $video->update(['title' => 'Gotong-Royong Desa 🏡', 'description' => "  Warga menjaga kebersihan. #Desa\nBaris kedua 😊  "]);
+    shortConnection($user, 'instagram');
+    shortConnection($user, 'facebook');
+    $this->actingAs($user);
+    $caption = "Gotong-Royong Desa 🏡\n\nWarga menjaga kebersihan. #Desa\nBaris kedua 😊";
+    $this->postJson('/admin/short-videos/'.$video->id.'/preview', ['platforms' => ['website', 'instagram', 'facebook']])->assertOk()->assertJsonPath('caption', $caption);
+    shortPublish($this, $video, ['website', 'instagram', 'facebook']);
+    Http::fake(['*/123/media' => Http::response(['id' => '456']), '*/123/video_reels' => Http::sequence()->push(['video_id' => '789'])->push(['success' => true]), 'https://rupload.facebook.com/*' => Http::response(['success' => true])]);
+    $instagram = $video->publications()->where('platform', 'instagram')->first();
+    $facebook = $video->publications()->where('platform', 'facebook')->first();
+    app(ReelPublisher::class)->step($instagram);
+    app(ReelPublisher::class)->step($facebook);
+    app(ReelPublisher::class)->step($facebook->fresh());
+    app(ReelPublisher::class)->step($facebook->fresh());
+    Http::assertSent(fn ($request) => str_ends_with($request->url(), '/123/media') && $request['caption'] === $caption);
+    Http::assertSent(fn ($request) => str_ends_with($request->url(), '/123/video_reels') && $request['upload_phase'] === 'finish' && $request['title'] === $video->title && $request['description'] === $caption);
+    expect($video->fresh()->title)->toBe('Gotong-Royong Desa 🏡');
+    expect($video->fresh()->description)->toBe("  Warga menjaga kebersihan. #Desa\nBaris kedua 😊  ");
+});
+
+test('caption formatter handles empty descriptions and existing title prefixes without duplication', function () {
+    $video = shortDraft(shortUser());
+    $video->update(['title' => 'Kegiatan Desa', 'description' => '   ']);
+    expect(ReelCaption::format($video->fresh()))->toBe('Kegiatan Desa');
+    $video->update(['description' => "  Kegiatan Desa\n\nWarga berkumpul. #Desa  "]);
+    expect(ReelCaption::format($video->fresh()))->toBe("Kegiatan Desa\n\nWarga berkumpul. #Desa");
+    $video->update(['description' => 'Kegiatan Desaku berlangsung']);
+    expect(ReelCaption::format($video->fresh()))->toBe("Kegiatan Desa\n\nKegiatan Desaku berlangsung");
+});
+
+test('combined social caption limits reject oversized previews without publishing or changing the draft', function () {
+    $user = shortUser();
+    $video = shortDraft($user);
+    $this->actingAs($user);
+    $video->update(['description' => str_repeat('a', 2190)]);
+    $this->postJson('/admin/short-videos/'.$video->id.'/preview', ['platforms' => ['website', 'instagram']])->assertUnprocessable();
+    $video->update(['description' => str_repeat('a', 9995)]);
+    $this->postJson('/admin/short-videos/'.$video->id.'/preview', ['platforms' => ['website', 'facebook']])->assertUnprocessable();
+    expect($video->fresh()->status)->toBe('draft');
+    expect($video->publications()->count())->toBe(0);
+    Queue::assertNothingPushed();
 });
 test('facebook completes start transfer finish and confirms status before success', function () {
     $u = shortUser();

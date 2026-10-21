@@ -15,13 +15,15 @@ function mount(items) {
     let cleanup;
     let timer;
     let tree;
-    const document = { hidden: false };
-    const context = { exports: {}, document, window: {
-        setInterval(callback, delay) { assert.equal(delay, 5000); timer = callback; return 1; },
+    let clock = 0;
+    const document = { hidden: false, addEventListener() {}, removeEventListener() {} };
+    const context = { exports: {}, document, performance: { now: () => clock }, window: {
+        setInterval(callback, delay) { assert.equal(delay, 50); timer = callback; return 1; },
         clearInterval() { timer = undefined; },
     }, require(name) {
         if (name === 'react') return {
             useState(initial) { const index = cursor++; if (!(index in states)) states[index] = initial; return [states[index], value => { states[index] = typeof value === 'function' ? value(states[index]) : value; }]; },
+            useRef(initial) { const index = cursor++; if (!(index in states)) states[index] = { current: initial }; return states[index]; },
             useEffect(callback) { effect = callback; },
         };
         if (name === 'react/jsx-runtime') return require(name);
@@ -33,7 +35,7 @@ function mount(items) {
     render();
     return {
         render, document,
-        tick() { timer?.(); render(); },
+        tick() { for (let i = 0; i < 100; i++) { clock += 50; timer?.(); } render(); },
         get running() { return !!timer; },
         get root() { return tree; },
         get selected() { return nodes().filter(n => n.type === 'button' && n.props['aria-pressed']).map(n => n.props['aria-label']); },
@@ -51,14 +53,12 @@ test('autoplay advances every five seconds, wraps and supports manual selection'
     view.click('Tampilkan B'); assert.deepEqual(view.selected, ['Tampilkan B']);
 });
 
-test('hover, focus and explicit pause stop autoplay; hidden tabs do not advance', () => {
+test('hover and focus pause autoplay; hidden tabs do not advance', () => {
     const view = mount(items);
     view.root.props.onMouseEnter(); view.render(); assert.equal(view.running, false);
     view.root.props.onMouseLeave(); view.render(); assert.equal(view.running, true);
     view.root.props.onFocusCapture(); view.render(); assert.equal(view.running, false);
     view.root.props.onBlurCapture({ currentTarget: { contains: () => false }, relatedTarget: null }); view.render();
-    view.click('Jeda otomatis'); assert.equal(view.running, false);
-    view.click('Putar otomatis'); assert.equal(view.running, true);
     view.document.hidden = true; view.tick(); assert.deepEqual(view.selected, ['Tampilkan A']);
 });
 
@@ -93,7 +93,7 @@ test('homepage category pills filter the latest list and Latest restores every r
 });
 
 
-test('Shorts renders exactly six previews with titles outside their portrait covers', () => {
+test('Shorts renders exactly six linked previews with titles outside their portrait covers', () => {
     const source = readFileSync(new URL('../../resources/js/components/home-shorts.tsx', import.meta.url), 'utf8');
     const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
     const context = { exports: {}, require(name) {
@@ -103,7 +103,7 @@ test('Shorts renders exactly six previews with titles outside their portrait cov
     vm.runInNewContext(compiled, context);
     function nodes(node) { return !node || typeof node !== 'object' ? [] : Array.isArray(node) ? node.flatMap(nodes) : [node, ...nodes(node.props?.children)]; }
     const elements = nodes(context.exports.HomeShorts({ shorts: Array.from({ length: 6 }, (_, id) => ({ id, title: `Video ${id}`, thumbnail_url: `/cover-${id}.jpg`, video_url: `/video-${id}.mp4` })) }));
-    const cards = elements.filter(node => node.type === 'article');
+    const cards = elements.filter(node => node.type === 'Link');
     assert.equal(cards.length, 6);
     for (const card of cards) {
         assert.equal(card.props.children[1].type, 'h3');

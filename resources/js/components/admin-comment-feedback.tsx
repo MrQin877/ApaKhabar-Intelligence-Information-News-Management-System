@@ -17,6 +17,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { adminFlagReasons } from '@/lib/comment-moderation-options';
 import { csrfPost } from '@/lib/csrf-request';
 
 interface ReviewComment {
@@ -33,14 +34,7 @@ interface ReviewPage {
     last_page: number;
 }
 
-const reasons = [
-    ['harassment', 'Pelecehan'],
-    ['indirect_insult', 'Hinaan tidak langsung'],
-    ['threat_intimidation', 'Ancaman atau intimidasi'],
-    ['hate_speech', 'Ujaran kebencian'],
-    ['spam', 'Spam'],
-    ['other', 'Lainnya'],
-];
+const reasons: readonly (readonly [string, string])[] = adminFlagReasons;
 
 async function readResponse(response: Response) {
     const body = await response.json();

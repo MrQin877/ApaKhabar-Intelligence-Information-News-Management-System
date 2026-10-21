@@ -11,6 +11,7 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
+import { reportCategories } from '@/lib/comment-moderation-options';
 import { csrfPost } from '@/lib/csrf-request';
 import {
     commentThreads,
@@ -758,15 +759,7 @@ export default function NewsEngagement({
                                 className="block w-full rounded-md border border-border bg-background p-2"
                             >
                                 <option value="">Pilih kategori</option>
-                                {[
-                                    'Penipuan / Scam',
-                                    'Pelecehan / Penghinaan',
-                                    'Ujaran Kebencian',
-                                    'Ancaman / Intimidasi',
-                                    'Spam',
-                                    'Konten Tidak Pantas',
-                                    'Lainnya',
-                                ].map((category) => (
+                                {reportCategories.map((category) => (
                                     <option key={category} value={category}>
                                         {category}
                                     </option>

@@ -78,7 +78,7 @@ class ReelPublisher
         }
         if ($p->stage === 'create') {
             $data = $this->mutate($p, 'create', fn () => $this->request($p, 'post', $p->account_id.($p->platform === 'instagram' ? '/media' : '/video_reels'),
-                $p->platform === 'instagram' ? ['media_type' => 'REELS', 'video_url' => $video->video_url, 'caption' => $video->description, 'cover_url' => $video->thumbnail_url]
+                $p->platform === 'instagram' ? ['media_type' => 'REELS', 'video_url' => $video->video_url, 'caption' => ReelCaption::format($video), 'cover_url' => $video->thumbnail_url]
                     : ['upload_phase' => 'start']));
             $p->update(['container_id' => $this->id($data, $p->platform === 'instagram' ? 'id' : 'video_id'), 'stage' => $p->platform === 'instagram' ? 'wait' : 'upload', 'status' => 'processing']);
 
@@ -99,7 +99,7 @@ class ReelPublisher
             return;
         }
         if ($p->platform === 'facebook' && $p->stage === 'finish') {
-            $data = $this->mutate($p, 'finish', fn () => $this->request($p, 'post', $p->account_id.'/video_reels', ['upload_phase' => 'finish', 'video_id' => $p->container_id, 'video_state' => 'PUBLISHED', 'title' => $video->title, 'description' => $video->description]));
+            $data = $this->mutate($p, 'finish', fn () => $this->request($p, 'post', $p->account_id.'/video_reels', ['upload_phase' => 'finish', 'video_id' => $p->container_id, 'video_state' => 'PUBLISHED', 'title' => $video->title, 'description' => ReelCaption::format($video)]));
             if (($data['success'] ?? false) !== true) {
                 throw new \RuntimeException('Finalisasi Facebook belum dikonfirmasi.');
             }

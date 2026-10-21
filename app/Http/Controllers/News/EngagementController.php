@@ -70,10 +70,7 @@ class EngagementController extends Controller
     public function report(Request $request, string $id)
     {
         $data = $request->validate([
-            'category' => ['required_without:reason', 'string', Rule::in([
-                'Penipuan / Scam', 'Pelecehan / Penghinaan', 'Ujaran Kebencian',
-                'Ancaman / Intimidasi', 'Spam', 'Konten Tidak Pantas', 'Lainnya',
-            ])],
+            'category' => ['required_without:reason', 'string', Rule::in(config('engagement.report_categories'))],
             'details' => 'nullable|string|max:450',
             'reason' => 'required_without:category|string|max:500',
         ]);

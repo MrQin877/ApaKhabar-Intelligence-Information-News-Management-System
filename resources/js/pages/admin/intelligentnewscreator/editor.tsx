@@ -895,17 +895,7 @@ export default function ManualEditor({
                             {saveError}
                         </p>
                     )}
-                    <DialogFooter className="flex-wrap justify-end">
-                        <Button
-                            type="button"
-                            variant="outline"
-                            disabled={savingDraft}
-                            onClick={() => {
-                                unsaved.continueEditing();
-                            }}
-                        >
-                            Batal
-                        </Button>
+                    <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-between">
                         <Button
                             type="button"
                             variant="outline"

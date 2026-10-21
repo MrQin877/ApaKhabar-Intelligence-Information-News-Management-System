@@ -1,0 +1,100 @@
+<?php
+
+use App\Models\Comment;
+use App\Models\ShortVideo;
+use App\Models\ShortVideoComment;
+use App\Models\User;
+use App\Models\UserRole;
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
+use Inertia\Testing\AssertableInertia as Assert;
+
+function engagedShort(): ShortVideo
+{
+    $owner = User::factory()->create();
+
+    return ShortVideo::create([
+        'created_by' => $owner->getKey(), 'title' => 'Video Pendek Desa', 'description' => 'Kegiatan warga',
+        'video_url' => 'https://res.cloudinary.com/demo/video/upload/short.mp4', 'video_public_id' => 'short',
+        'thumbnail_url' => 'https://res.cloudinary.com/demo/video/upload/short.jpg', 'metadata' => ['duration' => 20],
+        'status' => 'published', 'published_at' => now(),
+    ]);
+}
+
+function shortActor(string $role = 'villager'): User
+{
+    return User::factory()->create(['roleID' => UserRole::firstOrCreate(['name' => $role])->getKey()]);
+}
+
+function agedShortCommentChallenge($test, ShortVideo $video): string
+{
+    $test->withCredentials();
+    $token = $test->getJson('/shorts/'.$video->id.'/engagement')->assertOk()->json('challenge');
+    $test->withCookie(config('session.cookie'), app('session')->getId());
+    $claim = json_decode(Crypt::decryptString($token), true);
+    $claim['time'] -= 4;
+
+    return Crypt::encryptString(json_encode($claim));
+}
+
+beforeEach(function () {
+    $this->withoutMiddleware(\Illuminate\Routing\Middleware\ThrottleRequests::class);
+    Http::preventStrayRequests();
+    Http::fake(['api.openai.com/*' => Http::response(['results' => [['flagged' => false, 'categories' => ['harassment' => false]]]])]);
+    config(['engagement.openai_key' => 'test-key']);
+});
+
+test('guest Shorts comments require an aged challenge and do not enter News data', function () {
+    $video = engagedShort();
+    $url = '/shorts/'.$video->id.'/comments';
+    $this->postJson($url, ['content' => 'Komentar warga'])->assertUnprocessable();
+    $this->postJson($url, ['content' => 'Komentar warga', 'challenge' => agedShortCommentChallenge($this, $video), 'website' => 'spam'])->assertUnprocessable();
+    $this->postJson($url, ['content' => 'Komentar warga', 'challenge' => agedShortCommentChallenge($this, $video)])
+        ->assertCreated()->assertJsonPath('status', 'published')->assertJsonPath('comment.content', 'Komentar warga');
+    $this->postJson($url, ['content' => 'Komentar warga', 'challenge' => agedShortCommentChallenge($this, $video)])->assertUnprocessable();
+    expect(ShortVideoComment::count())->toBe(1)->and(Comment::count())->toBe(0);
+    $this->getJson($url)->assertJsonPath('count', 1)->assertJsonPath('comments.data.0.replies_count', 0);
+});
+
+test('Shorts likes and one-level reply pagination use separate persistent records', function () {
+    $video = engagedShort();
+    $user = shortActor();
+    $this->actingAs($user);
+    $url = '/shorts/'.$video->id;
+    $this->postJson($url.'/like')->assertJsonPath('likes_count', 1)->assertJsonPath('liked', true);
+    $this->get($url)->assertInertia(fn (Assert $page) => $page->where('short.likes_count', 1)->where('likedByUser', true));
+    $this->postJson($url.'/like')->assertJsonPath('likes_count', 0)->assertJsonPath('liked', false);
+    $root = $this->postJson($url.'/comments', ['content' => 'Komentar pertama'])->assertCreated()->json('comment.id');
+    $reply = $this->postJson($url.'/comments/'.$root.'/replies', ['content' => 'Balasan pertama'])->assertCreated()->json('comment.id');
+    $this->postJson($url.'/comments/'.$reply.'/replies', ['content' => 'Balasan kedua'])->assertCreated()->assertJsonPath('comment.recipient', $user->name);
+    expect(ShortVideoComment::find($reply)->root_id)->toBe((int) $root);
+    $this->getJson($url.'/comments')->assertJsonPath('count', 3)->assertJsonPath('comments.data.0.replies_count', 2);
+    $this->getJson($url.'/comments/'.$root.'/replies')->assertJsonCount(2, 'data');
+    $this->postJson($url.'/comments/'.$root.'/like')->assertJsonPath('likes_count', 1)->assertJsonPath('liked', true);
+    $this->postJson($url.'/comments/'.$root.'/like')->assertJsonPath('likes_count', 0)->assertJsonPath('liked', false);
+    expect(DB::table('short_video_comment_likes')->count())->toBe(0);
+});
+
+test('user report and moderator flag enter the same admin queue with distinct content identification', function () {
+    $video = engagedShort();
+    $villager = shortActor();
+    $moderator = shortActor('moderator');
+    $root = ShortVideoComment::create(['short_video_id' => $video->id, 'user_id' => $villager->getKey(), 'content' => 'Periksa isi', 'status' => 'published', 'submission_hash' => hash('sha256', 'first')]);
+    $url = '/shorts/'.$video->id.'/comments/'.$root->id;
+    $this->actingAs($villager)->postJson($url.'/report', ['category' => 'Spam'])->assertOk();
+    $this->postJson($url.'/report', ['category' => 'Spam'])->assertOk();
+    expect(DB::table('short_video_comment_reports')->count())->toBe(1);
+    $this->postJson($url.'/flag', ['category' => 'spam'])->assertForbidden();
+    $this->actingAs($moderator)->postJson($url.'/report', ['category' => 'Spam'])->assertForbidden();
+    $this->postJson($url.'/flag', ['category' => 'spam', 'explanation' => 'Tinjau'])->assertOk();
+    $this->postJson($url.'/flag', ['category' => 'spam'])->assertOk();
+    expect(DB::table('short_video_comment_flags')->count())->toBe(1);
+    $this->get('/admin/comments?content_type=shorts')->assertInertia(fn (Assert $page) => $page->where('comments.data.0.content_type', 'shorts')->where('counts.pending', 1)->where('comments.data.0.news.title', $video->title));
+    $this->postJson('/admin/comments/'.$root->id.'/decision', ['content_type' => 'shorts', 'action' => 'remove', 'expected_revision' => 0])->assertOk();
+    expect($root->fresh()->status)->toBe('removed');
+    $this->getJson('/shorts/'.$video->id.'/comments')->assertJsonPath('count', 0);
+    $this->get('/admin/comments?content_type=shorts&tab=history')->assertInertia(fn (Assert $page) => $page->where('comments.data.0.status', 'removed')->where('comments.data.0.history.0.to_status', 'removed'));
+    $this->postJson('/admin/comments/'.$root->id.'/decision', ['content_type' => 'shorts', 'action' => 'restore', 'expected_revision' => 1])->assertOk();
+    expect($root->fresh()->status)->toBe('published')->and(DB::table('short_video_comment_history')->where('comment_id', $root->id)->count())->toBe(2);
+});

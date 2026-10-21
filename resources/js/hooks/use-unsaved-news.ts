@@ -48,14 +48,24 @@ export function useUnsavedNews(isDirty: boolean, busy: boolean) {
         });
         const removeBefore = router.on('before', (event) => {
             const visit = event.detail.visit;
+
+            // Sidebar hover prefetches emit "before" without leaving the page.
+            if (visit.prefetch) {
+                return;
+            }
+
             const url = new URL(visit.url, location.href);
+            const currentUrl = new URL(location.href);
 
             // Reloads/polling and local form requests do not leave this editor.
             if (
                 url.origin === location.origin &&
                 url.pathname === location.pathname &&
                 (url.search === location.search ||
-                    (visit.preserveState && visit.only?.length))
+                    (visit.preserveState &&
+                        visit.only?.length &&
+                        url.searchParams.get('draft') ===
+                            currentUrl.searchParams.get('draft')))
             ) {
                 return;
             }

@@ -45,7 +45,7 @@ class WelcomeController extends Controller
             ->first();
 
         return Inertia::render('welcome', [
-            'shorts' => \App\Models\ShortVideo::where('status', 'published')->whereNotNull('published_at')->latest('published_at')->latest('id')->take(6)->get(['id', 'title', 'description', 'thumbnail_url', 'video_url', 'published_at']),
+            'shorts' => \App\Models\ShortVideo::where('status', 'published')->whereNotNull('published_at')->latest('published_at')->latest('id')->take(6)->get(['id', 'title', 'description', 'thumbnail_url', 'video_url', 'published_at', 'view_count']),
             'featuredNews' => $featuredNews,
             'featuredSlides' => $featuredSlides,
             'supportingNews' => $supportingNews,

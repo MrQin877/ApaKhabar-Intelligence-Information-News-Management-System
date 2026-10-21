@@ -10,6 +10,8 @@ use App\Http\Controllers\Admin\NewsWorkspaceController;
 use App\Http\Controllers\Admin\ShortVideoController;
 use App\Http\Controllers\Auth\MobileEmailVerificationController;
 use App\Http\Controllers\Home\WelcomeController;
+use App\Http\Controllers\Home\ShortViewerController;
+use App\Http\Controllers\Home\ShortEngagementController;
 use App\Http\Controllers\News\CommentController;
 use App\Http\Controllers\News\EngagementController;
 use App\Http\Controllers\News\NewsController;
@@ -43,6 +45,20 @@ Route::post('/website/translate', WebsiteTranslationController::class)
 // Public routes — no auth required
 
 Route::get('/', [WelcomeController::class, 'index'])->name('home');
+Route::get('/shorts/{id}', [ShortViewerController::class, 'show'])->whereNumber('id')->name('shorts.show');
+Route::get('/shorts/{id}/view-token', [ShortViewerController::class, 'token'])->whereNumber('id')->middleware('throttle:30,1');
+Route::post('/shorts/{id}/view', [ShortViewerController::class, 'view'])->whereNumber('id')->middleware('throttle:30,1');
+Route::get('/shorts/{id}/engagement', [ShortEngagementController::class, 'context'])->whereNumber('id')->middleware('throttle:30,1');
+Route::get('/shorts/{id}/comments', [ShortEngagementController::class, 'index'])->whereNumber('id')->middleware('throttle:60,1');
+Route::get('/shorts/{id}/comments/{comment}/replies', [ShortEngagementController::class, 'replies'])->whereNumber(['id', 'comment'])->middleware('throttle:60,1');
+Route::post('/shorts/{id}/comments', [ShortEngagementController::class, 'store'])->whereNumber('id')->middleware('throttle:5,1');
+Route::middleware(['auth', 'throttle:30,1'])->group(function () {
+    Route::post('/shorts/{id}/like', [ShortEngagementController::class, 'likeVideo'])->whereNumber('id');
+    Route::post('/shorts/{id}/comments/{comment}/like', [ShortEngagementController::class, 'likeComment'])->whereNumber(['id', 'comment']);
+    Route::post('/shorts/{id}/comments/{comment}/replies', [ShortEngagementController::class, 'reply'])->whereNumber(['id', 'comment'])->middleware('throttle:5,1');
+    Route::post('/shorts/{id}/comments/{comment}/report', [ShortEngagementController::class, 'report'])->whereNumber(['id', 'comment'])->middleware('throttle:5,1');
+});
+Route::post('/shorts/{id}/comments/{comment}/flag', [ShortEngagementController::class, 'flag'])->whereNumber(['id', 'comment'])->middleware(['auth', 'verified', 'throttle:5,1']);
 
 Route::get('/news', [NewsController::class, 'index'])->name('news.index');
 

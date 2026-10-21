@@ -8,6 +8,7 @@ use App\Models\ShortVideo;
 use App\Models\SocialConnection;
 use App\Services\News\MetaConnections;
 use App\Services\Shorts\CloudinaryVideoService;
+use App\Services\Shorts\ReelCaption;
 use App\Services\Shorts\VideoInspector;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -53,12 +54,28 @@ class ShortVideoController extends Controller
 
     public function upload(Request $r, VideoInspector $inspector, CloudinaryVideoService $cloud)
     {
-        $r->validate(['video' => ['required', 'file', 'mimetypes:video/mp4', 'extensions:mp4', 'max:'.config('shorts.max_upload_kb')]]);
+        $r->validate(['video' => ['required', 'file', 'mimetypes:video/mp4', 'extensions:mp4', 'max:'.config('shorts.max_upload_kb')], 'short_video_id' => 'nullable|integer|exists:short_videos,id']);
+        $existing = $r->filled('short_video_id') ? ShortVideo::findOrFail($r->integer('short_video_id')) : null;
+        if ($existing) {
+            $this->own($r, $existing);
+            abort_unless($existing->status === 'draft', 422, 'Hanya draf dapat diedit.');
+        }
         $metadata = $inspector->inspect($r->file('video'));
         $asset = $cloud->upload($r->file('video'));
-        $video = ShortVideo::create(['created_by' => $r->user()->getKey(), 'video_url' => $asset['secure_url'], 'video_public_id' => $asset['public_id'], 'thumbnail_url' => $cloud->frame($asset['public_id'], 0), 'metadata' => $metadata]);
+        $attributes = ['video_url' => $asset['secure_url'], 'video_public_id' => $asset['public_id'], 'thumbnail_url' => $cloud->frame($asset['public_id'], 0), 'thumbnail_public_id' => null, 'frame_offset' => 0, 'metadata' => $metadata];
+        if ($existing) {
+            DB::transaction(function () use ($existing, $attributes, $r) {
+                $video = ShortVideo::whereKey($existing->id)->lockForUpdate()->firstOrFail();
+                $this->own($r, $video);
+                abort_unless($video->status === 'draft', 422, 'Hanya draf dapat diedit.');
+                $video->update($attributes);
+            });
+            $video = $existing;
+        } else {
+            $video = ShortVideo::create(['created_by' => $r->user()->getKey(), ...$attributes]);
+        }
 
-        return response()->json(['video' => $video], 201);
+        return response()->json(['video' => $video->refresh()], $existing ? 200 : 201);
     }
 
     public function update(Request $r, ShortVideo $shortVideo, CloudinaryVideoService $cloud)
@@ -102,14 +119,18 @@ class ShortVideoController extends Controller
         $this->own($r, $shortVideo);
         $platforms = $this->targets($r);
         $inspector->validate($shortVideo->metadata, $platforms);
-        if (in_array('instagram', $platforms) && mb_strlen($shortVideo->description) > 2200) {
-            throw ValidationException::withMessages(['description' => 'Deskripsi Instagram maksimal 2200 karakter.']);
+        $caption = ReelCaption::format($shortVideo);
+        if (in_array('instagram', $platforms) && mb_strlen($caption) > ReelCaption::INSTAGRAM_MAX) {
+            throw ValidationException::withMessages(['description' => 'Judul dan deskripsi Instagram maksimal 2200 karakter.']);
+        }
+        if (in_array('facebook', $platforms) && mb_strlen($caption) > ReelCaption::FACEBOOK_MAX) {
+            throw ValidationException::withMessages(['description' => 'Judul dan deskripsi Facebook maksimal 10000 karakter.']);
         }
         abort_unless(trim($shortVideo->title) && trim($shortVideo->description), 422, 'Judul dan deskripsi wajib diisi.');
         $token = Str::random(48);
         Cache::put('short-preview:'.$token, ['user' => $r->user()->getKey(), 'video' => $shortVideo->id, 'fingerprint' => $this->fingerprint($shortVideo, $platforms)], now()->addMinutes(15));
 
-        return response()->json(['token' => $token, 'title' => $shortVideo->title, 'content' => $shortVideo->description, 'caption' => $shortVideo->description, 'category' => null, 'images' => array_fill_keys(['website', 'instagram', 'facebook'], null), 'issues' => [], 'video_url' => $shortVideo->video_url, 'thumbnail_url' => $shortVideo->thumbnail_url]);
+        return response()->json(['token' => $token, 'title' => $shortVideo->title, 'content' => $shortVideo->description, 'caption' => $caption, 'category' => null, 'images' => array_fill_keys(['website', 'instagram', 'facebook'], null), 'issues' => [], 'video_url' => $shortVideo->video_url, 'thumbnail_url' => $shortVideo->thumbnail_url]);
     }
 
     public function publish(Request $r, ShortVideo $shortVideo, VideoInspector $inspector)
@@ -122,6 +143,13 @@ class ShortVideoController extends Controller
             throw ValidationException::withMessages(['preview_token' => 'Pratinjau berubah atau kedaluwarsa. Buka kembali pratinjau.']);
         }
         $inspector->validate($shortVideo->metadata, $platforms);
+        $caption = ReelCaption::format($shortVideo);
+        if (in_array('instagram', $platforms) && mb_strlen($caption) > ReelCaption::INSTAGRAM_MAX) {
+            throw ValidationException::withMessages(['description' => 'Judul dan deskripsi Instagram maksimal 2200 karakter.']);
+        }
+        if (in_array('facebook', $platforms) && mb_strlen($caption) > ReelCaption::FACEBOOK_MAX) {
+            throw ValidationException::withMessages(['description' => 'Judul dan deskripsi Facebook maksimal 10000 karakter.']);
+        }
         DB::transaction(function () use ($shortVideo, $platforms, $r, $preview) {
             $v = ShortVideo::whereKey($shortVideo->id)->lockForUpdate()->firstOrFail();
             if ($v->status === 'published') {
