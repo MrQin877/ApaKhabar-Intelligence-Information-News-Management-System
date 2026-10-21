@@ -1,4 +1,5 @@
 export type PublishResult = {
+    pending?: boolean;
     success: boolean;
     attempt_id: string;
     retry_url?: string;
@@ -14,6 +15,7 @@ export type PublishResult = {
                 | 'published'
                 | 'failed'
                 | 'processing'
+                | 'uploading'
                 | 'queued'
                 | 'uncertain'
                 | 'not_selected';

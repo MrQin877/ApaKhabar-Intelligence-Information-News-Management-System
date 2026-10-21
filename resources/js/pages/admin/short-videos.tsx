@@ -14,7 +14,7 @@ import type {
     PublishPlatform,
     PublishPlatformId,
 } from '@/components/publish-news-dialog';
-import { PublishResultDialog } from '@/components/publish-result-dialog';
+import { ShortVideoList } from '@/components/short-video-list';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -47,10 +47,14 @@ type ShortVideo = {
     frame_offset: number;
     status: string;
     metadata: { duration: number };
+    created_at?: string;
+    published_at?: string | null;
     publications?: {
         platform: string;
         status: string;
         account_name: string | null;
+        permalink?: string | null;
+        error_summary?: string | null;
     }[];
 };
 function savedVideoState(video: ShortVideo | null) {
@@ -66,15 +70,6 @@ function savedVideoState(video: ShortVideo | null) {
     };
 }
 type Result = { video: ShortVideo; result: PublishResult };
-const statusNames: Record<string, string> = {
-    draft: 'Draf',
-    published: 'Diterbitkan',
-    archived: 'Diarsipkan',
-    queued: 'Menunggu',
-    processing: 'Diproses',
-    failed: 'Gagal',
-    uncertain: 'Belum pasti',
-};
 
 function upload(
     path: string,
@@ -144,23 +139,29 @@ function upload(
     });
 }
 
-export default function ShortVideos({
+export function ShortVideos({
+    mode = 'editor',
+    draft = null,
     videos,
     publishPlatforms,
     metaAuth,
+    filters,
 }: {
+    filters?: { search: string; status: string };
+    mode?: 'editor' | 'list';
+    draft?: ShortVideo | null;
     videos: { data: ShortVideo[]; current_page: number; last_page: number };
     publishPlatforms: PublishPlatform[];
     metaAuth: MetaAuthConfig;
 }) {
     usePoll(10000, { only: ['videos'] });
-    const [current, setCurrent] = useState<ShortVideo | null>(null);
-    const [title, setTitle] = useState('');
-    const [description, setDescription] = useState('');
-    const [source, setSource] = useState('');
-    const [thumbnail, setThumbnail] = useState('');
-    const [duration, setDuration] = useState(0);
-    const [offset, setOffset] = useState(0);
+    const [current, setCurrent] = useState<ShortVideo | null>(draft);
+    const [title, setTitle] = useState(draft?.title ?? '');
+    const [description, setDescription] = useState(draft?.description ?? '');
+    const [source, setSource] = useState(draft?.video_url ?? '');
+    const [thumbnail, setThumbnail] = useState(draft?.thumbnail_url ?? '');
+    const [duration, setDuration] = useState(draft?.metadata.duration ?? 0);
+    const [offset, setOffset] = useState(draft?.frame_offset ?? 0);
     const [cover, setCover] = useState<File | null>(null);
     const [coverMode, setCoverMode] = useState<'keep' | 'frame' | 'upload'>(
         'keep',
@@ -171,11 +172,9 @@ export default function ShortVideos({
     const [error, setError] = useState('');
     const [dialog, setDialog] = useState(false);
     const [selected, setSelected] = useState<PublishPlatformId[]>(['website']);
-    const [result, setResult] = useState<PublishResult>();
-    const [resultId, setResultId] = useState<number | null>(null);
     const [confirmation, setConfirmation] = useState<{
         video: ShortVideo;
-        action: 'archive' | 'delete';
+        action: 'archive' | 'delete' | 'restore';
     } | null>(null);
     const [dragging, setDragging] = useState(false);
     const [frameOpen, setFrameOpen] = useState(false);
@@ -185,7 +184,7 @@ export default function ShortVideos({
     const fileInput = useRef<HTMLInputElement>(null);
     const guard = useRef(false);
     const [savedSnapshot, setSavedSnapshot] = useState(() =>
-        editorSnapshot(savedVideoState(null)),
+        editorSnapshot(savedVideoState(draft)),
     );
     const snapshot = editorSnapshot({
         title,
@@ -200,7 +199,10 @@ export default function ShortVideos({
                   : savedVideoState(current).thumbnail,
         cover: coverMode === 'upload' ? cover : null,
     });
-    const unsaved = useUnsavedNews(snapshot !== savedSnapshot, busy);
+    const unsaved = useUnsavedNews(
+        mode === 'editor' && snapshot !== savedSnapshot,
+        busy,
+    );
 
     useEffect(
         () => () => {
@@ -218,53 +220,7 @@ export default function ShortVideos({
         },
         [thumbnail],
     );
-    useEffect(() => {
-        if (!resultId) {
-            return;
-        }
-
-        let stopped = false;
-        const timer = window.setInterval(() => {
-            void metaRequest<Result>(`/admin/short-videos/${resultId}/status`)
-                .then((data) => {
-                    if (!stopped) {
-                        setResult((previous) => ({
-                            ...data.result,
-                            attempt_id:
-                                previous?.attempt_id ?? data.result.attempt_id,
-                        }));
-                    }
-                })
-                .catch(() => {
-                    if (!stopped) {
-                        setError(
-                            'Status belum dapat diperbarui. Periksa koneksi.',
-                        );
-                    }
-                });
-        }, 5000);
-
-        return () => {
-            stopped = true;
-            window.clearInterval(timer);
-        };
-    }, [resultId]);
     const refresh = () => router.reload({ only: ['videos'] });
-    function edit(video: ShortVideo) {
-        setSavedSnapshot(editorSnapshot(savedVideoState(video)));
-        setCurrent(video);
-        setTitle(video.title);
-        setDescription(video.description ?? '');
-        setSource(video.video_url);
-        setThumbnail(video.thumbnail_url);
-        setOffset(video.frame_offset);
-        setDuration(video.metadata.duration);
-        setCover(null);
-        setCoverMode('keep');
-        setError('');
-        setMessage('');
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
     function selectVideo(file?: File) {
         if (!file || guard.current) {
             return;
@@ -464,8 +420,16 @@ export default function ShortVideos({
             setDialog(false);
             setSavedSnapshot(editorSnapshot(savedVideoState(data.video)));
             setCurrent(data.video);
-            setResult(data.result);
-            setResultId(data.video.id);
+            window.dispatchEvent(
+                new CustomEvent('short-publication', {
+                    detail: {
+                        id: data.video.id,
+                        title: data.video.title,
+                        result: data.result,
+                        open: true,
+                    },
+                }),
+            );
             refresh();
         } catch (failure) {
             setError((failure as Error).message);
@@ -475,38 +439,11 @@ export default function ShortVideos({
         }
     }
     async function showStatus(video: ShortVideo) {
-        try {
-            const data = await metaRequest<Result>(
-                `/admin/short-videos/${video.id}/status`,
-            );
-            setResult({
-                ...data.result,
-                attempt_id: `${data.result.attempt_id}-${Date.now()}`,
-            });
-            setResultId(video.id);
-        } catch (failure) {
-            setError((failure as Error).message);
-        }
-    }
-    async function retry(platform: string) {
-        if (!resultId || busy) {
-            return;
-        }
-
-        setBusy(true);
-
-        try {
-            const data = await metaRequest<Result>(
-                `/admin/short-videos/${resultId}/retry/${platform}`,
-                {},
-            );
-            setResult(data.result);
-            refresh();
-        } catch (failure) {
-            setError((failure as Error).message);
-        } finally {
-            setBusy(false);
-        }
+        window.dispatchEvent(
+            new CustomEvent('short-publication', {
+                detail: { id: video.id, title: video.title, open: true },
+            }),
+        );
     }
 
     return (
@@ -515,13 +452,29 @@ export default function ShortVideos({
                 { title: 'Video Pendek', href: '/admin/short-videos' },
             ]}
         >
-            <Head title="Video Pendek" />
+            <Head
+                title={mode === 'editor' ? 'Publikasi Video' : 'Daftar Video'}
+            />
             <div className="mx-auto w-full max-w-6xl space-y-6 p-4 sm:p-6">
                 <div>
-                    <h1 className="text-2xl font-semibold">Video Pendek</h1>
-                    <p className="text-sm text-muted-foreground">
-                        Publikasikan ke ApaKhabar dan akun sosial yang dipilih.
+                    <h1 className="text-2xl font-semibold">
+                        {mode === 'editor' ? 'Publikasi Video' : 'Daftar Video'}
+                    </h1>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                        {mode === 'list'
+                            ? 'Kelola draf dan video yang telah dipublikasikan.'
+                            : 'Publikasikan ke ApaKhabar dan akun sosial yang dipilih.'}
                     </p>
+                    {mode === 'list' && (
+                        <Button
+                            className="mt-3"
+                            onClick={() =>
+                                router.visit('/admin/short-videos/create')
+                            }
+                        >
+                            Buat Video
+                        </Button>
+                    )}
                 </div>
                 {error && (
                     <p
@@ -539,370 +492,277 @@ export default function ShortVideos({
                         {message}
                     </p>
                 )}
-                <div className="space-y-6 rounded-2xl border border-border/80 bg-card p-5 shadow-sm sm:p-6">
-                    <div className="space-y-2">
-                        <Label htmlFor="short-video">Unggah Video</Label>
-                        <div
-                            className={`relative rounded-xl border-2 border-dashed transition-colors ${dragging ? 'border-primary bg-primary/10' : current && source ? 'border-primary bg-muted/20' : 'border-border bg-muted/20 hover:border-primary/40'}`}
-                            onDragOver={(event) => {
-                                event.preventDefault();
+                {mode === 'editor' && (
+                    <div className="space-y-6 rounded-2xl border border-border/80 bg-card p-5 shadow-sm sm:p-6">
+                        <div className="space-y-2">
+                            <Label htmlFor="short-video">Unggah Video</Label>
+                            <div
+                                className={`relative rounded-xl border-2 border-dashed transition-colors ${dragging ? 'border-primary bg-primary/10' : current && source ? 'border-primary bg-muted/20' : 'border-border bg-muted/20 hover:border-primary/40'}`}
+                                onDragOver={(event) => {
+                                    event.preventDefault();
 
-                                if (!busy) {
-                                    setDragging(true);
-                                }
-                            }}
-                            onDragLeave={() => setDragging(false)}
-                            onDrop={(event) => {
-                                event.preventDefault();
-                                setDragging(false);
-                                selectVideo(event.dataTransfer.files[0]);
-                            }}
-                        >
-                            <input
-                                ref={fileInput}
-                                id="short-video"
-                                type="file"
-                                accept="video/mp4"
-                                className="sr-only"
-                                disabled={busy}
-                                onChange={(event) => {
-                                    selectVideo(event.target.files?.[0]);
-                                    event.target.value = '';
+                                    if (!busy) {
+                                        setDragging(true);
+                                    }
                                 }}
-                            />
-                            <input
-                                ref={coverInput}
-                                aria-label="Unggah sampul"
-                                type="file"
-                                accept="image/jpeg,image/png"
-                                className="sr-only"
-                                disabled={
-                                    busy ||
-                                    !current ||
-                                    current.status !== 'draft'
-                                }
-                                onChange={(event) => {
-                                    selectCover(event.target.files?.[0]);
-                                    event.target.value = '';
+                                onDragLeave={() => setDragging(false)}
+                                onDrop={(event) => {
+                                    event.preventDefault();
+                                    setDragging(false);
+                                    selectVideo(event.dataTransfer.files[0]);
                                 }}
-                            />
-                            {source ? (
-                                <div className="flex min-h-48 flex-col items-center justify-center gap-3 rounded-xl p-5 pt-14 text-center">
-                                    <video
-                                        key={source}
-                                        ref={player}
-                                        src={source}
-                                        controls
-                                        preload="metadata"
-                                        poster={thumbnail || undefined}
-                                        className="max-h-56 w-full rounded-lg object-contain"
-                                    />
+                            >
+                                <input
+                                    ref={fileInput}
+                                    id="short-video"
+                                    type="file"
+                                    accept="video/mp4"
+                                    className="sr-only"
+                                    disabled={busy}
+                                    onChange={(event) => {
+                                        selectVideo(event.target.files?.[0]);
+                                        event.target.value = '';
+                                    }}
+                                />
+                                <input
+                                    ref={coverInput}
+                                    aria-label="Unggah sampul"
+                                    type="file"
+                                    accept="image/jpeg,image/png"
+                                    className="sr-only"
+                                    disabled={
+                                        busy ||
+                                        !current ||
+                                        current.status !== 'draft'
+                                    }
+                                    onChange={(event) => {
+                                        selectCover(event.target.files?.[0]);
+                                        event.target.value = '';
+                                    }}
+                                />
+                                {source ? (
+                                    <div className="flex min-h-48 flex-col items-center justify-center gap-3 rounded-xl p-5 pt-14 text-center">
+                                        <video
+                                            key={source}
+                                            ref={player}
+                                            src={source}
+                                            controls
+                                            preload="metadata"
+                                            poster={thumbnail || undefined}
+                                            className="max-h-56 w-full rounded-lg object-contain"
+                                        />
+                                        <button
+                                            type="button"
+                                            disabled={busy}
+                                            onClick={() =>
+                                                fileInput.current?.click()
+                                            }
+                                            className="rounded text-sm font-medium focus-visible:ring-2 focus-visible:ring-ring"
+                                        >
+                                            Klik untuk mengganti video
+                                        </button>
+                                        <span className="text-xs text-muted-foreground">
+                                            MP4 H.264/AAC, maksimal 100 MB
+                                        </span>
+                                    </div>
+                                ) : (
                                     <button
                                         type="button"
                                         disabled={busy}
                                         onClick={() =>
                                             fileInput.current?.click()
                                         }
-                                        className="rounded text-sm font-medium focus-visible:ring-2 focus-visible:ring-ring"
+                                        className="flex min-h-48 w-full flex-col items-center justify-center gap-3 rounded-xl p-5 text-center outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                     >
-                                        Klik untuk mengganti video
+                                        <span className="flex size-12 items-center justify-center rounded-full border bg-card text-primary shadow-sm">
+                                            <Video className="size-5" />
+                                        </span>
+                                        <span className="text-sm font-medium">
+                                            Klik untuk unggah atau seret video
+                                            ke sini
+                                        </span>
+                                        <span className="text-xs text-muted-foreground">
+                                            MP4 H.264/AAC, maksimal 100 MB
+                                        </span>
                                     </button>
-                                    <span className="text-xs text-muted-foreground">
-                                        MP4 H.264/AAC, maksimal 100 MB
-                                    </span>
+                                )}
+                                {source && (
+                                    <div className="absolute top-3 right-3">
+                                        <DropdownMenu>
+                                            <DropdownMenuTrigger asChild>
+                                                <Button
+                                                    type="button"
+                                                    variant="secondary"
+                                                    size="sm"
+                                                    className="h-8 rounded-full shadow-sm"
+                                                    disabled={
+                                                        busy ||
+                                                        !current ||
+                                                        current.status !==
+                                                            'draft'
+                                                    }
+                                                >
+                                                    <Pencil className="size-3.5" />
+                                                    Edit
+                                                </Button>
+                                            </DropdownMenuTrigger>
+                                            <DropdownMenuContent align="end">
+                                                <DropdownMenuItem
+                                                    onSelect={() => {
+                                                        player.current?.pause();
+                                                        setFrameOpen(true);
+                                                    }}
+                                                >
+                                                    <Film />
+                                                    Pilih Sampul dari Video
+                                                </DropdownMenuItem>
+                                                <DropdownMenuItem
+                                                    onSelect={() =>
+                                                        coverInput.current?.click()
+                                                    }
+                                                >
+                                                    <ImagePlus />
+                                                    Unggah Sampul
+                                                </DropdownMenuItem>
+                                                <DropdownMenuItem
+                                                    onSelect={() =>
+                                                        fileInput.current?.click()
+                                                    }
+                                                >
+                                                    <Upload />
+                                                    Ganti Video
+                                                </DropdownMenuItem>
+                                            </DropdownMenuContent>
+                                        </DropdownMenu>
+                                    </div>
+                                )}
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                                Rekomendasi 9:16, maksimal 15 menit. Facebook:
+                                minimal 540x960, durasi 4?60 detik.
+                            </p>
+                            {progress !== null && (
+                                <div role="status" className="space-y-2">
+                                    <progress
+                                        className="w-full accent-primary"
+                                        max={100}
+                                        value={progress}
+                                    />
+                                    <p className="text-xs">
+                                        {progress < 100
+                                            ? `Mengunggah ke server ${progress}%`
+                                            : 'Memeriksa video dan menyimpan ke Cloudinary...'}
+                                    </p>
                                 </div>
-                            ) : (
-                                <button
-                                    type="button"
-                                    disabled={busy}
-                                    onClick={() => fileInput.current?.click()}
-                                    className="flex min-h-48 w-full flex-col items-center justify-center gap-3 rounded-xl p-5 text-center outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                                >
-                                    <span className="flex size-12 items-center justify-center rounded-full border bg-card text-primary shadow-sm">
-                                        <Video className="size-5" />
-                                    </span>
-                                    <span className="text-sm font-medium">
-                                        Klik untuk unggah atau seret video ke
-                                        sini
-                                    </span>
-                                    <span className="text-xs text-muted-foreground">
-                                        MP4 H.264/AAC, maksimal 100 MB
-                                    </span>
-                                </button>
                             )}
-                            {source && (
-                                <div className="absolute top-3 right-3">
-                                    <DropdownMenu>
-                                        <DropdownMenuTrigger asChild>
-                                            <Button
-                                                type="button"
-                                                variant="secondary"
-                                                size="sm"
-                                                className="h-8 rounded-full shadow-sm"
-                                                disabled={
-                                                    busy ||
-                                                    !current ||
-                                                    current.status !== 'draft'
-                                                }
-                                            >
-                                                <Pencil className="size-3.5" />
-                                                Edit
-                                            </Button>
-                                        </DropdownMenuTrigger>
-                                        <DropdownMenuContent align="end">
-                                            <DropdownMenuItem
-                                                onSelect={() => {
-                                                    player.current?.pause();
-                                                    setFrameOpen(true);
-                                                }}
-                                            >
-                                                <Film />
-                                                Pilih Sampul dari Video
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem
-                                                onSelect={() =>
-                                                    coverInput.current?.click()
-                                                }
-                                            >
-                                                <ImagePlus />
-                                                Unggah Sampul
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem
-                                                onSelect={() =>
-                                                    fileInput.current?.click()
-                                                }
-                                            >
-                                                <Upload />
-                                                Ganti Video
-                                            </DropdownMenuItem>
-                                        </DropdownMenuContent>
-                                    </DropdownMenu>
+                            {thumbnail && (
+                                <div className="flex items-center gap-3 pt-2">
+                                    <img
+                                        src={thumbnail}
+                                        alt="Sampul terpilih"
+                                        className="h-20 w-14 rounded-lg object-cover"
+                                    />
+                                    <div className="text-xs text-muted-foreground">
+                                        <p className="font-medium text-foreground">
+                                            Sampul terpilih
+                                        </p>
+                                        <p>
+                                            {coverMode === 'keep'
+                                                ? 'Tersimpan'
+                                                : 'Simpan draf untuk menyimpan perubahan sampul.'}
+                                        </p>
+                                    </div>
                                 </div>
                             )}
                         </div>
-                        <p className="text-xs text-muted-foreground">
-                            Rekomendasi 9:16, maksimal 15 menit. Facebook:
-                            minimal 540x960, durasi 4?60 detik.
-                        </p>
-                        {progress !== null && (
-                            <div role="status" className="space-y-2">
-                                <progress
-                                    className="w-full accent-primary"
-                                    max={100}
-                                    value={progress}
-                                />
-                                <p className="text-xs">
-                                    {progress < 100
-                                        ? `Mengunggah ke server ${progress}%`
-                                        : 'Memeriksa video dan menyimpan ke Cloudinary...'}
-                                </p>
-                            </div>
-                        )}
-                        {thumbnail && (
-                            <div className="flex items-center gap-3 pt-2">
-                                <img
-                                    src={thumbnail}
-                                    alt="Sampul terpilih"
-                                    className="h-20 w-14 rounded-lg object-cover"
-                                />
-                                <div className="text-xs text-muted-foreground">
-                                    <p className="font-medium text-foreground">
-                                        Sampul terpilih
-                                    </p>
-                                    <p>
-                                        {coverMode === 'keep'
-                                            ? 'Tersimpan'
-                                            : 'Simpan draf untuk menyimpan perubahan sampul.'}
-                                    </p>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="short-title">Judul Video *</Label>
-                        <Input
-                            id="short-title"
-                            required
-                            placeholder="Masukkan judul yang jelas"
-                            value={title}
-                            maxLength={255}
-                            disabled={busy || current?.status === 'published'}
-                            onChange={(event) => setTitle(event.target.value)}
-                        />
-                    </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="short-description">
-                            Isi / Deskripsi *
-                        </Label>
-                        <Textarea
-                            id="short-description"
-                            required
-                            placeholder="Tulis deskripsi video"
-                            rows={12}
-                            value={description}
-                            maxLength={10000}
-                            disabled={busy || current?.status === 'published'}
-                            onChange={(event) =>
-                                setDescription(event.target.value)
-                            }
-                        />
-                        <p className="text-xs text-muted-foreground">
-                            Deskripsi digunakan sebagai caption. Instagram
-                            maksimal 2200 karakter.
-                        </p>
-                    </div>
-                    <div className="flex flex-wrap justify-end gap-3">
-                        <Button
-                            variant="outline"
-                            disabled={
-                                busy || !current || current.status !== 'draft'
-                            }
-                            onClick={() => void saveDraft()}
-                        >
-                            Simpan Draf
-                        </Button>
-                        <Button
-                            className="bg-brand-600 text-white hover:bg-brand-700"
-                            disabled={
-                                busy ||
-                                !current ||
-                                current.status !== 'draft' ||
-                                !title.trim() ||
-                                !description.trim()
-                            }
-                            onClick={() => setDialog(true)}
-                        >
-                            {busy && <LoaderCircle className="animate-spin" />}
-                            Publikasikan
-                        </Button>
-                    </div>
-                </div>
-                <section className="space-y-4">
-                    <h2 className="text-lg font-semibold">Daftar Video</h2>
-                    {videos.data.length === 0 && (
-                        <p className="text-muted-foreground">
-                            Belum ada video.
-                        </p>
-                    )}
-                    <div className="divide-y rounded-xl border">
-                        {videos.data.map((video) => (
-                            <article
-                                key={video.id}
-                                className="flex flex-wrap items-center gap-4 p-4"
+                        <div className="space-y-2">
+                            <Label htmlFor="short-title">Judul Video *</Label>
+                            <Input
+                                id="short-title"
+                                required
+                                placeholder="Masukkan judul yang jelas"
+                                value={title}
+                                maxLength={255}
+                                disabled={
+                                    busy || current?.status === 'published'
+                                }
+                                onChange={(event) =>
+                                    setTitle(event.target.value)
+                                }
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="short-description">
+                                Isi / Deskripsi *
+                            </Label>
+                            <Textarea
+                                id="short-description"
+                                required
+                                placeholder="Tulis deskripsi video"
+                                rows={12}
+                                value={description}
+                                maxLength={10000}
+                                disabled={
+                                    busy || current?.status === 'published'
+                                }
+                                onChange={(event) =>
+                                    setDescription(event.target.value)
+                                }
+                            />
+                            <p className="text-xs text-muted-foreground">
+                                Deskripsi digunakan sebagai caption. Instagram
+                                maksimal 2200 karakter.
+                            </p>
+                        </div>
+                        <div className="flex flex-wrap justify-end gap-3">
+                            <Button
+                                variant="outline"
+                                disabled={
+                                    busy ||
+                                    !current ||
+                                    current.status !== 'draft'
+                                }
+                                onClick={() => void saveDraft()}
                             >
-                                <img
-                                    src={video.thumbnail_url}
-                                    alt=""
-                                    className="h-20 w-14 rounded object-cover"
-                                />
-                                <div className="min-w-0 flex-1">
-                                    <h3 className="font-medium break-words">
-                                        {video.title || 'Draf tanpa judul'}
-                                    </h3>
-                                    <p className="text-xs text-muted-foreground">
-                                        {statusNames[video.status]}
-                                    </p>
-                                    {video.publications?.map((p) => (
-                                        <p
-                                            key={p.platform}
-                                            className="text-xs text-muted-foreground"
-                                        >
-                                            {p.platform === 'website'
-                                                ? 'ApaKhabar'
-                                                : p.platform}
-                                            : {statusNames[p.status]}{' '}
-                                            {p.account_name
-                                                ? `(${p.account_name})`
-                                                : ''}
-                                        </p>
-                                    ))}
-                                </div>
-                                <div className="flex flex-wrap gap-2">
-                                    {video.status === 'draft' ? (
-                                        <>
-                                            <Button
-                                                variant="outline"
-                                                onClick={() =>
-                                                    unsaved.requestLeave(() =>
-                                                        edit(video),
-                                                    )
-                                                }
-                                                disabled={busy}
-                                            >
-                                                Edit Draf
-                                            </Button>
-                                            <Button
-                                                variant="ghost"
-                                                onClick={() =>
-                                                    setConfirmation({
-                                                        video,
-                                                        action: 'delete',
-                                                    })
-                                                }
-                                                disabled={busy}
-                                            >
-                                                Hapus
-                                            </Button>
-                                        </>
-                                    ) : (
-                                        <Button
-                                            variant="outline"
-                                            onClick={() =>
-                                                void showStatus(video)
-                                            }
-                                        >
-                                            Status Publikasi
-                                        </Button>
-                                    )}
-                                    {video.status === 'published' && (
-                                        <Button
-                                            variant="ghost"
-                                            onClick={() =>
-                                                setConfirmation({
-                                                    video,
-                                                    action: 'archive',
-                                                })
-                                            }
-                                        >
-                                            Arsipkan
-                                        </Button>
-                                    )}
-                                </div>
-                            </article>
-                        ))}
+                                Simpan Draf
+                            </Button>
+                            <Button
+                                className="bg-brand-600 text-white hover:bg-brand-700"
+                                disabled={
+                                    busy ||
+                                    !current ||
+                                    current.status !== 'draft' ||
+                                    !title.trim() ||
+                                    !description.trim()
+                                }
+                                onClick={() => setDialog(true)}
+                            >
+                                {busy && (
+                                    <LoaderCircle className="animate-spin" />
+                                )}
+                                Publikasikan
+                            </Button>
+                        </div>
                     </div>
-                    <div className="flex justify-between">
-                        <Button
-                            variant="outline"
-                            disabled={videos.current_page <= 1}
-                            onClick={() =>
-                                router.get(
-                                    '/admin/short-videos',
-                                    { page: videos.current_page - 1 },
-                                    { preserveState: true },
-                                )
-                            }
-                        >
-                            Sebelumnya
-                        </Button>
-                        <span className="text-sm">
-                            {videos.current_page} / {videos.last_page}
-                        </span>
-                        <Button
-                            variant="outline"
-                            disabled={videos.current_page >= videos.last_page}
-                            onClick={() =>
-                                router.get(
-                                    '/admin/short-videos',
-                                    { page: videos.current_page + 1 },
-                                    { preserveState: true },
-                                )
-                            }
-                        >
-                            Berikutnya
-                        </Button>
-                    </div>
-                </section>
+                )}
+                {mode === 'list' && (
+                    <ShortVideoList
+                        key={filters?.search ?? ''}
+                        videos={videos}
+                        filters={filters}
+                        busy={busy}
+                        onStatus={(video) =>
+                            void showStatus(video as ShortVideo)
+                        }
+                        onAction={(video, action) => {
+                            setError('');
+                            setConfirmation({
+                                video: video as ShortVideo,
+                                action,
+                            });
+                        }}
+                    />
+                )}
             </div>
             <Dialog open={frameOpen} onOpenChange={setFrameOpen}>
                 <DialogContent className="max-h-[90dvh] overflow-y-auto">
@@ -1034,19 +894,6 @@ export default function ShortVideos({
                 onPreparePreview={prepare}
                 onPublish={(token) => void publish(token)}
             />
-            {result && (
-                <PublishResultDialog
-                    videoMode
-                    result={result}
-                    onRetry={(platform) => void retry(platform)}
-                    retrying={busy}
-                    onDismiss={() => {
-                        setResultId(null);
-                        setResult(undefined);
-                        refresh();
-                    }}
-                />
-            )}
             <Dialog
                 open={!!confirmation}
                 onOpenChange={(open) => {
@@ -1059,12 +906,22 @@ export default function ShortVideos({
                     <DialogTitle>
                         {confirmation?.action === 'delete'
                             ? 'Hapus Draf?'
-                            : 'Arsipkan Video?'}
+                            : confirmation?.action === 'restore'
+                              ? 'Pulihkan Video?'
+                              : 'Arsipkan Video?'}
                     </DialogTitle>
                     <DialogDescription>
-                        Video tidak akan tampil di ApaKhabar. Postingan sosial
-                        yang sudah terbit tidak dihapus.
+                        {confirmation?.action === 'archive'
+                            ? 'Video ini akan disembunyikan dari Beranda ApaKhabar dan dipindahkan ke Arsip. Video yang sudah dipublikasikan di Instagram atau Facebook tidak akan dihapus.'
+                            : confirmation?.action === 'restore'
+                              ? 'Video akan ditampilkan kembali di Beranda ApaKhabar tanpa menerbitkan ulang ke Instagram atau Facebook.'
+                              : 'Draf ini akan dihapus. Video yang sudah diterbitkan tidak dapat dihapus melalui tindakan ini.'}
                     </DialogDescription>
+                    {error && (
+                        <p role="alert" className="text-sm text-destructive">
+                            {error}
+                        </p>
+                    )}
                     <div className="flex justify-end gap-2">
                         <Button
                             variant="outline"
@@ -1083,10 +940,13 @@ export default function ShortVideos({
                                 setBusy(true);
 
                                 try {
-                                    await metaRequest(
-                                        `/admin/short-videos/${confirmation.video.id}/${confirmation.action === 'archive' ? 'archive' : 'delete'}`,
+                                    const response = await metaRequest<{
+                                        message: string;
+                                    }>(
+                                        `/admin/short-videos/${confirmation.video.id}/${confirmation.action}`,
                                         {},
                                     );
+                                    setMessage(response.message);
                                     setConfirmation(null);
                                     refresh();
                                 } catch (failure) {
@@ -1096,11 +956,26 @@ export default function ShortVideos({
                                 }
                             }}
                         >
-                            Konfirmasi
+                            {confirmation?.action === 'archive'
+                                ? 'Arsipkan'
+                                : confirmation?.action === 'restore'
+                                  ? 'Pulihkan'
+                                  : 'Hapus Draf'}
                         </Button>
                     </div>
                 </DialogContent>
             </Dialog>
         </AppLayout>
+    );
+}
+
+export default function ShortVideosPage(
+    props: Parameters<typeof ShortVideos>[0],
+) {
+    return (
+        <ShortVideos
+            key={`${props.mode ?? 'editor'}:${props.draft?.id ?? 'new'}`}
+            {...props}
+        />
     );
 }

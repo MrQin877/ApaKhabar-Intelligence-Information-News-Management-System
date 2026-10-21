@@ -49,6 +49,22 @@ class ReelPublisher
     public function step(ShortVideoPublication $p): void
     {
         $video = $p->video;
+        if ($p->status === 'published' && $p->stage === 'permalink') {
+            // Metadata-only reads must never turn a successful publication into a failure.
+            if (! $p->credential || ($p->credential_expires_at && $p->credential_expires_at->isPast())) {
+                throw new \RuntimeException('Token akun tujuan tidak tersedia untuk membaca tautan.');
+            }
+            $field = $p->platform === 'instagram' ? 'permalink' : 'permalink_url';
+            $data = $this->request($p, 'get', $p->media_id, ['fields' => $field]);
+            $url = PublicationPermalink::normalize($p->platform, $data[$field] ?? null);
+            if ($url) {
+                $p->update(['permalink' => $url, 'stage' => 'done', 'error_summary' => null]);
+            } else {
+                $p->update(['error_summary' => 'Diterbitkan; tautan belum tersedia.']);
+            }
+
+            return;
+        }
         if (! $p->credential || ($p->credential_expires_at && $p->credential_expires_at->isPast())) {
             $p->update(['status' => 'failed', 'error_summary' => 'Token akun tujuan kedaluwarsa. Hubungkan kembali akun yang sama.']);
 
@@ -91,13 +107,6 @@ class ReelPublisher
 
             return;
         }
-        if ($p->stage === 'permalink') {
-            $data = $this->request($p, 'get', $p->media_id, ['fields' => $p->platform === 'instagram' ? 'permalink' : 'permalink_url']);
-            $url = $data[$p->platform === 'instagram' ? 'permalink' : 'permalink_url'] ?? null;
-            $p->update(['permalink' => is_string($url) ? $url : null, 'stage' => 'done']);
-
-            return;
-        }
         if ($p->platform === 'instagram') {
             $data = $this->request($p, 'get', $p->container_id, ['fields' => 'status_code']);
             if (($data['status_code'] ?? '') === 'FINISHED') {
@@ -136,6 +145,6 @@ class ReelPublisher
 
     private function complete(ShortVideoPublication $p, string $id): void
     {
-        $p->update(['media_id' => $id, 'status' => 'published', 'stage' => 'permalink', 'published_at' => now(), 'error_summary' => null]);
+        $p->update(['media_id' => $id, 'status' => 'published', 'stage' => 'permalink', 'published_at' => now(), 'error_summary' => null, 'polls' => 0]);
     }
 }

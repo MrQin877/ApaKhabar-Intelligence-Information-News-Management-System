@@ -34,7 +34,7 @@ class PublishShortVideo implements ShouldQueue
         }
         try {
             $p = ShortVideoPublication::find($this->publicationId);
-            if (! $p || $p->platform === 'website' || $p->video->status !== 'published' || ($p->status === 'published' && $p->stage === 'done') || in_array($p->status, ['failed', 'uncertain'])) {
+            if (! $p || $p->platform === 'website' || ($p->video->status !== 'published' && ! ($p->video->status === 'archived' && $p->status === 'published' && $p->stage === 'permalink')) || ($p->status === 'published' && $p->stage === 'done') || in_array($p->status, ['failed', 'uncertain'])) {
                 return;
             }
             $p->increment('attempts');
@@ -51,7 +51,7 @@ class PublishShortVideo implements ShouldQueue
             $p->refresh();
             if (in_array($p->status, ['queued', 'processing']) || ($p->status === 'published' && $p->stage === 'permalink')) {
                 $p->increment('polls');
-                if ($p->polls >= 120) {
+                if ($p->polls >= ($p->status === 'published' ? config('shorts.permalink_attempts', 10) : 120)) {
                     $p->update($p->status === 'published' ? ['stage' => 'done', 'error_summary' => 'Diterbitkan; tautan belum tersedia.'] : ['status' => 'failed', 'error_summary' => 'Batas pemeriksaan tercapai. Coba periksa lagi.']);
                 } else {
                     $p->update(['next_attempt_at' => now()->addSeconds(config('shorts.poll_seconds'))]);

@@ -9,7 +9,11 @@ export interface HomeShort {
 }
 export function HomeShorts({ shorts = [] }: { shorts?: HomeShort[] }) {
     return (
-        <section className="space-y-4" aria-label="Shorts">
+        <section
+            id="shorts"
+            className="scroll-mt-24 space-y-4"
+            aria-label="Shorts"
+        >
             <div className="flex items-center gap-3">
                 <h2 className="text-2xl font-bold">Shorts</h2>
             </div>

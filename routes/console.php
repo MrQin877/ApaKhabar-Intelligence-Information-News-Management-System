@@ -6,6 +6,7 @@ use App\Models\IntelligenceDocument;
 use App\Models\IntelligenceInformation;
 use App\Models\ShortVideoPublication;
 use App\Services\PublicationPreviewFiles;
+use App\Services\Shorts\PublicationPermalink;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -15,6 +16,40 @@ use Illuminate\Support\Facades\Schedule;
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
+
+Artisan::command('shorts:recover-facebook-permalinks {--id= : Publication record ID}', function () {
+    $normalized = 0;
+    $queued = 0;
+    ShortVideoPublication::where('platform', 'facebook')->where('status', 'published')
+        ->when($this->option('id'), fn ($q, $id) => $q->whereKey($id))
+        ->whereHas('video', fn ($q) => $q->whereIn('status', ['published', 'archived']))
+        ->chunkById(100, function ($rows) use (&$normalized, &$queued) {
+            foreach ($rows as $row) {
+                DB::transaction(function () use ($row, &$normalized, &$queued) {
+                    $p = ShortVideoPublication::whereKey($row->id)->lockForUpdate()->first();
+                    if (! $p || $p->status !== 'published' || ($p->locked_until && $p->locked_until->isFuture())) {
+                        return;
+                    }
+                    $url = PublicationPermalink::normalize('facebook', $p->permalink);
+                    if ($url) {
+                        if ($url !== $p->permalink) {
+                            $p->update(['permalink' => $url, 'stage' => 'done', 'error_summary' => null]);
+                            $normalized++;
+                        }
+
+                        return;
+                    }
+                    if (! $p->media_id || $p->stage === 'permalink') {
+                        return;
+                    }
+                    $p->update(['permalink' => null, 'stage' => 'permalink', 'polls' => 0, 'next_attempt_at' => now(), 'error_summary' => 'Diterbitkan; tautan sedang diperiksa.']);
+                    DB::afterCommit(fn () => PublishShortVideo::dispatch($p->id));
+                    $queued++;
+                });
+            }
+        });
+    $this->info("Tautan dinormalisasi: {$normalized}; pemeriksaan dijadwalkan: {$queued}.");
+})->purpose('Recover Facebook Reel URLs using saved provider paths or read-only metadata jobs');
 
 Schedule::call(function (): void {
     IntelligenceDocument::query()

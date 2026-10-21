@@ -21,7 +21,29 @@ class ShortVideoController extends Controller
 {
     public function index(Request $r, MetaConnections $meta)
     {
-        return Inertia::render('admin/short-videos', ['videos' => ShortVideo::where('created_by', $r->user()->getKey())->with('publications')->latest()->paginate(12), 'publishPlatforms' => $meta->platforms($r->user()->getKey()), 'metaAuth' => $meta->publicConfig()]);
+        $filters = $r->validate(['search' => 'nullable|string|max:255', 'status' => ['nullable', Rule::in(['all', 'published', 'draft', 'archived'])]]);
+        $query = ShortVideo::where('created_by', $r->user()->getKey())->with('publications');
+        if ($search = trim($filters['search'] ?? '')) {
+            $query->where('title', 'like', '%'.addcslashes($search, '%_\\').'%');
+        }
+        if (($filters['status'] ?? 'all') !== 'all') {
+            $query->where('status', $filters['status']);
+        }
+
+        return Inertia::render('admin/short-videos', ['mode' => 'list', 'filters' => ['search' => $search, 'status' => $filters['status'] ?? 'all'], 'videos' => $query->latest()->paginate(12)->withQueryString(), 'publishPlatforms' => $meta->platforms($r->user()->getKey()), 'metaAuth' => $meta->publicConfig()]);
+    }
+
+    public function create(Request $r, MetaConnections $meta)
+    {
+        $draft = null;
+        if ($r->filled('draft')) {
+            $r->validate(['draft' => 'integer']);
+            $draft = ShortVideo::findOrFail($r->integer('draft'));
+            $this->own($r, $draft);
+            abort_unless($draft->status === 'draft', 422, 'Hanya draf dapat diedit.');
+        }
+
+        return Inertia::render('admin/short-videos', ['mode' => 'editor', 'draft' => $draft, 'videos' => ['data' => [], 'current_page' => 1, 'last_page' => 1], 'publishPlatforms' => $meta->platforms($r->user()->getKey()), 'metaAuth' => $meta->publicConfig()]);
     }
 
     private function own(Request $r, ShortVideo $video): void
@@ -142,7 +164,7 @@ class ShortVideoController extends Controller
             $results[$platform] = ['success' => $status === 'published', 'status' => $status, 'message' => $p?->error_summary ?: $labels[$status], 'account' => $p?->account_name, 'permalink' => $p?->permalink];
         }
 
-        return response()->json(['video' => $shortVideo->load('publications'), 'result' => ['success' => $records->every(fn ($p) => $p->status === 'published'), 'attempt_id' => 'short-'.$shortVideo->id, 'results' => $results]]);
+        return response()->json(['video' => $shortVideo->load('publications'), 'result' => ['pending' => $records->contains(fn ($p) => in_array($p->status, ['queued', 'processing']) || ($p->status === 'published' && $p->stage === 'permalink')), 'success' => $records->every(fn ($p) => $p->status === 'published'), 'attempt_id' => 'short-'.$shortVideo->id, 'results' => $results]]);
     }
 
     public function retry(Request $r, ShortVideo $shortVideo, string $platform)
@@ -151,8 +173,11 @@ class ShortVideoController extends Controller
         abort_unless(in_array($platform, ['instagram', 'facebook']) && $shortVideo->status === 'published', 422);
 
         return DB::transaction(function () use ($r, $shortVideo, $platform) {
+            $video = ShortVideo::whereKey($shortVideo->id)->lockForUpdate()->firstOrFail();
+            abort_unless($video->status === 'published', 422);
             $p = $shortVideo->publications()->where('platform', $platform)->lockForUpdate()->firstOrFail();
             abort_unless(in_array($p->status, ['failed', 'uncertain']) && (! $p->locked_until || $p->locked_until->isPast()), 422);
+            abort_unless($p->can_retry || ($p->status === 'uncertain' && str_ends_with($p->stage, '_inflight')), 422);
             // Never replace a saved target with a newly selected account.
             $c = SocialConnection::where('user_id', $r->user()->getKey())->where('platform', $platform)->where('account_id', $p->account_id)->first();
             if ($c?->isConnected()) {
@@ -171,9 +196,45 @@ class ShortVideoController extends Controller
     public function archive(Request $r, ShortVideo $shortVideo)
     {
         $this->own($r, $shortVideo);
-        $shortVideo->update(['status' => 'archived']);
+        DB::transaction(function () use ($shortVideo) {
+            $video = ShortVideo::whereKey($shortVideo->id)->lockForUpdate()->firstOrFail();
+            abort_unless($video->status === 'published', 422);
+            $pending = $video->publications()->whereIn('platform', ['instagram', 'facebook'])->get();
+            abort_if($pending->contains(fn ($p) => in_array($p->status, ['queued', 'processing', 'uncertain']) || ($p->locked_until && $p->locked_until->isFuture()) || ($p->status === 'published' && $p->stage !== 'done')), 422, 'Tunggu publikasi sosial selesai atau rekonsiliasi status sebelum mengarsipkan video.');
+            $video->update(['status' => 'archived']);
+        });
 
         return response()->json(['message' => 'Video diarsipkan dari ApaKhabar. Postingan sosial yang sudah dikirim tidak dihapus.']);
+    }
+
+    public function restore(Request $r, ShortVideo $shortVideo)
+    {
+        $this->own($r, $shortVideo);
+        DB::transaction(function () use ($shortVideo) {
+            $video = ShortVideo::whereKey($shortVideo->id)->lockForUpdate()->firstOrFail();
+            abort_unless($video->status === 'archived' && $video->publications()->where('platform', 'website')->where('status', 'published')->exists(), 422);
+            $video->update(['status' => 'published']);
+        });
+
+        return response()->json(['message' => 'Video dipulihkan ke Beranda ApaKhabar.']);
+    }
+
+    public function retrySelected(Request $r, ShortVideo $shortVideo)
+    {
+        $this->own($r, $shortVideo);
+        $data = $r->validate(['platforms' => 'required|array|min:1|max:2', 'platforms.*' => ['required', 'distinct', Rule::in(['instagram', 'facebook'])]]);
+
+        return DB::transaction(function () use ($r, $shortVideo, $data) {
+            $video = ShortVideo::whereKey($shortVideo->id)->lockForUpdate()->firstOrFail();
+            abort_unless($video->status === 'published', 422);
+            $records = $video->publications()->whereIn('platform', $data['platforms'])->orderBy('id')->lockForUpdate()->get();
+            abort_unless($records->count() === count($data['platforms']) && $records->every(fn ($p) => $p->can_retry), 422, 'Platform yang dipilih tidak aman untuk dicoba kembali. Periksa status publikasi.');
+            foreach ($records as $record) {
+                $this->retry($r, $video, $record->platform);
+            }
+
+            return $this->status($r, $video);
+        });
     }
 
     public function destroy(Request $r, ShortVideo $shortVideo)

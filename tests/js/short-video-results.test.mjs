@@ -10,7 +10,9 @@ function render(result, videoMode = true) {
     const context = { exports: {}, require(name) {
         if (name === 'react') return { useState: () => [null, () => {}] };
         if (name === '@inertiajs/react') return { usePage: () => ({ props: {} }), router: {} };
-        if (name === 'react/jsx-runtime') return require(name);
+        if (name === '@/lib/short-publication') return { publicationUrl: () => null };
+        if (name === '@/components/video-publication-indicator') return { VideoPublicationIndicator: ({status}) => ({props:{children: ({published:'Berhasil',failed:'Gagal',queued:'Menunggu',processing:'Diproses',uncertain:'Memeriksa Status',not_selected:'Tidak Dipilih'})[status]}}) };
+        if (name === 'react/jsx-runtime') { const runtime=require(name); return {...runtime, jsx:(type,props)=>typeof type==='function'?type(props):runtime.jsx(type,props),jsxs:(type,props)=>typeof type==='function'?type(props):runtime.jsxs(type,props)}; }
         return new Proxy({}, { get: (_, key) => String(key) });
     } };
     vm.runInNewContext(compiled, context);
@@ -36,7 +38,7 @@ test('video results distinguish queued unselected and uncertain destinations', (
         instagram:{success:false,status:'not_selected',message:'Unselected'},
         facebook:{success:false,status:'uncertain',message:'Unknown'},
     } });
-    for (const label of ['Menunggu', 'Tidak Dipilih', 'Belum pasti', 'Periksa Status']) assert.ok(view.text.includes(label));
+    for (const label of ['Menunggu', 'Tidak Dipilih', 'Memeriksa Status', 'Periksa Status']) assert.ok(view.text.includes(label));
 });
 test('legacy image results retain existing success labels', () => {
     const view = render({ attempt_id:'image', success:true, results:{ application:{success:true,message:'OK'} } }, false);

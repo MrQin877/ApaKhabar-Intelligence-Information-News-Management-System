@@ -10,7 +10,9 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
+import { VideoPublicationIndicator } from '@/components/video-publication-indicator';
 import type { PublishResult } from '@/lib/manual-publish';
+import { publicationUrl } from '@/lib/short-publication';
 
 export function PublishResultDialog({
     result,
@@ -18,12 +20,16 @@ export function PublishResultDialog({
     onRetry,
     retrying = false,
     onDismiss,
+    statusError,
+    onRefreshStatus,
 }: {
     result?: PublishResult;
     videoMode?: boolean;
     onRetry?: (platform: string) => void;
     retrying?: boolean;
     onDismiss?: () => void;
+    statusError?: string;
+    onRefreshStatus?: () => void;
 }) {
     const { publishResult: sharedResult } = usePage<{
         publishResult?: PublishResult | null;
@@ -40,14 +46,14 @@ export function PublishResultDialog({
     const names: Record<string, string> = {
         application: 'Aplikasi',
         website: 'ApaKhabar',
-        instagram: 'Instagram',
-        facebook: 'Facebook',
+        instagram: videoMode ? 'Instagram Reels' : 'Instagram',
+        facebook: videoMode ? 'Facebook Reels' : 'Facebook',
     };
     const close = () => {
         setDismissed(publishResult.attempt_id);
         onDismiss?.();
 
-        if (publishResult.completion_url) {
+        if (!videoMode && publishResult.completion_url) {
             router.visit(publishResult.completion_url);
         }
     };
@@ -84,38 +90,28 @@ export function PublishResultDialog({
                     {entries.map(([platform, result]) => (
                         <li key={platform} className="space-y-1 text-sm">
                             <div className="flex items-center gap-2 font-medium">
-                                {result.success ? (
-                                    <Check
-                                        className="size-4 text-emerald-600"
-                                        aria-hidden="true"
+                                {names[platform] ?? platform}:{' '}
+                                {videoMode ? (
+                                    <VideoPublicationIndicator
+                                        status={result.status}
                                     />
-                                ) : videoMode &&
-                                  [
-                                      'queued',
-                                      'processing',
-                                      'not_selected',
-                                      'uncertain',
-                                  ].includes(result.status ?? '') ? (
-                                    <span className="size-2 rounded-full bg-muted-foreground" />
+                                ) : result.success ? (
+                                    <>
+                                        <Check
+                                            className="size-4 text-primary"
+                                            aria-hidden="true"
+                                        />
+                                        Berhasil diterbitkan
+                                    </>
                                 ) : (
-                                    <X
-                                        className="size-4 text-destructive"
-                                        aria-hidden="true"
-                                    />
+                                    <>
+                                        <X
+                                            className="size-4 text-destructive"
+                                            aria-hidden="true"
+                                        />
+                                        Gagal
+                                    </>
                                 )}
-                                {names[platform] ?? platform} —{' '}
-                                {videoMode && result.status
-                                    ? {
-                                          published: 'Berhasil',
-                                          failed: 'Gagal',
-                                          processing: 'Diproses',
-                                          queued: 'Menunggu',
-                                          uncertain: 'Belum pasti',
-                                          not_selected: 'Tidak Dipilih',
-                                      }[result.status]
-                                    : result.success
-                                      ? 'Berhasil diterbitkan'
-                                      : 'Gagal'}
                             </div>
                             {videoMode &&
                                 ['failed', 'uncertain'].includes(
@@ -139,25 +135,57 @@ export function PublishResultDialog({
                                 </p>
                             )}
                             {videoMode &&
-                                result.permalink &&
-                                /^https:\/\//.test(result.permalink) && (
+                                publicationUrl(
+                                    platform,
+                                    result.status,
+                                    result.permalink,
+                                ) && (
                                     <a
-                                        href={result.permalink}
-                                        target="_blank"
+                                        href={
+                                            publicationUrl(
+                                                platform,
+                                                result.status,
+                                                result.permalink,
+                                            )!
+                                        }
+                                        target={
+                                            platform === 'website'
+                                                ? undefined
+                                                : '_blank'
+                                        }
                                         rel="noopener noreferrer"
                                         className="text-primary hover:underline"
                                     >
-                                        Lihat publikasi
+                                        Lihat Publikasi
                                     </a>
                                 )}
-                            {!result.success && (
-                                <p className="text-muted-foreground">
-                                    {result.message}
-                                </p>
-                            )}
+                            {!result.success &&
+                                (!videoMode ||
+                                    ['failed', 'uncertain'].includes(
+                                        result.status ?? '',
+                                    )) && (
+                                    <p className="text-muted-foreground">
+                                        {result.message}
+                                    </p>
+                                )}
                         </li>
                     ))}
                 </ul>
+                {videoMode && statusError && (
+                    <div
+                        role="alert"
+                        className="space-y-2 text-sm text-destructive"
+                    >
+                        <p>{statusError}</p>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={onRefreshStatus}
+                        >
+                            Perbarui Status
+                        </Button>
+                    </div>
+                )}
                 <DialogFooter>
                     {!videoMode &&
                         !publishResult.success &&
@@ -176,11 +204,19 @@ export function PublishResultDialog({
                         )}
                     <Button
                         variant={publishResult.success ? 'default' : 'outline'}
-                        onClick={close}
+                        onClick={() => {
+                            close();
+
+                            if (videoMode) {
+                                router.visit('/admin/short-videos');
+                            }
+                        }}
                     >
-                        {publishResult.completion_url
-                            ? 'Daftar Berita'
-                            : 'Selesai'}
+                        {videoMode
+                            ? 'Lihat Daftar Video'
+                            : publishResult.completion_url
+                              ? 'Daftar Berita'
+                              : 'Selesai'}
                     </Button>
                 </DialogFooter>
             </DialogContent>

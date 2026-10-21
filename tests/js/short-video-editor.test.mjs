@@ -24,12 +24,12 @@ function mount() {
     vm.runInNewContext(compiled,context);
     const nodes = node => !node || typeof node !== 'object'?[]:Array.isArray(node)?node.flatMap(nodes):[node,...nodes(node.props?.children)];
     const text = node => node == null?'':typeof node!=='object'?String(node):Array.isArray(node)?node.map(text).join(' '):text(node.props?.children);
-    const render = () => {index=0;refIndex=0;tree=context.exports.default({videos:{data:[draft],current_page:1,last_page:1},publishPlatforms:[],metaAuth:{}});};
+    const render = () => {index=0;refIndex=0;tree=context.exports.ShortVideos({draft, videos:{data:[draft],current_page:1,last_page:1},publishPlatforms:[],metaAuth:{}});};
     render();
     return {render, requests, all:()=>nodes(tree), find:label=>nodes(tree).find(n=>text(n).trim()===label && ['Button','DropdownMenuItem'].includes(n.type)), input:id=>nodes(tree).find(n=>n.props?.id===id), text:()=>text(tree)};
 }
 test('editing a draft restores its thumbnail and Edit offers all three actions', () => {
-    const v=mount(); v.find('Edit Draf').props.onClick(); v.render();
+    const v=mount(); v.render();
     assert.equal(v.all().find(n=>n.type==='img' && n.props.alt==='Sampul terpilih').props.src,'/saved.jpg');
     for (const label of ['Pilih Sampul dari Video','Unggah Sampul','Ganti Video']) assert.ok(v.find(label));
     const main=v.all().find(n=>n.type==='video' && n.props.controls);
@@ -40,14 +40,14 @@ test('editing a draft restores its thumbnail and Edit offers all three actions',
     assert.equal(v.input('frame-offset').props.value,4.5);
 });
 test('custom cover previews immediately without opening a navigation warning', () => {
-    const v=mount(); v.find('Edit Draf').props.onClick(); v.render();
+    const v=mount(); v.render();
     const cover=v.all().find(n=>n.type==='input' && n.props['aria-label']==='Unggah sampul');
     cover.props.onChange({target:{files:[{name:'cover.png',type:'image/png',size:100}],value:'cover.png'}}); v.render();
     assert.equal(v.all().find(n=>n.type==='img' && n.props.alt==='Sampul terpilih').props.src,'blob:cover.png');
     assert.equal(v.all().filter(n=>n.type==='Dialog' && n.props.open).length,0);
 });
 test('video replacement without an immediate navigation warning resets the old cover and frame and uses the new upload', async () => {
-    const v=mount(); v.find('Edit Draf').props.onClick(); v.render();
+    const v=mount(); v.render();
     v.all().find(n=>n.type==='input' && n.props['aria-label']==='Unggah sampul').props.onChange({target:{files:[{name:'old-cover.png',type:'image/png',size:100}],value:''}}); v.render();
     const file=new File(['video'], 'replacement.mp4', {type:'video/mp4'});
     v.input('short-video').props.onChange({target:{files:[file],value:''}}); v.render();

@@ -6,6 +6,7 @@ use App\Models\SocialConnection;
 use App\Models\User;
 use App\Models\UserRole;
 use App\Services\Shorts\CloudinaryVideoService;
+use App\Services\Shorts\PublicationPermalink;
 use App\Services\Shorts\ReelPublisher;
 use App\Services\Shorts\VideoInspector;
 use Illuminate\Http\UploadedFile;
@@ -39,6 +40,78 @@ function shortPublish($test, ShortVideo $v, array $platforms)
 beforeEach(function () {
     Queue::fake();
     Http::preventStrayRequests();
+});
+
+test('facebook permalink reads preserve returned relative path and wait for delayed metadata without reposting', function () {
+    $user = shortUser();
+    $video = shortDraft($user);
+    $video->update(['status' => 'published']);
+    $p = $video->publications()->create(['platform' => 'facebook', 'status' => 'published', 'stage' => 'permalink', 'media_id' => '123', 'account_id' => '456', 'graph_host' => 'graph.facebook.com', 'graph_version' => 'v26.0', 'credential' => 'original-page-token']);
+    Http::fakeSequence()->push(['id' => '123'])->push(['id' => '123', 'permalink_url' => '/reel/actual-provider-path/']);
+    (new PublishShortVideo($p->id))->handle(app(ReelPublisher::class));
+    expect($p->fresh()->status)->toBe('published');
+    expect($p->fresh()->stage)->toBe('permalink');
+    Queue::assertPushed(PublishShortVideo::class);
+    (new PublishShortVideo($p->id))->handle(app(ReelPublisher::class));
+    expect($p->fresh()->permalink)->toBe('https://www.facebook.com/reel/actual-provider-path/');
+    expect($p->fresh()->stage)->toBe('done');
+    Http::assertSent(fn ($request) => $request->method() === 'GET' && str_contains($request->url(), '/v26.0/123') && $request['fields'] === 'permalink_url' && $request->hasHeader('Authorization', 'Bearer original-page-token'));
+    Http::assertNotSent(fn ($request) => $request->method() !== 'GET');
+    $this->actingAs($user)->get('/admin/short-videos')->assertInertia(fn (Assert $page) => $page->where('videos.data.0.publications.0.permalink', 'https://www.facebook.com/reel/actual-provider-path/'));
+});
+
+test('missing permalink lookup is bounded and expired credentials never change successful publication status', function () {
+    $video = shortDraft(shortUser());
+    $video->update(['status' => 'published']);
+    $p = $video->publications()->create(['platform' => 'facebook', 'status' => 'published', 'stage' => 'permalink', 'media_id' => '123', 'credential' => 'token', 'credential_expires_at' => now()->subMinute(), 'polls' => config('shorts.permalink_attempts') - 1]);
+    (new PublishShortVideo($p->id))->handle(app(ReelPublisher::class));
+    expect($p->fresh()->status)->toBe('published');
+    expect($p->fresh()->stage)->toBe('done');
+    expect($p->fresh()->media_id)->toBe('123');
+    Queue::assertNothingPushed();
+    Http::assertNothingSent();
+});
+
+test('recovering old Facebook permalink records normalizes saved paths or schedules only metadata reads', function () {
+    $video = shortDraft(shortUser());
+    $video->update(['status' => 'archived']);
+    $p = $video->publications()->create(['platform' => 'facebook', 'status' => 'published', 'stage' => 'done', 'media_id' => '123', 'permalink' => '/reel/provider-returned/']);
+    $this->artisan('shorts:recover-facebook-permalinks')->assertSuccessful();
+    expect($p->fresh()->permalink)->toBe('https://www.facebook.com/reel/provider-returned/');
+    Queue::assertNothingPushed();
+    $p->update(['permalink' => null]);
+    $this->artisan('shorts:recover-facebook-permalinks')->assertSuccessful();
+    $this->artisan('shorts:recover-facebook-permalinks')->assertSuccessful();
+    Queue::assertPushed(PublishShortVideo::class, 1);
+    expect($p->fresh()->status)->toBe('published');
+    expect($p->fresh()->stage)->toBe('permalink');
+    expect($video->fresh()->status)->toBe('archived');
+    Http::assertNothingSent();
+});
+
+test('provider permalink normalization rejects external origins credentials and protocol relative paths', function () {
+    foreach (['//evil.test/path', '/\\evil.test', 'https://facebook.com.evil.test/a', 'https://user:pass@facebook.com/a', 'javascript:alert(1)', 'https://res.cloudinary.com/a.mp4'] as $url) {
+        expect(PublicationPermalink::normalize('facebook', $url))->toBeNull();
+    }
+    expect(PublicationPermalink::normalize('instagram', 'https://www.instagram.com/reel/saved/'))->toBe('https://www.instagram.com/reel/saved/');
+});
+
+test('video progress reports backend pending work through permalink completion without dispatching jobs', function () {
+    $user = shortUser();
+    $video = shortDraft($user);
+    $video->update(['status' => 'published']);
+    $record = $video->publications()->create(['platform' => 'instagram', 'status' => 'processing', 'stage' => 'wait']);
+    $this->actingAs($user);
+    $url = '/admin/short-videos/'.$video->id.'/status';
+    $this->getJson($url)->assertOk()->assertJsonPath('result.pending', true)->assertJsonPath('result.results.instagram.status', 'processing');
+    $record->update(['status' => 'published', 'stage' => 'permalink', 'media_id' => '123']);
+    $this->getJson($url)->assertJsonPath('result.pending', true)->assertJsonPath('result.results.instagram.success', true);
+    $record->update(['stage' => 'done', 'permalink' => 'https://www.instagram.com/reel/saved/']);
+    $this->getJson($url)->assertJsonPath('result.pending', false)->assertJsonPath('result.results.instagram.permalink', 'https://www.instagram.com/reel/saved/');
+    $record->update(['status' => 'uncertain', 'stage' => 'publish_inflight']);
+    $this->getJson($url)->assertJsonPath('result.pending', false)->assertJsonPath('result.results.instagram.success', false);
+    Queue::assertNothingPushed();
+    Http::assertNothingSent();
 });
 
 test('admins and moderators access shorts but villagers and guests cannot', function () {
@@ -198,9 +271,74 @@ test('a database lease prevents concurrent workers and archived videos stop queu
     (new PublishShortVideo($p->id))->handle(app(ReelPublisher::class));
     expect($p->fresh()->attempts)->toBe(0);
     $p->update(['locked_until' => null]);
+    $this->postJson('/admin/short-videos/'.$v->id.'/archive')->assertUnprocessable();
+    $p->update(['status' => 'failed']);
     $this->postJson('/admin/short-videos/'.$v->id.'/archive')->assertOk();
     (new PublishShortVideo($p->id))->handle(app(ReelPublisher::class));
     Http::assertNothingSent();
+});
+
+test('selected retries dispatch exactly the failed destinations and reject repeated or unsafe selections', function (array $selected) {
+    $user = shortUser();
+    $video = shortDraft($user);
+    $this->actingAs($user);
+    shortConnection($user, 'instagram');
+    shortConnection($user, 'facebook');
+    shortPublish($this, $video, ['website', 'instagram', 'facebook']);
+    $video->publications()->whereIn('platform', ['instagram', 'facebook'])->update(['status' => 'failed']);
+    Queue::fake();
+    $this->postJson('/admin/short-videos/'.$video->id.'/retry-selected', ['platforms' => $selected])->assertOk();
+    Queue::assertPushed(PublishShortVideo::class, count($selected));
+    foreach ($selected as $platform) {
+        expect($video->publications()->where('platform', $platform)->first()->status)->toBe('queued');
+    }
+    $this->postJson('/admin/short-videos/'.$video->id.'/retry-selected', ['platforms' => $selected])->assertUnprocessable();
+    $this->postJson('/admin/short-videos/'.$video->id.'/retry-selected', ['platforms' => ['website']])->assertUnprocessable();
+})->with([[['instagram']], [['facebook']], [['instagram', 'facebook']]]);
+
+test('uncertain destinations cannot enter selected retry and archive restore preserves media and social records', function () {
+    $user = shortUser();
+    $video = shortDraft($user);
+    $this->actingAs($user);
+    shortConnection($user, 'instagram');
+    shortPublish($this, $video, ['website', 'instagram']);
+    $p = $video->publications()->where('platform', 'instagram')->first();
+    $p->update(['status' => 'uncertain', 'stage' => 'publish_inflight', 'container_id' => '777']);
+    Queue::fake();
+    $this->postJson('/admin/short-videos/'.$video->id.'/retry-selected', ['platforms' => ['instagram']])->assertUnprocessable();
+    Queue::assertNothingPushed();
+    $this->postJson('/admin/short-videos/'.$video->id.'/archive')->assertUnprocessable();
+    $p->update(['status' => 'published', 'stage' => 'done', 'media_id' => '888']);
+    $this->postJson('/admin/short-videos/'.$video->id.'/archive')->assertOk();
+    $this->get('/')->assertInertia(fn (Assert $p) => $p->has('shorts', 0));
+    $this->postJson('/admin/short-videos/'.$video->id.'/restore')->assertOk();
+    $this->get('/')->assertInertia(fn (Assert $p) => $p->where('shorts.0.id', $video->id));
+    expect($p->fresh()->media_id)->toBe('888');
+    expect($video->fresh()->video_url)->toBe($video->video_url);
+    Queue::assertNothingPushed();
+    $this->postJson('/admin/short-videos/'.$video->id.'/delete')->assertUnprocessable();
+});
+
+test('mixed unsafe retries are atomic and video management enforces ownership and draft deletion', function () {
+    $user = shortUser();
+    $video = shortDraft($user);
+    $this->actingAs($user);
+    shortConnection($user, 'instagram');
+    shortConnection($user, 'facebook');
+    shortPublish($this, $video, ['website', 'instagram', 'facebook']);
+    $video->publications()->where('platform', 'instagram')->update(['status' => 'failed']);
+    Queue::fake();
+    $this->postJson('/admin/short-videos/'.$video->id.'/retry-selected', ['platforms' => ['instagram', 'facebook']])->assertUnprocessable();
+    expect($video->publications()->where('platform', 'instagram')->first()->status)->toBe('failed');
+    Queue::assertNothingPushed();
+    $this->actingAs(shortUser('moderator'));
+    $this->postJson('/admin/short-videos/'.$video->id.'/restore')->assertForbidden();
+    $this->postJson('/admin/short-videos/'.$video->id.'/archive')->assertForbidden();
+    $this->postJson('/admin/short-videos/'.$video->id.'/retry-selected', ['platforms' => ['instagram']])->assertForbidden();
+    $this->actingAs($user);
+    $draft = shortDraft($user);
+    $this->postJson('/admin/short-videos/'.$draft->id.'/delete')->assertOk();
+    expect($draft->fresh()->deleted_at)->not->toBeNull();
 });
 
 test('missing ffprobe fails closed without uploading unvalidated video', function () {
@@ -281,4 +419,41 @@ test('selected frame and custom cover persist through draft reload and website p
     $this->postJson('/admin/short-videos/'.$video->id, ['title' => 'New title', 'description' => 'Description', 'frame_offset' => 4.5, 'cover_mode' => 'upload', 'cover' => UploadedFile::fake()->image('cover.jpg')])->assertOk();
     shortPublish($this, $video->fresh(), ['website'])->assertOk();
     $this->get('/')->assertInertia(fn (Assert $page) => $page->where('shorts.0.thumbnail_url', 'https://res.cloudinary.com/demo/image/upload/cover.jpg'));
+});
+
+test('shorts list and publication routes preserve roles ownership and draft deep links', function () {
+    foreach (['admin', 'moderator'] as $role) {
+        $user = shortUser($role);
+        $draft = shortDraft($user);
+        $this->actingAs($user);
+        $this->get('/admin/short-videos')->assertInertia(fn (Assert $p) => $p->where('mode', 'list')->has('videos.data', 1));
+        $this->get('/admin/short-videos/create')->assertInertia(fn (Assert $p) => $p->where('mode', 'editor')->where('draft', null));
+        $this->get('/admin/short-videos/create?draft='.$draft->id)->assertInertia(fn (Assert $p) => $p->where('draft.id', $draft->id));
+        $other = shortDraft(shortUser());
+        $this->get('/admin/short-videos/create?draft='.$other->id)->assertForbidden();
+    }
+    $this->actingAs(shortUser('villager'))->get('/admin/short-videos/create')->assertRedirect('/');
+});
+
+test('video management searches filters and paginates only owned records with publication statuses', function () {
+    $user = shortUser();
+    $this->actingAs($user);
+    $published = shortDraft($user);
+    $published->update(['title' => 'Festival terbit', 'status' => 'published', 'published_at' => now()]);
+    $published->publications()->create(['platform' => 'website', 'status' => 'published']);
+    $published->publications()->create(['platform' => 'instagram', 'status' => 'failed', 'error_summary' => 'Publikasi ditolak.']);
+    $archive = shortDraft($user);
+    $archive->update(['title' => 'Festival arsip', 'status' => 'archived']);
+    foreach (range(1, 13) as $i) {
+        shortDraft($user)->update(['title' => 'Draf '.$i]);
+    }
+    shortDraft(shortUser())->update(['title' => 'Festival rahasia', 'status' => 'published']);
+    $this->get('/admin/short-videos?search=Festival&status=published')->assertInertia(fn (Assert $p) => $p
+        ->has('videos.data', 1)->where('videos.data.0.id', $published->id)
+        ->where('videos.data.0.status', 'published')->has('videos.data.0.publications', 2)
+        ->where('filters.search', 'Festival')->where('filters.status', 'published'));
+    $this->get('/admin/short-videos?status=archived')->assertInertia(fn (Assert $p) => $p->has('videos.data', 1)->where('videos.data.0.id', $archive->id));
+    $this->get('/admin/short-videos?status=draft&page=2')->assertInertia(fn (Assert $p) => $p->has('videos.data', 1)->where('videos.total', 13)->where('videos.current_page', 2));
+    $this->get('/admin/short-videos?search=tidak-ada')->assertInertia(fn (Assert $p) => $p->has('videos.data', 0));
+    $this->getJson('/admin/short-videos?status=invalid')->assertUnprocessable();
 });

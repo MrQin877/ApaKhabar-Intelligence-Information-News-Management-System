@@ -5,4 +5,5 @@ return [
     'max_upload_kb' => 102400,
     'queue' => 'video-publishing',
     'poll_seconds' => 30,
+    'permalink_attempts' => 10,
 ];

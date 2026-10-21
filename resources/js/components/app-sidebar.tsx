@@ -122,7 +122,22 @@ export function AppSidebar() {
             icon: Newspaper,
             items: newsItems,
         },
-        { title: 'Video Pendek', href: '/admin/short-videos', icon: Video },
+        {
+            title: 'Video Pendek',
+            icon: Video,
+            items: [
+                {
+                    title: 'Publikasi Video',
+                    href: '/admin/short-videos/create',
+                    icon: Video,
+                },
+                {
+                    title: 'Daftar Video',
+                    href: '/admin/short-videos',
+                    icon: Newspaper,
+                },
+            ],
+        },
         {
             title: 'Moderasi Komentar',
             href: '/admin/comments',
