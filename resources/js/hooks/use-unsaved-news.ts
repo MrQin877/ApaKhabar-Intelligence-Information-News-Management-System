@@ -6,6 +6,9 @@ export function useUnsavedNews(isDirty: boolean, busy: boolean) {
     const [open, setOpen] = useState(false);
     const pending = useRef<(() => void) | null>(null);
     const allowed = useRef(false);
+    useEffect(() => {
+        allowed.current = false;
+    }, [isDirty]);
 
     const allowLeave = useCallback(() => {
         allowed.current = true;
@@ -44,6 +47,19 @@ export function useUnsavedNews(isDirty: boolean, busy: boolean) {
             ask,
         });
         const removeBefore = router.on('before', (event) => {
+            const visit = event.detail.visit;
+            const url = new URL(visit.url, location.href);
+
+            // Reloads/polling and local form requests do not leave this editor.
+            if (
+                url.origin === location.origin &&
+                url.pathname === location.pathname &&
+                (url.search === location.search ||
+                    (visit.preserveState && visit.only?.length))
+            ) {
+                return;
+            }
+
             if (
                 ask(() =>
                     router.visit(event.detail.visit.url, event.detail.visit),
@@ -52,6 +68,12 @@ export function useUnsavedNews(isDirty: boolean, busy: boolean) {
                 event.preventDefault();
             }
         });
+        const removeFinish = router.on('finish', () => {
+            allowed.current = false;
+        });
+        const afterHistory = () => {
+            allowed.current = false;
+        };
         const beforeUnload = (event: BeforeUnloadEvent) => {
             if (isDirty && !allowed.current) {
                 event.preventDefault();
@@ -93,20 +115,43 @@ export function useUnsavedNews(isDirty: boolean, busy: boolean) {
                 return;
             }
 
+            // External navigation uses the browser's native beforeunload prompt.
+            if (url.origin !== location.origin) {
+                return;
+            }
+
             if (ask(() => location.assign(url.href))) {
                 event.preventDefault();
             }
         };
         window.addEventListener('beforeunload', beforeUnload);
+        window.addEventListener('popstate', afterHistory);
         document.addEventListener('click', click);
 
         return () => {
             removeHistoryGuard();
             removeBefore();
+            removeFinish();
+            window.removeEventListener('popstate', afterHistory);
             window.removeEventListener('beforeunload', beforeUnload);
             document.removeEventListener('click', click);
         };
     }, [isDirty, busy]);
 
-    return { open, leave, continueEditing, allowLeave };
+    const requestLeave = (proceed: () => void) => {
+        if (busy || pending.current) {
+            return;
+        }
+
+        if (!isDirty) {
+            proceed();
+
+            return;
+        }
+
+        pending.current = proceed;
+        setOpen(true);
+    };
+
+    return { open, leave, continueEditing, allowLeave, requestLeave };
 }

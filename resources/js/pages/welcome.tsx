@@ -1,7 +1,12 @@
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link, usePage } from '@inertiajs/react';
 import { useEffect, useState } from 'react';
 import { HeaderBar } from '@/components/header-bar';
+import { HomeFeaturedCarousel } from '@/components/home-featured-carousel';
+import type { HomeShort } from '@/components/home-shorts';
+import { HomeShorts } from '@/components/home-shorts';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import type { SharedData } from '@/types';
 
 interface NewsItem {
     id: string;
@@ -13,20 +18,29 @@ interface NewsItem {
 }
 
 interface Props {
-    featuredNews: NewsItem | null;
-    newsList: NewsItem[];
+    shorts?: HomeShort[];
+    featuredSlides: NewsItem[];
+    supportingNews: NewsItem[];
+    remainingNews: NewsItem[];
     breakingNews: string | null;
     breakingMessage: string | null;
     breakingSentAt: string | null;
 }
 
 export default function Welcome({
-    featuredNews,
-    newsList = [],
+    shorts = [],
+    featuredSlides = [],
+    supportingNews = [],
+    remainingNews = [],
     breakingNews,
     breakingMessage,
     breakingSentAt,
 }: Props) {
+    const { categories = [] } = usePage<SharedData>().props;
+    const [category, setCategory] = useState<string | null>(null);
+    const filteredNews = remainingNews.filter(
+        (news) => !category || news.category === category,
+    );
     const [now, setNow] = useState(() => Date.now());
 
     useEffect(() => {
@@ -56,7 +70,7 @@ export default function Welcome({
             </Head>
 
             <div className="min-h-screen bg-background text-foreground">
-                <HeaderBar />
+                <HeaderBar homepage />
 
                 {/* ── Darurat Broadcast Bar — shows 24 hours only ── */}
                 {breakingNews && timeRemaining > 0 && (
@@ -96,127 +110,123 @@ export default function Welcome({
                     </div>
                 )}
 
-                <main className="mx-auto max-w-7xl px-16 pt-26 pb-8 md:px-24">
-                    {/* ── Featured News ── */}
-                    {featuredNews ? (
-                        // Fade-slide-up on mount
-                        <div className="mb-8 flex animate-fade-slide-up flex-col items-stretch overflow-hidden rounded-md bg-card transition-transform duration-300 hover:-translate-y-1 hover:shadow-lg md:flex-row">
-                            {/* Image zoom on hover — wrap with overflow-hidden + group */}
-                            <div className="group w-full overflow-hidden rounded-t-md md:w-1/2 md:rounded-t-none md:rounded-l-md">
-                                <img
-                                    src={
-                                        featuredNews.image ||
-                                        'https://placehold.co/600x400'
-                                    }
-                                    alt={featuredNews.title}
-                                    className="h-full max-h-72 w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                                />
-                            </div>
-                            <div className="flex w-full flex-col justify-start px-6 pt-4 pb-6 md:w-1/2">
-                                <div className="mb-3 flex items-center gap-2">
-                                    <span className="text-xs text-muted-foreground">
-                                        {featuredNews.date}
-                                    </span>
-                                    <Badge className="bg-brand-100 text-xs text-brand-800 hover:bg-brand-100 dark:bg-brand-900/40 dark:text-brand-300">
-                                        {featuredNews.category}
-                                    </Badge>
-                                </div>
-                                <h2 className="mb-3 text-justify text-xl leading-snug font-bold text-card-foreground">
-                                    {featuredNews.title}
-                                </h2>
-                                <p className="mb-4 text-justify text-sm leading-relaxed text-muted-foreground">
-                                    {featuredNews.preview}
-                                </p>
-                                {/* Underline draw on hover */}
-                                <Link
-                                    href={`/news/${featuredNews.id}`}
-                                    className="relative mt-auto w-fit text-sm font-medium text-card-foreground after:absolute after:bottom-0 after:left-0 after:h-px after:w-0 after:bg-current after:transition-[width] after:duration-300 hover:after:w-full"
-                                >
-                                    Baca Selengkapnya →
-                                </Link>
-                            </div>
-                        </div>
-                    ) : (
-                        /* Skeleton for featured */
-                        <div className="mb-8 flex flex-col overflow-hidden rounded-md md:flex-row">
-                            <div className="animate-shimmer h-72 w-full rounded-t-md md:w-1/2 md:rounded-t-none md:rounded-l-md" />
-                            <div className="flex w-full flex-col gap-3 p-6 md:w-1/2">
-                                <div className="animate-shimmer h-3 w-24 rounded" />
-                                <div className="animate-shimmer h-5 w-full rounded" />
-                                <div className="animate-shimmer h-5 w-3/4 rounded" />
-                                <div className="animate-shimmer mt-2 h-3 w-full rounded" />
-                                <div className="animate-shimmer h-3 w-5/6 rounded" />
-                            </div>
-                        </div>
-                    )}
-
-                    {/* ── News Grid ── */}
-                    {newsList.length > 0 ? (
-                        <div className="grid grid-cols-1 items-stretch gap-6 md:grid-cols-3">
-                            {newsList.map((news, index) => (
-                                // Staggered fade-slide-up per card
-                                <div
-                                    key={news.id}
-                                    className="flex h-full animate-fade-slide-up flex-col overflow-hidden rounded-md bg-card transition-transform duration-300 hover:-translate-y-1 hover:shadow-md"
-                                    style={{
-                                        animationDelay: `${index * 100}ms`,
-                                    }}
-                                >
-                                    {/* Image zoom — same group trick */}
-                                    <div className="group flex-shrink-0 overflow-hidden rounded-t-md">
+                <main className="mx-auto max-w-7xl space-y-12 px-4 py-6 sm:px-6 lg:space-y-24 lg:px-8">
+                    <div className="space-y-5">
+                        <HomeFeaturedCarousel items={featuredSlides} />
+                        {supportingNews.length > 0 && (
+                            <section
+                                aria-label="Berita pilihan lainnya"
+                                className="grid gap-4 sm:grid-cols-3"
+                            >
+                                {supportingNews.map((news) => (
+                                    <Link
+                                        key={news.id}
+                                        href={`/news/${news.id}`}
+                                        className="group relative min-h-56 overflow-hidden rounded-xl bg-secondary"
+                                    >
                                         <img
-                                            src={
-                                                news.image ||
-                                                'https://placehold.co/400x300'
-                                            }
-                                            alt={news.title}
-                                            className="h-48 w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                                            src={news.image}
+                                            alt=""
+                                            loading="lazy"
+                                            className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105 motion-reduce:transition-none"
                                         />
-                                    </div>
-                                    <div className="flex flex-1 flex-col px-0 pt-3 pb-4">
-                                        <div className="mb-2 flex items-center gap-2">
-                                            <span className="text-xs text-muted-foreground">
+                                        <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/30 to-transparent" />
+                                        <div className="relative flex h-full min-h-56 flex-col justify-end gap-2 p-5 text-white">
+                                            <span className="text-xs text-white/80">
+                                                {news.category}
+                                            </span>
+                                            <h2 className="line-clamp-3 text-lg leading-snug font-semibold">
+                                                {news.title}
+                                            </h2>
+                                            <span className="text-xs text-white/60">
                                                 {news.date}
                                             </span>
-                                            <Badge className="bg-brand-100 text-xs text-brand-800 hover:bg-brand-100 dark:bg-brand-900/40 dark:text-brand-300">
-                                                {news.category}
-                                            </Badge>
                                         </div>
-                                        <h3 className="mb-3 text-justify text-lg leading-snug font-bold text-card-foreground">
-                                            {news.title}
-                                        </h3>
-                                        <p className="text-justify text-sm leading-relaxed text-muted-foreground">
-                                            {news.preview}
-                                        </p>
-                                        {/* Underline draw on hover */}
-                                        <Link
-                                            href={`/news/${news.id}`}
-                                            className="relative mt-auto w-fit pt-4 text-sm font-medium text-card-foreground after:absolute after:bottom-0 after:left-0 after:h-px after:w-0 after:bg-current after:transition-[width] after:duration-300 hover:after:w-full"
-                                        >
-                                            Baca Selengkapnya →
-                                        </Link>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    ) : (
-                        /* Skeleton grid when no news yet */
-                        <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-                            {[...Array(3)].map((_, i) => (
-                                <div
-                                    key={i}
-                                    className="flex flex-col gap-3 overflow-hidden rounded-md"
+                                    </Link>
+                                ))}
+                            </section>
+                        )}
+                    </div>
+                    <HomeShorts shorts={shorts} />
+                    <section aria-label="Berita terbaru" className="relative">
+                        <div className="sticky top-[65px] z-30 -mx-4 border-y border-border bg-background/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+                            <div
+                                className="flex gap-2 overflow-x-auto pb-1"
+                                aria-label="Filter kategori"
+                            >
+                                <Button
+                                    variant={
+                                        category === null
+                                            ? 'default'
+                                            : 'outline'
+                                    }
+                                    className="shrink-0 rounded-full"
+                                    aria-pressed={category === null}
+                                    onClick={() => setCategory(null)}
                                 >
-                                    <div className="animate-shimmer h-48 w-full rounded-t-md" />
-                                    <div className="animate-shimmer h-3 w-20 rounded" />
-                                    <div className="animate-shimmer h-4 w-full rounded" />
-                                    <div className="animate-shimmer h-4 w-4/5 rounded" />
-                                    <div className="animate-shimmer h-3 w-full rounded" />
-                                    <div className="animate-shimmer h-3 w-3/4 rounded" />
-                                </div>
-                            ))}
+                                    Latest
+                                </Button>
+                                {(categories as string[]).map((name) => (
+                                    <Button
+                                        key={name}
+                                        variant={
+                                            category === name
+                                                ? 'default'
+                                                : 'outline'
+                                        }
+                                        className="shrink-0 rounded-full"
+                                        aria-pressed={category === name}
+                                        onClick={() => setCategory(name)}
+                                    >
+                                        {name}
+                                    </Button>
+                                ))}
+                            </div>
                         </div>
-                    )}
+                        <div
+                            className="divide-y divide-border"
+                            aria-live="polite"
+                        >
+                            {filteredNews.map((news) => (
+                                <article key={news.id}>
+                                    <Link
+                                        href={`/news/${news.id}`}
+                                        className="group flex items-center justify-between gap-4 py-6 sm:gap-8"
+                                    >
+                                        <div className="min-w-0 space-y-3">
+                                            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                                                <Badge variant="secondary">
+                                                    {news.category}
+                                                </Badge>
+                                                <span>{news.date}</span>
+                                            </div>
+                                            <h2 className="line-clamp-3 text-base leading-snug font-semibold transition-colors group-hover:text-primary sm:text-xl">
+                                                {news.title}
+                                            </h2>
+                                            <p className="line-clamp-2 hidden text-sm text-muted-foreground sm:block">
+                                                {news.preview}
+                                            </p>
+                                        </div>
+                                        <img
+                                            src={news.image}
+                                            alt=""
+                                            loading="lazy"
+                                            className="h-24 w-28 shrink-0 rounded-lg object-cover sm:h-32 sm:w-48 lg:w-60"
+                                        />
+                                    </Link>
+                                </article>
+                            ))}
+                            {!filteredNews.length && (
+                                <p className="py-12 text-center text-muted-foreground">
+                                    Belum ada berita lainnya
+                                    {category
+                                        ? ` dalam kategori ${category}`
+                                        : ''}
+                                    .
+                                </p>
+                            )}
+                        </div>
+                    </section>
                 </main>
             </div>
         </>

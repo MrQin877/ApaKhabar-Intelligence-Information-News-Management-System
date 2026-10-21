@@ -46,6 +46,7 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { useUnsavedNews } from '@/hooks/use-unsaved-news';
 import AppLayout from '@/layouts/app-layout';
+import { manualSnapshot } from '@/lib/editor-snapshot';
 import { defaultCrops, initializeCrops } from '@/lib/image-crops';
 import type { ImageCrops } from '@/lib/image-crops';
 import { hasManualContent, saveManualDraft } from '@/lib/manual-draft';
@@ -145,9 +146,16 @@ export default function ManualEditor({
 
     const busy =
         savingDraft || form.processing || publishing || Boolean(publishResult);
-    const isDirty =
-        form.isDirty && (Boolean(draftId) || hasManualContent(form.data));
-    const unsaved = useUnsavedNews(isDirty, busy);
+    const snapshot = manualSnapshot({
+        ...form.data,
+        category_id: selectedCategoryExists ? form.data.category_id : '',
+    });
+    const [savedSnapshot, setSavedSnapshot] = useState(snapshot);
+    const isDirty = snapshot !== savedSnapshot;
+    const unsaved = useUnsavedNews(
+        isDirty,
+        savingDraft || form.processing || publishing,
+    );
     const contentText = useMemo(() => {
         if (typeof DOMParser === 'undefined') {
             return '';
@@ -269,6 +277,7 @@ export default function ManualEditor({
                         )
                     ) {
                         form.setDefaults(form.data);
+                        setSavedSnapshot(manualSnapshot(form.data));
                         unsaved.allowLeave();
                     }
 
@@ -304,6 +313,7 @@ export default function ManualEditor({
                 content: saved.content_html,
             };
             form.setDefaults(data);
+            setSavedSnapshot(manualSnapshot(data));
             form.setData(data);
             setPreview('');
 
@@ -800,7 +810,7 @@ export default function ManualEditor({
                                 <Save />{' '}
                                 {savingDraft || form.processing
                                     ? 'Menyimpan...'
-                                    : 'Simpan draf'}
+                                    : 'Simpan sebagai Draf'}
                             </Button>
                             <Button
                                 type="button"
@@ -885,17 +895,24 @@ export default function ManualEditor({
                             {saveError}
                         </p>
                     )}
-                    <DialogFooter className="flex-row justify-end">
+                    <DialogFooter className="flex-wrap justify-end">
                         <Button
                             type="button"
                             variant="outline"
                             disabled={savingDraft}
                             onClick={() => {
-                                form.reset();
-                                unsaved.leave();
+                                unsaved.continueEditing();
                             }}
                         >
                             Batal
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            disabled={savingDraft}
+                            onClick={() => unsaved.leave()}
+                        >
+                            Keluar Tanpa Menyimpan
                         </Button>
                         <Button
                             type="button"
@@ -906,7 +923,9 @@ export default function ManualEditor({
                             {savingDraft && (
                                 <LoaderCircle className="animate-spin" />
                             )}
-                            {savingDraft ? 'Menyimpan...' : 'Simpan draf'}
+                            {savingDraft
+                                ? 'Menyimpan...'
+                                : 'Simpan sebagai Draf'}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

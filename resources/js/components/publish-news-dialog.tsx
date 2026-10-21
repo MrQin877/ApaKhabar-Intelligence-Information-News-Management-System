@@ -67,7 +67,9 @@ export function PublishNewsDialog({
     error,
     onPublish,
     onPreparePreview,
+    videoMode = false,
 }: {
+    videoMode?: boolean;
     open: boolean;
     onOpenChange: (open: boolean) => void;
     platforms: PublishPlatform[];
@@ -95,6 +97,13 @@ export function PublishNewsDialog({
     const [imageStates, setImageStates] = useState<
         Partial<Record<PublishPlatformId, 'ready' | 'failed'>>
     >({});
+    const displayNames = videoMode
+        ? {
+              website: 'ApaKhabar',
+              instagram: 'Instagram',
+              facebook: 'Halaman Facebook',
+          }
+        : platformNames;
     const locked = processing || preparing;
     const platforms = livePlatforms ?? initialPlatforms;
     useEffect(() => {
@@ -145,14 +154,14 @@ export function PublishNewsDialog({
 
         return [
             ...(platform?.status !== 'connected'
-                ? [`${platformNames[id]} belum terhubung.`]
+                ? [`${displayNames[id]} belum terhubung.`]
                 : platform.publishable === false
-                  ? [`${platformNames[id]} belum siap. Hubungi administrator.`]
+                  ? [`${displayNames[id]} belum siap. Hubungi administrator.`]
                   : []),
             ...(preview?.issues[id] ?? []),
             ...(preview?.images[id] && imageStates[id] !== 'ready'
                 ? [
-                      `Gambar ${platformNames[id]} ${imageStates[id] === 'failed' ? 'belum siap. Kembali dan periksa gambar.' : 'sedang disiapkan.'}`,
+                      `Gambar ${displayNames[id]} ${imageStates[id] === 'failed' ? 'belum siap. Kembali dan periksa gambar.' : 'sedang disiapkan.'}`,
                   ]
                 : []),
         ];
@@ -209,12 +218,18 @@ export function PublishNewsDialog({
                     <DialogTitle className="pr-6 text-xl">
                         {showPreview
                             ? 'Pratinjau Publikasi'
-                            : 'Terbitkan Berita'}
+                            : videoMode
+                              ? 'Publikasikan Video Pendek'
+                              : 'Terbitkan Berita'}
                     </DialogTitle>
                     <DialogDescription className="leading-6">
                         {showPreview
-                            ? 'Periksa tampilan berita sebelum diterbitkan.'
-                            : 'Pilih platform tempat berita ini akan diterbitkan.'}
+                            ? videoMode
+                                ? 'Periksa video sebelum diterbitkan.'
+                                : 'Periksa tampilan berita sebelum diterbitkan.'
+                            : videoMode
+                              ? 'Pilih platform tempat video ini akan diterbitkan.'
+                              : 'Pilih platform tempat berita ini akan diterbitkan.'}
                     </DialogDescription>
                 </DialogHeader>
                 {showPreview && preview ? (
@@ -224,7 +239,7 @@ export function PublishNewsDialog({
                                 Akan diterbitkan ke:{' '}
                                 <strong>
                                     {selection
-                                        .map((id) => platformNames[id])
+                                        .map((id) => displayNames[id])
                                         .join(' / ')}
                                 </strong>
                             </p>
@@ -250,7 +265,7 @@ export function PublishNewsDialog({
                                         onClick={() => setActive(id)}
                                     >
                                         <PlatformIcon platform={id} />
-                                        {platformNames[id]}
+                                        {displayNames[id]}
                                     </Button>
                                 ))}
                             </div>
@@ -266,30 +281,56 @@ export function PublishNewsDialog({
                                     aria-hidden={active !== id}
                                     inert={active !== id}
                                 >
-                                    <PublicationPreview
-                                        data={preview}
-                                        platform={id}
-                                        accountName={
-                                            platforms.find(
-                                                (platform) =>
-                                                    platform.id === id &&
-                                                    platform.status ===
-                                                        'connected',
-                                            )?.account
-                                        }
-                                        onImageLoad={() =>
-                                            setImageStates((states) => ({
-                                                ...states,
-                                                [id]: 'ready',
-                                            }))
-                                        }
-                                        onImageError={() =>
-                                            setImageStates((states) => ({
-                                                ...states,
-                                                [id]: 'failed',
-                                            }))
-                                        }
-                                    />
+                                    {videoMode && preview.video_url ? (
+                                        <div className="mx-auto max-w-sm space-y-3 rounded-xl border bg-card p-4">
+                                            <video
+                                                controls
+                                                preload="metadata"
+                                                poster={preview.thumbnail_url}
+                                                src={preview.video_url}
+                                                className="max-h-80 w-full rounded-lg"
+                                            />
+                                            <h3 className="font-semibold">
+                                                {preview.title}
+                                            </h3>
+                                            <p className="text-sm whitespace-pre-wrap">
+                                                {preview.caption}
+                                            </p>
+                                            {id === 'facebook' && (
+                                                <p className="text-xs text-muted-foreground">
+                                                    Facebook memilih sampul
+                                                    otomatis; sampul pilihan
+                                                    digunakan di ApaKhabar dan
+                                                    Instagram.
+                                                </p>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <PublicationPreview
+                                            data={preview}
+                                            platform={id}
+                                            accountName={
+                                                platforms.find(
+                                                    (platform) =>
+                                                        platform.id === id &&
+                                                        platform.status ===
+                                                            'connected',
+                                                )?.account
+                                            }
+                                            onImageLoad={() =>
+                                                setImageStates((states) => ({
+                                                    ...states,
+                                                    [id]: 'ready',
+                                                }))
+                                            }
+                                            onImageError={() =>
+                                                setImageStates((states) => ({
+                                                    ...states,
+                                                    [id]: 'failed',
+                                                }))
+                                            }
+                                        />
+                                    )}
                                 </div>
                             ))}
                         </div>
@@ -342,7 +383,11 @@ export function PublishNewsDialog({
                                 disabled={locked || !available.length}
                                 onCheckedChange={(checked) =>
                                     onSelectionChange(
-                                        checked === true ? available : [],
+                                        checked === true
+                                            ? available
+                                            : videoMode
+                                              ? ['website']
+                                              : [],
                                     )
                                 }
                             />
@@ -363,6 +408,7 @@ export function PublishNewsDialog({
                             const unavailable = preparing || processing;
                             const selectable =
                                 !unavailable &&
+                                !(videoMode && platform.id === 'website') &&
                                 (checked ||
                                     (connected &&
                                         platform.publishable !== false)) &&
@@ -380,10 +426,11 @@ export function PublishNewsDialog({
                                           ),
                                 );
                             };
-                            const title =
-                                platform.id === 'website'
-                                    ? 'Aplikasi'
-                                    : platform.name;
+                            const title = videoMode
+                                ? displayNames[platform.id]
+                                : platform.id === 'website'
+                                  ? 'Aplikasi'
+                                  : platform.name;
                             const inlineStatus =
                                 platform.id !== 'website' &&
                                 !connected &&
@@ -469,7 +516,9 @@ export function PublishNewsDialog({
                                                     {connected
                                                         ? platform.id ===
                                                           'website'
-                                                            ? 'Periksa tampilan berita sebelum diterbitkan.'
+                                                            ? videoMode
+                                                                ? 'Periksa video sebelum diterbitkan.'
+                                                                : 'Periksa tampilan berita sebelum diterbitkan.'
                                                             : 'Terhubung'
                                                         : expired
                                                           ? 'Koneksi perlu diperbarui'
@@ -483,6 +532,9 @@ export function PublishNewsDialog({
                                                 className="mt-1"
                                                 checked={checked}
                                                 disabled={
+                                                    (videoMode &&
+                                                        platform.id ===
+                                                            'website') ||
                                                     unavailable ||
                                                     processing ||
                                                     (!checked &&

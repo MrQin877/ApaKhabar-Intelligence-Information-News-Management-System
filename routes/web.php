@@ -101,6 +101,15 @@ Route::prefix('admin')
         Route::get('/social/instagram/connect', [MetaConnectionController::class, 'instagramStart'])->middleware('throttle:10,1')->block(10, 10)->name('social.instagram.start');
         Route::get('/social/instagram/callback', [MetaConnectionController::class, 'instagramCallback'])->block(10, 10)->name('social.instagram.callback');
         Route::inertia('/dashboard', 'admin/dashboard')->name('dashboard');
+        Route::get('/short-videos', [\App\Http\Controllers\Admin\ShortVideoController::class, 'index'])->name('short-videos.index');
+        Route::post('/short-videos/upload', [\App\Http\Controllers\Admin\ShortVideoController::class, 'upload'])->middleware('throttle:10,1');
+        Route::post('/short-videos/{shortVideo}', [\App\Http\Controllers\Admin\ShortVideoController::class, 'update']);
+        Route::post('/short-videos/{shortVideo}/preview', [\App\Http\Controllers\Admin\ShortVideoController::class, 'preview']);
+        Route::post('/short-videos/{shortVideo}/publish', [\App\Http\Controllers\Admin\ShortVideoController::class, 'publish'])->middleware('throttle:10,1');
+        Route::get('/short-videos/{shortVideo}/status', [\App\Http\Controllers\Admin\ShortVideoController::class, 'status']);
+        Route::post('/short-videos/{shortVideo}/retry/{platform}', [\App\Http\Controllers\Admin\ShortVideoController::class, 'retry'])->middleware('throttle:10,1');
+        Route::post('/short-videos/{shortVideo}/archive', [\App\Http\Controllers\Admin\ShortVideoController::class, 'archive']);
+        Route::post('/short-videos/{shortVideo}/delete', [\App\Http\Controllers\Admin\ShortVideoController::class, 'destroy']);
         Route::get('/comments', [CommentModerationController::class, 'index'])->name('comments.index');
         Route::post('/comments/{id}/decision', [CommentModerationController::class, 'decide'])->middleware('throttle:30,1')->name('comments.decision');
 

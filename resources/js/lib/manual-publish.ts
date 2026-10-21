@@ -3,7 +3,22 @@ export type PublishResult = {
     attempt_id: string;
     retry_url?: string;
     completion_url?: string;
-    results: Record<string, { success: boolean; message: string }>;
+    results: Record<
+        string,
+        {
+            success: boolean;
+            message: string;
+            account?: string | null;
+            permalink?: string | null;
+            status?:
+                | 'published'
+                | 'failed'
+                | 'processing'
+                | 'queued'
+                | 'uncertain'
+                | 'not_selected';
+        }
+    >;
 };
 
 // Allow slow media publishing to finish, but never leave the editor waiting forever.

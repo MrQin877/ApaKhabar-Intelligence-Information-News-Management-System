@@ -11,6 +11,7 @@ import {
     ExternalLink,
     FolderArchive,
     Tags,
+    Video,
 } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
 import { NavFooter } from '@/components/nav-footer';
@@ -121,6 +122,7 @@ export function AppSidebar() {
             icon: Newspaper,
             items: newsItems,
         },
+        { title: 'Video Pendek', href: '/admin/short-videos', icon: Video },
         {
             title: 'Moderasi Komentar',
             href: '/admin/comments',

@@ -1,8 +1,10 @@
 <?php
 
 use App\Jobs\ProcessIntelligenceDocument;
+use App\Jobs\PublishShortVideo;
 use App\Models\IntelligenceDocument;
 use App\Models\IntelligenceInformation;
+use App\Models\ShortVideoPublication;
 use App\Services\PublicationPreviewFiles;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -123,3 +125,16 @@ Schedule::call(function () {
     DB::table('news_viewers')->where('expires_at', '<', now())->delete();
     DB::table('news_visits')->where('expires_at', '<', now())->delete();
 })->daily()->name('engagement-retention')->withoutOverlapping();
+
+// Recover committed video publications when queue dispatch or a worker was interrupted.
+Schedule::call(function (): void {
+    ShortVideoPublication::where(fn ($q) => $q->whereIn('status', ['queued', 'processing'])->orWhere(fn ($q) => $q->where('status', 'published')->where('stage', 'permalink')))
+        ->where('platform', '!=', 'website')->where('updated_at', '<', now()->subMinutes(3))
+        ->whereHas('video', fn ($q) => $q->where('status', 'published')->whereNull('deleted_at'))
+        ->where(fn ($q) => $q->whereNull('next_attempt_at')->orWhere('next_attempt_at', '<=', now()))
+        ->chunkById(100, function ($rows) {
+            foreach ($rows as $row) {
+                PublishShortVideo::dispatch($row->id);
+            }
+        });
+})->everyMinute()->name('recover-short-publications')->withoutOverlapping();
