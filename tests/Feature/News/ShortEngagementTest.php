@@ -1,10 +1,13 @@
 <?php
 
 use App\Models\Comment;
+use App\Models\News;
 use App\Models\ShortVideo;
 use App\Models\ShortVideoComment;
 use App\Models\User;
 use App\Models\UserRole;
+use Illuminate\Http\Client\Factory;
+use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -39,7 +42,7 @@ function agedShortCommentChallenge($test, ShortVideo $video): string
 }
 
 beforeEach(function () {
-    $this->withoutMiddleware(\Illuminate\Routing\Middleware\ThrottleRequests::class);
+    $this->withoutMiddleware(ThrottleRequests::class);
     Http::preventStrayRequests();
     Http::fake(['api.openai.com/*' => Http::response(['results' => [['flagged' => false, 'categories' => ['harassment' => false]]]])]);
     config(['engagement.openai_key' => 'test-key']);
@@ -55,6 +58,58 @@ test('guest Shorts comments require an aged challenge and do not enter News data
     $this->postJson($url, ['content' => 'Komentar warga', 'challenge' => agedShortCommentChallenge($this, $video)])->assertUnprocessable();
     expect(ShortVideoComment::count())->toBe(1)->and(Comment::count())->toBe(0);
     $this->getJson($url)->assertJsonPath('count', 1)->assertJsonPath('comments.data.0.replies_count', 0);
+});
+
+test('guest identity and WIB quota are shared by News, Shorts, and replies', function () {
+    $video = engagedShort();
+    $news = News::factory()->create();
+    $shortUrl = '/shorts/'.$video->id.'/comments';
+    $first = $this->postJson($shortUrl, ['content' => 'Komentar video pertama', 'challenge' => agedShortCommentChallenge($this, $video)])
+        ->assertCreated()->assertJsonPath('remaining_quota', 2);
+    $guestCookie = collect($first->headers->getCookies())->first(fn ($cookie) => $cookie->getName() === 'apakhabar_guest');
+    expect($guestCookie)->not->toBeNull();
+    $this->withUnencryptedCookie('apakhabar_guest', $guestCookie->getValue());
+    $root = $first->json('comment.id');
+    $this->postJson($shortUrl.'/'.$root.'/replies', ['content' => 'Balasan video kedua', 'challenge' => agedShortCommentChallenge($this, $video)])
+        ->assertCreated()->assertJsonPath('remaining_quota', 1);
+    $token = $this->getJson('/news/'.$news->getKey().'/engagement')->assertOk()->json('token');
+    $claim = json_decode(Crypt::decryptString($token), true);
+    $claim['time'] -= 4;
+    $this->postJson('/news/'.$news->getKey().'/comment', ['content' => 'Komentar berita ketiga', 'challenge' => Crypt::encryptString(json_encode($claim))])
+        ->assertCreated()->assertJsonPath('remaining_quota', 0);
+    expect(Comment::first()->guest_name)->toBe(ShortVideoComment::first()->guest_name)
+        ->and(ShortVideoComment::count())->toBe(2);
+    $this->postJson($shortUrl, ['content' => 'Komentar keempat', 'challenge' => agedShortCommentChallenge($this, $video)])
+        ->assertUnprocessable()->assertJsonPath('errors.quota.0', 'Kuota 3 komentar hari ini habis. Coba lagi besok atau masuk untuk lanjut berkomentar.');
+    expect(DB::table('guest_comment_days')->first()->comment_count)->toBe(3);
+    $this->travelTo(now('Asia/Jakarta')->startOfDay()->addDay());
+    $this->postJson($shortUrl, ['content' => 'Komentar hari baru', 'challenge' => agedShortCommentChallenge($this, $video)])
+        ->assertCreated()->assertJsonPath('remaining_quota', 2);
+    $token = $this->getJson('/news/'.$news->getKey().'/engagement')->assertOk()->json('token');
+    $claim = json_decode(Crypt::decryptString($token), true);
+    $claim['time'] -= 4;
+    $this->postJson('/comments/'.Comment::first()->getKey().'/replies', ['content' => 'Balasan berita hari baru', 'challenge' => Crypt::encryptString(json_encode($claim))])
+        ->assertCreated()->assertJsonPath('remaining_quota', 1);
+    expect(Comment::latest('commentID')->first()->guest_name)->toBe(ShortVideoComment::first()->guest_name);
+});
+
+test('pending moderation consumes guest quota while authenticated comments remain exempt', function () {
+    $video = engagedShort();
+    Http::swap(new Factory);
+    Http::fake(['api.openai.com/*' => Http::response(['results' => [['flagged' => true, 'categories' => ['harassment' => true]]]])]);
+    $url = '/shorts/'.$video->id.'/comments';
+    $first = $this->postJson($url, ['content' => 'Komentar ditinjau satu', 'challenge' => agedShortCommentChallenge($this, $video)])
+        ->assertCreated()->assertJsonPath('status', 'pending_review')->assertJsonPath('remaining_quota', 2);
+    $cookie = collect($first->headers->getCookies())->first(fn ($item) => $item->getName() === 'apakhabar_guest');
+    $this->withUnencryptedCookie('apakhabar_guest', $cookie->getValue());
+    foreach (['Komentar ditinjau dua', 'Komentar ditinjau tiga'] as $index => $content) {
+        $this->postJson($url, ['content' => $content, 'challenge' => agedShortCommentChallenge($this, $video)])
+            ->assertCreated()->assertJsonPath('remaining_quota', 1 - $index);
+    }
+    $this->postJson($url, ['content' => 'Komentar ditinjau empat', 'challenge' => agedShortCommentChallenge($this, $video)])
+        ->assertUnprocessable()->assertJsonPath('errors.quota.0', 'Kuota 3 komentar hari ini habis. Coba lagi besok atau masuk untuk lanjut berkomentar.');
+    expect(ShortVideoComment::where('status', 'pending_review')->count())->toBe(3);
+    $this->actingAs(shortActor())->postJson($url, ['content' => 'Komentar pengguna masuk'])->assertCreated();
 });
 
 test('Shorts likes and one-level reply pagination use separate persistent records', function () {

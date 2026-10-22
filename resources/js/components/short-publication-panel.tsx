@@ -23,6 +23,7 @@ type TrackedVideo = {
     id: number;
     title: string;
     thumbnail_url?: string | null;
+    duration?: number;
 };
 const platformOrder = ['website', 'instagram', 'facebook'] as const;
 const platformName = {
@@ -98,6 +99,7 @@ export function ShortPublicationPanel() {
                     id: number;
                     title: string;
                     thumbnail_url?: string | null;
+                    duration?: number;
                     result?: PublishResult;
                     open?: boolean;
                 }>
@@ -135,6 +137,7 @@ export function ShortPublicationPanel() {
                         title: item.title,
                         thumbnail_url:
                             item.thumbnail_url ?? prior?.thumbnail_url,
+                        duration: item.duration ?? prior?.duration,
                     },
                 ];
                 persistTracked(key, next);
@@ -173,7 +176,11 @@ export function ShortPublicationPanel() {
                 inFlight.current.add(item.id);
                 void metaRequest<{
                     result: PublishResult;
-                    video?: { thumbnail_url?: string | null; title?: string };
+                    video?: {
+                        thumbnail_url?: string | null;
+                        title?: string;
+                        metadata?: { duration?: number };
+                    };
                 }>(`/admin/short-videos/${item.id}/status`)
                     .then((data) => {
                         if (!stopped) {
@@ -195,7 +202,7 @@ export function ShortPublicationPanel() {
                                 setMinimized(true);
                             }
 
-                            if (data.video?.thumbnail_url) {
+                            if (data.video) {
                                 setItems((previous) => {
                                     const found = previous.find(
                                         (video) => video.id === item.id,
@@ -207,7 +214,11 @@ export function ShortPublicationPanel() {
                                             data.video?.thumbnail_url &&
                                             found.title ===
                                                 (data.video?.title ??
-                                                    found.title))
+                                                    found.title) &&
+                                            found.duration ===
+                                                (data.video?.metadata
+                                                    ?.duration ??
+                                                    found.duration))
                                     ) {
                                         return previous;
                                     }
@@ -220,7 +231,13 @@ export function ShortPublicationPanel() {
                                                       data.video?.title ??
                                                       video.title,
                                                   thumbnail_url:
-                                                      data.video?.thumbnail_url,
+                                                      data.video
+                                                          ?.thumbnail_url ??
+                                                      video.thumbnail_url,
+                                                  duration:
+                                                      data.video?.metadata
+                                                          ?.duration ??
+                                                      video.duration,
                                               }
                                             : video,
                                     );
@@ -303,7 +320,7 @@ export function ShortPublicationPanel() {
             <aside
                 hidden={selected !== null}
                 aria-label="Status publikasi video"
-                className="fixed right-4 bottom-4 z-40 max-h-[min(32rem,calc(100dvh-2rem))] w-[min(22rem,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-border/80 bg-card/95 p-4 shadow-2xl backdrop-blur-sm"
+                className="fixed right-4 bottom-4 z-40 max-h-[min(36rem,calc(100dvh-2rem))] w-[min(26rem,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-border/80 bg-card p-4 shadow-2xl"
             >
                 {allSuccessful ? (
                     <div className="space-y-2" role="status">
@@ -320,13 +337,21 @@ export function ShortPublicationPanel() {
                                 </p>
                             </div>
                         </div>
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setSelected(items[0].id)}
-                        >
-                            Lihat Detail
-                        </Button>
+                        <div className="flex justify-between gap-2">
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setSelected(items[0].id)}
+                            >
+                                Lihat Detail
+                            </Button>
+                            <Link
+                                href="/admin/short-videos"
+                                className="self-center text-xs font-medium text-primary hover:underline"
+                            >
+                                Lihat Daftar Video
+                            </Link>
+                        </div>
                     </div>
                 ) : minimized ? (
                     <div className="space-y-3">
@@ -470,19 +495,9 @@ export function ShortPublicationPanel() {
                                                     <span className="min-w-0 flex-1 truncate">
                                                         {platformName[platform]}
                                                     </span>
-                                                    {status === 'queued' ? (
-                                                        <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-                                                            <span
-                                                                className="size-2 rounded-full bg-muted-foreground/60"
-                                                                aria-hidden="true"
-                                                            />
-                                                            Menunggu
-                                                        </span>
-                                                    ) : (
-                                                        <VideoPublicationIndicator
-                                                            status={status}
-                                                        />
-                                                    )}
+                                                    <VideoPublicationIndicator
+                                                        status={status}
+                                                    />
                                                 </div>
                                             )
                                         );
@@ -599,6 +614,7 @@ export function ShortPublicationPanel() {
                     key={selected}
                     videoMode
                     result={results[selected]}
+                    video={items.find((item) => item.id === selected)}
                     retrying={busy}
                     statusError={error}
                     onRefreshStatus={() => {

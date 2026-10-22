@@ -4,6 +4,7 @@ namespace App\Services\Shorts;
 
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\Process\Process;
 
@@ -69,7 +70,9 @@ class VideoCropper
                 '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '128k', '-ar', '48000', '-ac', '2',
                 '-map_metadata', '-1', '-metadata:s:v:0', 'rotate=0', '-movflags', '+faststart', '-f', 'mp4', $output]);
             $process->setTimeout(config('shorts.crop_timeout', 300));
+            $started = hrtime(true);
             $process->mustRun();
+            Log::info('Short FFmpeg export timing', ['duration_ms' => (int) ((hrtime(true) - $started) / 1_000_000)]);
             $file = new UploadedFile($output, 'cropped.mp4', 'video/mp4', null, true);
             $result = $inspector->inspect($file);
             if ($result['width'] !== 1080 || $result['height'] !== 1920 || ($result['rotation'] ?? 0) % 360 !== 0 || abs(($result['sample_aspect_ratio'] ?? 1) - 1) > 0.0001) {

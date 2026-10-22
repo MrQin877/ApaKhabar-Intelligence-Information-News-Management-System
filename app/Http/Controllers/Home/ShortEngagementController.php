@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Home;
 use App\Http\Controllers\Controller;
 use App\Models\ShortVideo;
 use App\Models\ShortVideoComment;
+use App\Services\GuestCommentIdentity;
 use App\Services\News\ModerationFeedbackService;
 use App\Services\Shorts\ShortCommentService;
 use Illuminate\Http\Request;
@@ -88,23 +89,13 @@ class ShortEngagementController extends Controller
             'website' => 'nullable|string|max:0',
             'challenge' => 'nullable|string|max:2000',
         ]);
-        if (! $request->user()) {
-            try {
-                $claim = json_decode(Crypt::decryptString($data['challenge'] ?? ''), true);
-                $age = now()->timestamp - $claim['time'];
-                $valid = (int) $claim['short'] === $id && $age >= 3 && $age <= 7200
-                    && hash_equals($claim['session'], hash('sha256', $request->session()->getId()));
-            } catch (\Throwable) {
-                $valid = false;
-            }
-            if (! $valid) {
-                throw ValidationException::withMessages(['content' => 'Muat ulang video dan tunggu beberapa detik sebelum mengirim.']);
-            }
-        }
-        $comment = $service->add($video, $request->user()?->getKey(), $data['content']);
+        $this->checkGuestChallenge($request, $id, $data);
+        [$comment, $remaining] = app(GuestCommentIdentity::class)->submit($request,
+            fn ($guestName) => $service->add($video, $request->user()?->getKey(), $data['content'], null, $guestName));
 
         return response()->json([
             'status' => $comment->status,
+            'remaining_quota' => $remaining,
             'message' => $comment->status === 'published' ? 'Komentar diterbitkan.' : 'Komentar menunggu peninjauan moderator.',
             'comment' => $comment->status === 'published' ? $this->present($comment->load('author'), $request->user()?->getKey()) : null,
         ], 201);
@@ -114,14 +105,35 @@ class ShortEngagementController extends Controller
     {
         $video = $this->video($id);
         $parent = $this->comment($video, $comment);
-        $data = $request->validate(['content' => 'required|string|max:1000']);
-        $reply = $service->add($video, $request->user()->getKey(), $data['content'], $parent);
+        $data = $request->validate(['content' => 'required|string|max:1000', 'challenge' => 'nullable|string|max:2000']);
+        $this->checkGuestChallenge($request, $id, $data);
+        [$reply, $remaining] = app(GuestCommentIdentity::class)->submit($request,
+            fn ($guestName) => $service->add($video, $request->user()?->getKey(), $data['content'], $parent, $guestName));
 
         return response()->json([
             'status' => $reply->status,
+            'remaining_quota' => $remaining,
             'message' => $reply->status === 'published' ? 'Balasan diterbitkan.' : 'Balasan menunggu peninjauan moderator.',
-            'comment' => $reply->status === 'published' ? $this->present($reply->load(['author', 'parent.author']), $request->user()->getKey()) : null,
+            'comment' => $reply->status === 'published' ? $this->present($reply->load(['author', 'parent.author']), $request->user()?->getKey()) : null,
         ], 201);
+    }
+
+    private function checkGuestChallenge(Request $request, int $id, array $data): void
+    {
+        if ($request->user()) {
+            return;
+        }
+        try {
+            $claim = json_decode(Crypt::decryptString($data['challenge'] ?? ''), true);
+            $age = now()->timestamp - $claim['time'];
+            $valid = (int) $claim['short'] === $id && $age >= 3 && $age <= 7200
+                && hash_equals($claim['session'], hash('sha256', $request->session()->getId()));
+        } catch (\Throwable) {
+            $valid = false;
+        }
+        if (! $valid) {
+            throw ValidationException::withMessages(['content' => 'Muat ulang video dan tunggu beberapa detik sebelum mengirim.']);
+        }
     }
 
     public function likeVideo(Request $request, int $id)

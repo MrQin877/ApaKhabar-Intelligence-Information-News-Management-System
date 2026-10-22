@@ -45,7 +45,7 @@ class InteractionService
         });
     }
 
-    public function addComment(?int $userId, string $newsId, string $content, ?int $parentId = null): Comment
+    public function addComment(?int $userId, string $newsId, string $content, ?int $parentId = null, ?string $guestName = null): Comment
     {
         $news = News::active()->findOrFail($newsId);
         $content = trim($content);
@@ -57,7 +57,7 @@ class InteractionService
         $assessment = $moderation['_assessment'] ?? [];
         unset($moderation['_assessment']);
 
-        return DB::transaction(function () use ($news, $userId, $content, $parentId, $hash, $moderation, $assessment) {
+        return DB::transaction(function () use ($news, $userId, $content, $parentId, $guestName, $hash, $moderation, $assessment) {
             // Serialize the duplicate check and insert, including concurrent submissions.
             News::whereKey($news->getKey())->lockForUpdate()->firstOrFail();
             if (Comment::where('submission_hash', $hash)->exists()) {
@@ -65,7 +65,7 @@ class InteractionService
             }
             $comment = Comment::create(array_merge($moderation, [
                 'newsID' => $news->getKey(), 'userID' => $userId, 'content' => $content,
-                'guest_name' => $userId ? null : 'guest'.random_int(100000, 999999), 'parentID' => $parentId,
+                'guest_name' => $userId ? null : ($guestName ?? 'Guest'.random_int(10000, 99999)), 'parentID' => $parentId,
                 'submission_hash' => $hash,
             ]));
             CommentModerationAssessment::capture($comment, $assessment);
@@ -79,10 +79,10 @@ class InteractionService
         });
     }
 
-    public function addReply(int $userId, string $commentId, string $content): Comment
+    public function addReply(?int $userId, string $commentId, string $content, ?string $guestName = null): Comment
     {
         $parent = Comment::where('status', 'published')->findOrFail($commentId);
 
-        return $this->addComment($userId, (string) $parent->newsID, $content, $parent->getKey());
+        return $this->addComment($userId, (string) $parent->newsID, $content, $parent->getKey(), $guestName);
     }
 }

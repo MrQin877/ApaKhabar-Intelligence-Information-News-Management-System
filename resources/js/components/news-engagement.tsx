@@ -2,6 +2,7 @@ import { Link, router } from '@inertiajs/react';
 import { Eye, Flag, Heart, Share2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import AdminCommentFeedback from '@/components/admin-comment-feedback';
+import { GuestCommentLimitDialog } from '@/components/guest-comment-limit-dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
@@ -46,13 +47,17 @@ export async function engagementPost(url: string, data: unknown) {
     const body = await response.json();
 
     if (!response.ok) {
-        throw new Error(
+        const error = new Error(
             Object.values(body.errors ?? {})
                 .flat()
                 .join(' ') ||
                 body.message ||
                 'Permintaan gagal. Silakan coba lagi.',
         );
+        if (body.errors?.quota) {
+            Object.assign(error, { quotaReached: true });
+        }
+        throw error;
     }
 
     return body;
@@ -68,6 +73,8 @@ export default function NewsEngagement({
         string | null
     >(null);
     const [prompt, setPrompt] = useState(false);
+    const [quotaOpen, setQuotaOpen] = useState(false);
+    const [remainingQuota, setRemainingQuota] = useState<number | null>(null);
     const [liked, setLiked] = useState(news.liked_by_user);
     const [likes, setLikes] = useState(news.likes_count);
     const [views, setViews] = useState(news.views);
@@ -237,6 +244,7 @@ export default function NewsEngagement({
                 challenge,
             });
             setContent('');
+            setRemainingQuota(data.remaining_quota ?? null);
             setMessage(
                 data.message ??
                     (data.status === 'published'
@@ -245,7 +253,9 @@ export default function NewsEngagement({
             );
             router.reload({ only: ['comments'] });
         } catch (error) {
-            setMessage((error as Error).message);
+            if ((error as Error & { quotaReached?: boolean }).quotaReached)
+                setQuotaOpen(true);
+            else setMessage((error as Error).message);
         } finally {
             submission.current = false;
             setBusy(false);
@@ -256,12 +266,6 @@ export default function NewsEngagement({
             return;
         }
 
-        if (!authenticated) {
-            setPrompt(true);
-
-            return;
-        }
-
         replySubmission.current = true;
         setReplyBusy(true);
         setReplyNotice(null);
@@ -269,6 +273,7 @@ export default function NewsEngagement({
         try {
             const data = await engagementPost(`/comments/${parentId}/replies`, {
                 content: replyContent,
+                challenge,
             });
             setReplyContent('');
             setReplyId(null);
@@ -309,7 +314,12 @@ export default function NewsEngagement({
                     });
                 });
             }
+            setRemainingQuota(data.remaining_quota ?? null);
         } catch (error) {
+            if ((error as Error & { quotaReached?: boolean }).quotaReached) {
+                setQuotaOpen(true);
+                return;
+            }
             setReplyNotice({
                 parentId,
                 error: true,
@@ -482,12 +492,6 @@ export default function NewsEngagement({
                                     : undefined
                             }
                             onClick={() => {
-                                if (!authenticated) {
-                                    setPrompt(true);
-
-                                    return;
-                                }
-
                                 if (replyId !== comment.id) {
                                     setReplyContent('');
                                     setReplyNotice(null);
@@ -549,7 +553,7 @@ export default function NewsEngagement({
                                 type="submit"
                                 size="sm"
                                 className={primaryButton}
-                                disabled={replyBusy || !replyContent.trim()}
+                                disabled={replyBusy || !replyContent.trim() || (!authenticated && !challenge)}
                             >
                                 {replyBusy ? 'Mengirim...' : 'Kirim Balasan'}
                             </Button>
@@ -692,6 +696,11 @@ export default function NewsEngagement({
                     Komentar diperiksa otomatis menggunakan OpenAI dan dapat
                     ditinjau moderator sebelum diterbitkan.
                 </p>
+                {!authenticated && remainingQuota !== null && (
+                    <p role="status" className="text-xs text-muted-foreground">
+                        Sisa kuota komentar hari ini: {remainingQuota}
+                    </p>
+                )}
                 <Button
                     type="submit"
                     className={primaryButton}
@@ -710,6 +719,10 @@ export default function NewsEngagement({
                 </p>
             )}
             {threads.roots.map((comment) => renderComment(comment))}
+            <GuestCommentLimitDialog
+                open={quotaOpen}
+                onOpenChange={setQuotaOpen}
+            />
             <Dialog open={prompt} onOpenChange={setPrompt}>
                 <DialogContent>
                     <DialogTitle>Masuk diperlukan</DialogTitle>

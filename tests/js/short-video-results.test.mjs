@@ -38,7 +38,8 @@ test('video results distinguish queued unselected and uncertain destinations', (
         instagram:{success:false,status:'not_selected',message:'Unselected'},
         facebook:{success:false,status:'uncertain',message:'Unknown'},
     } });
-    for (const label of ['Menunggu', 'Tidak Dipilih', 'Memeriksa Status', 'Periksa Status']) assert.ok(view.text.includes(label));
+    for (const label of ['Menunggu', 'Memeriksa Status', 'Periksa Status']) assert.ok(view.text.includes(label));
+    assert.ok(!view.text.includes('Tidak Dipilih'));
 });
 test('legacy image results retain existing success labels', () => {
     const view = render({ attempt_id:'image', success:true, results:{ application:{success:true,message:'OK'} } }, false);

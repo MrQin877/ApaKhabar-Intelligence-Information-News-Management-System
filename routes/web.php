@@ -54,10 +54,10 @@ Route::get('/shorts/{id}/engagement', [ShortEngagementController::class, 'contex
 Route::get('/shorts/{id}/comments', [ShortEngagementController::class, 'index'])->whereNumber('id')->middleware('throttle:60,1');
 Route::get('/shorts/{id}/comments/{comment}/replies', [ShortEngagementController::class, 'replies'])->whereNumber(['id', 'comment'])->middleware('throttle:60,1');
 Route::post('/shorts/{id}/comments', [ShortEngagementController::class, 'store'])->whereNumber('id')->middleware('throttle:5,1');
+Route::post('/shorts/{id}/comments/{comment}/replies', [ShortEngagementController::class, 'reply'])->whereNumber(['id', 'comment'])->middleware('throttle:5,1');
 Route::middleware(['auth', 'throttle:30,1'])->group(function () {
     Route::post('/shorts/{id}/like', [ShortEngagementController::class, 'likeVideo'])->whereNumber('id');
     Route::post('/shorts/{id}/comments/{comment}/like', [ShortEngagementController::class, 'likeComment'])->whereNumber(['id', 'comment']);
-    Route::post('/shorts/{id}/comments/{comment}/replies', [ShortEngagementController::class, 'reply'])->whereNumber(['id', 'comment'])->middleware('throttle:5,1');
     Route::post('/shorts/{id}/comments/{comment}/report', [ShortEngagementController::class, 'report'])->whereNumber(['id', 'comment'])->middleware('throttle:5,1');
 });
 Route::post('/shorts/{id}/comments/{comment}/flag', [ShortEngagementController::class, 'flag'])->whereNumber(['id', 'comment'])->middleware(['auth', 'verified', 'throttle:5,1']);
@@ -69,11 +69,11 @@ Route::get('/news/{id}', [NewsController::class, 'show'])->name('news.show');
 Route::get('/news/{id}/engagement', [EngagementController::class, 'context'])->middleware('throttle:30,1');
 Route::post('/news/{id}/view', [EngagementController::class, 'view'])->middleware('throttle:30,1');
 Route::post('/news/{id}/comment', [CommentController::class, 'store'])->middleware('throttle:5,1')->name('news.comment');
+Route::post('/comments/{id}/replies', [CommentController::class, 'reply'])->middleware('throttle:5,1')->name('comments.reply');
 Route::middleware(['auth', 'throttle:30,1'])->group(function () {
     Route::post('/news/{id}/like', [PostLikeController::class, 'store'])->name('news.like');
     Route::post('/comments/{id}/like', [CommentController::class, 'like'])->name('comments.like');
     Route::post('/comments/{id}/report', [EngagementController::class, 'report'])->name('comments.report');
-    Route::post('/comments/{id}/replies', [CommentController::class, 'reply'])->middleware('throttle:5,1')->name('comments.reply');
 });
 
 // Authenticated routes — login required for all but shared between villager and admin

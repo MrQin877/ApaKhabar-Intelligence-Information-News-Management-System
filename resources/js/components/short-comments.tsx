@@ -1,6 +1,7 @@
 import { Flag, Heart, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { engagementPost } from '@/components/news-engagement';
+import { GuestCommentLimitDialog } from '@/components/guest-comment-limit-dialog';
 import type { PublicComment } from '@/components/news-engagement';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -55,6 +56,8 @@ export function ShortComments({
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [notice, setNotice] = useState('');
+    const [quotaOpen, setQuotaOpen] = useState(false);
+    const [remainingQuota, setRemainingQuota] = useState<number | null>(null);
     const [challenge, setChallenge] = useState('');
     const [content, setContent] = useState('');
     const [website, setWebsite] = useState('');
@@ -198,6 +201,7 @@ export function ShortComments({
                 challenge,
             });
             setContent('');
+            setRemainingQuota(result.remaining_quota ?? null);
             setNotice(result.message);
 
             if (result.comment) {
@@ -205,7 +209,9 @@ export function ShortComments({
                 onCountChange(count + 1);
             }
         } catch (caught) {
-            setError((caught as Error).message);
+            if ((caught as Error & { quotaReached?: boolean }).quotaReached)
+                setQuotaOpen(true);
+            else setError((caught as Error).message);
         } finally {
             submission.current = false;
             setBusy(false);
@@ -224,7 +230,7 @@ export function ShortComments({
         try {
             const result = await engagementPost(
                 `${base}/comments/${replyTarget.id}/replies`,
-                { content: replyText },
+                { content: replyText, challenge },
             );
 
             if (result.comment) {
@@ -253,10 +259,13 @@ export function ShortComments({
             }
 
             setNotice(result.message);
+            setRemainingQuota(result.remaining_quota ?? null);
             setReplyText('');
             setReplyTarget(null);
         } catch (caught) {
-            setError((caught as Error).message);
+            if ((caught as Error & { quotaReached?: boolean }).quotaReached)
+                setQuotaOpen(true);
+            else setError((caught as Error).message);
         } finally {
             submission.current = false;
             setBusy(false);
@@ -407,12 +416,6 @@ export function ShortComments({
                             className={action}
                             aria-expanded={replyTarget?.id === comment.id}
                             onClick={() => {
-                                if (!authenticated) {
-                                    onLogin();
-
-                                    return;
-                                }
-
                                 setReplyTarget({
                                     id: comment.id,
                                     rootId,
@@ -470,7 +473,7 @@ export function ShortComments({
                                 type="submit"
                                 size="sm"
                                 className={primary}
-                                disabled={busy || !replyText.trim()}
+                                disabled={busy || !replyText.trim() || (!authenticated && !challenge)}
                             >
                                 {busy ? 'Mengirim...' : 'Kirim Balasan'}
                             </Button>
@@ -552,9 +555,15 @@ export function ShortComments({
         <section
             aria-label="Komentar video pendek"
             className={`flex min-h-0 flex-col overflow-hidden bg-card ${fullScreen ? 'h-full w-full' : 'rounded-xl border'}`}
-            style={!fullScreen ? { height: 'min(820px, max(320px, calc(100dvh - 11rem)))' } : undefined}
+            style={
+                !fullScreen
+                    ? { height: 'min(820px, max(320px, calc(100dvh - 11rem)))' }
+                    : undefined
+            }
         >
-            <header className={`flex shrink-0 items-center justify-between border-b px-4 py-3 ${fullScreen ? 'pt-[calc(0.75rem+env(safe-area-inset-top))]' : ''}`}>
+            <header
+                className={`flex shrink-0 items-center justify-between border-b px-4 py-3 ${fullScreen ? 'pt-[calc(0.75rem+env(safe-area-inset-top))]' : ''}`}
+            >
                 <h2 className="text-sm font-semibold">Komentar ({count})</h2>
                 <Button
                     className="size-11"
@@ -653,6 +662,15 @@ export function ShortComments({
                     </Button>
                 </div>
             </form>
+            {!authenticated && remainingQuota !== null && (
+                <p role="status" className="px-4 text-xs text-muted-foreground">
+                    Sisa kuota komentar hari ini: {remainingQuota}
+                </p>
+            )}
+            <GuestCommentLimitDialog
+                open={quotaOpen}
+                onOpenChange={setQuotaOpen}
+            />
             <Dialog
                 open={reportId !== null}
                 onOpenChange={(open) => {

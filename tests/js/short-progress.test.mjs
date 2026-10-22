@@ -102,7 +102,8 @@ test('backend pending flag keeps permalink lookup polling even after publication
 });
 test('processing ring is indeterminate while completed and queued states use backend-driven icons',()=>{
     const css=readFileSync('resources/css/app.css','utf8');
-    assert.match(css,/@keyframes video-publication-ring-fill[\s\S]*stroke-dasharray: 0 100;[\s\S]*stroke-dasharray: 100 100;/);
+    assert.match(css,/@keyframes video-publication-ring-fill[\s\S]*transform: rotate\(0deg\);[\s\S]*transform: rotate\(360deg\);/);
+    assert.match(css,/\.video-publication-ring-fill\s*\{\s*stroke-dasharray: 25 100;/);
     assert.match(css,/animation: video-publication-ring-fill 2\.4s linear infinite;/);
     assert.match(css,/@media \(prefers-reduced-motion: reduce\)/);
     const ctx={exports:{},require:name=>name==='react/jsx-runtime'?require(name):new Proxy({},{get:(_,k)=>String(k)})};

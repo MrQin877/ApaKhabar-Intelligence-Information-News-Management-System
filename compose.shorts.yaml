@@ -12,3 +12,16 @@ services:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
     stop_grace_period: 100s
+  shorts-worker-2:
+    build:
+      context: .
+      dockerfile: docker/shorts-worker.Dockerfile
+    env_file: .env
+    environment:
+      DB_HOST: ${SHORTS_DB_HOST:-host.docker.internal}
+      QUEUE_CONNECTION: database
+      CACHE_STORE: file
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    stop_grace_period: 100s

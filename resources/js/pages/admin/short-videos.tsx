@@ -748,6 +748,8 @@ export function ShortVideos({
                     detail: {
                         id: data.video.id,
                         title: data.video.title,
+                        thumbnail_url: data.video.thumbnail_url,
+                        duration: data.video.metadata?.duration,
                         result: data.result,
                         open: true,
                     },
@@ -764,7 +766,13 @@ export function ShortVideos({
     async function showStatus(video: ShortVideo) {
         window.dispatchEvent(
             new CustomEvent('short-publication', {
-                detail: { id: video.id, title: video.title, open: true },
+                detail: {
+                    id: video.id,
+                    title: video.title,
+                    thumbnail_url: video.thumbnail_url,
+                    duration: video.metadata?.duration,
+                    open: true,
+                },
             }),
         );
     }

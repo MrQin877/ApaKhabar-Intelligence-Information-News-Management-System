@@ -83,11 +83,11 @@ test('guest comments publish only after bot and moderation checks', function () 
     $this->postJson($this->url.'/comment', ['content' => 'Terima kasih', 'challenge' => $token, 'website' => 'spam'])->assertUnprocessable();
     $this->postJson($this->url.'/comment', ['content' => 'Terima kasih', 'guest_name' => 'Warga', 'challenge' => $token])->assertCreated()->assertJsonPath('status', 'published');
     expect(Comment::first()->userID)->toBeNull()
-        ->and(Comment::first()->guest_name)->toMatch('/^guest[0-9]{6}$/');
+        ->and(Comment::first()->guest_name)->toMatch('/^Guest[0-9]{5}$/');
     $this->getJson($this->url)->assertJsonPath('data.comments_list.0.author', Comment::first()->guest_name)->assertJsonMissingPath('data.comments_list.0.moderation_categories');
     $this->get($this->url)->assertInertia(fn (Assert $page) => $page->has('comments', 1));
     $this->postJson($this->url.'/comment', ['content' => 'Informasi yang membantu', 'challenge' => $token])->assertCreated();
-    expect(Comment::latest('commentID')->first()->guest_name)->toMatch('/^guest[0-9]{6}$/');
+    expect(Comment::latest('commentID')->first()->guest_name)->toMatch('/^Guest[0-9]{5}$/');
 });
 
 test('English Indonesian mixed slang and criticism are sent unchanged to moderation', function (string $content) {

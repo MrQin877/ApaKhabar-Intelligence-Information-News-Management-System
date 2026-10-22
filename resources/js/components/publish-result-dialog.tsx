@@ -1,5 +1,5 @@
 import { router, usePage } from '@inertiajs/react';
-import { Check, X } from 'lucide-react';
+import { Check, ExternalLink, Video, X } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
@@ -11,6 +11,7 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { VideoPublicationIndicator } from '@/components/video-publication-indicator';
+import { PlatformIcon } from '@/components/publication-preview';
 import type { PublishResult } from '@/lib/manual-publish';
 import { publicationUrl } from '@/lib/short-publication';
 
@@ -22,6 +23,7 @@ export function PublishResultDialog({
     onDismiss,
     statusError,
     onRefreshStatus,
+    video,
 }: {
     result?: PublishResult;
     videoMode?: boolean;
@@ -30,6 +32,7 @@ export function PublishResultDialog({
     onDismiss?: () => void;
     statusError?: string;
     onRefreshStatus?: () => void;
+    video?: { title: string; thumbnail_url?: string | null; duration?: number };
 }) {
     const { publishResult: sharedResult } = usePage<{
         publishResult?: PublishResult | null;
@@ -41,7 +44,9 @@ export function PublishResultDialog({
         return null;
     }
 
-    const entries = Object.entries(publishResult.results);
+    const entries = Object.entries(publishResult.results).filter(
+        ([, value]) => !videoMode || value.status !== 'not_selected',
+    );
     const anySuccess = entries.some(([, result]) => result.success);
     const names: Record<string, string> = {
         application: 'Aplikasi',
@@ -67,7 +72,13 @@ export function PublishResultDialog({
                 }
             }}
         >
-            <DialogContent>
+            <DialogContent
+                className={
+                    videoMode
+                        ? 'max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-xl'
+                        : undefined
+                }
+            >
                 <DialogHeader>
                     <DialogTitle>
                         {videoMode
@@ -86,33 +97,136 @@ export function PublishResultDialog({
                               : 'Periksa hasil publikasi untuk setiap platform di bawah ini.'}
                     </DialogDescription>
                 </DialogHeader>
-                <ul className="space-y-3">
-                    {entries.map(([platform, result]) => (
-                        <li key={platform} className="space-y-1 text-sm">
-                            <div className="flex items-center gap-2 font-medium">
-                                {names[platform] ?? platform}:{' '}
-                                {videoMode ? (
-                                    <VideoPublicationIndicator
-                                        status={result.status}
-                                    />
-                                ) : result.success ? (
-                                    <>
-                                        <Check
-                                            className="size-4 text-primary"
-                                            aria-hidden="true"
-                                        />
-                                        Berhasil diterbitkan
-                                    </>
-                                ) : (
-                                    <>
-                                        <X
-                                            className="size-4 text-destructive"
-                                            aria-hidden="true"
-                                        />
-                                        Gagal
-                                    </>
+                {videoMode && video && (
+                    <div className="flex items-center gap-4 border-t border-border/70 pt-4">
+                        {video.thumbnail_url ? (
+                            <img
+                                src={video.thumbnail_url}
+                                alt=""
+                                className="h-20 w-14 shrink-0 rounded-lg object-cover"
+                            />
+                        ) : (
+                            <span className="flex h-20 w-14 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                                <Video aria-hidden="true" />
+                            </span>
+                        )}
+                        <div className="min-w-0">
+                            <p className="line-clamp-2 font-semibold">
+                                {video.title}
+                            </p>
+                            {typeof video.duration === 'number' &&
+                                Number.isFinite(video.duration) && (
+                                    <p className="mt-1 text-sm text-muted-foreground">
+                                        Durasi {Math.floor(video.duration / 60)}
+                                        :
+                                        {String(
+                                            Math.floor(video.duration % 60),
+                                        ).padStart(2, '0')}
+                                    </p>
                                 )}
-                            </div>
+                        </div>
+                    </div>
+                )}
+                <ul
+                    className={
+                        videoMode
+                            ? 'divide-y divide-border/70 border-y border-border/70'
+                            : 'space-y-3'
+                    }
+                >
+                    {entries.map(([platform, result]) => (
+                        <li
+                            key={platform}
+                            className={
+                                videoMode ? 'py-4 text-sm' : 'space-y-1 text-sm'
+                            }
+                        >
+                            {videoMode ? (
+                                <div className="flex items-start justify-between gap-3">
+                                    <div className="flex min-w-0 items-start gap-3">
+                                        {[
+                                            'website',
+                                            'instagram',
+                                            'facebook',
+                                        ].includes(platform) && (
+                                            <span className="mt-0.5">
+                                                <PlatformIcon
+                                                    platform={
+                                                        platform as
+                                                            | 'website'
+                                                            | 'instagram'
+                                                            | 'facebook'
+                                                    }
+                                                />
+                                            </span>
+                                        )}
+                                        <div className="min-w-0 space-y-1">
+                                            <p className="font-medium">
+                                                {names[platform] ?? platform}
+                                            </p>
+                                            {result.account && (
+                                                <p className="truncate text-muted-foreground">
+                                                    {result.account}
+                                                </p>
+                                            )}
+                                            {publicationUrl(
+                                                platform,
+                                                result.status,
+                                                result.permalink,
+                                            ) && (
+                                                <a
+                                                    href={
+                                                        publicationUrl(
+                                                            platform,
+                                                            result.status,
+                                                            result.permalink,
+                                                        )!
+                                                    }
+                                                    target={
+                                                        platform === 'website'
+                                                            ? undefined
+                                                            : '_blank'
+                                                    }
+                                                    rel="noopener noreferrer"
+                                                    className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                                                >
+                                                    Lihat Publikasi{' '}
+                                                    <ExternalLink
+                                                        className="size-3.5"
+                                                        aria-hidden="true"
+                                                    />
+                                                </a>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <span className="shrink-0">
+                                        <VideoPublicationIndicator
+                                            status={result.status}
+                                        />
+                                    </span>
+                                </div>
+                            ) : (
+                                <div className="flex items-center gap-2 font-medium">
+                                    {names[platform] ?? platform}:{' '}
+                                    {result.success ? (
+                                        <>
+                                            <Check
+                                                className="size-4 text-primary"
+                                                aria-hidden="true"
+                                            />
+                                            Berhasil diterbitkan
+                                        </>
+                                    ) : (
+                                        <>
+                                            <X
+                                                className="size-4 text-destructive"
+                                                aria-hidden="true"
+                                            />
+                                            Gagal
+                                        </>
+                                    )}
+                                </div>
+                            )}
                             {videoMode &&
                                 ['failed', 'uncertain'].includes(
                                     result.status ?? '',
@@ -129,42 +243,12 @@ export function PublishResultDialog({
                                             : 'Coba Lagi'}
                                     </Button>
                                 )}
-                            {videoMode && result.account && (
-                                <p className="text-muted-foreground">
-                                    {result.account}
-                                </p>
-                            )}
-                            {videoMode &&
-                                publicationUrl(
-                                    platform,
-                                    result.status,
-                                    result.permalink,
-                                ) && (
-                                    <a
-                                        href={
-                                            publicationUrl(
-                                                platform,
-                                                result.status,
-                                                result.permalink,
-                                            )!
-                                        }
-                                        target={
-                                            platform === 'website'
-                                                ? undefined
-                                                : '_blank'
-                                        }
-                                        rel="noopener noreferrer"
-                                        className="text-primary hover:underline"
-                                    >
-                                        Lihat Publikasi
-                                    </a>
-                                )}
                             {!result.success &&
                                 (!videoMode ||
                                     ['failed', 'uncertain'].includes(
                                         result.status ?? '',
                                     )) && (
-                                    <p className="text-muted-foreground">
+                                    <p className="mt-2 text-muted-foreground">
                                         {result.message}
                                     </p>
                                 )}
@@ -203,7 +287,18 @@ export function PublishResultDialog({
                             </Button>
                         )}
                     <Button
-                        variant={publishResult.success ? 'default' : 'outline'}
+                        variant={
+                            videoMode
+                                ? 'outline'
+                                : publishResult.success
+                                  ? 'default'
+                                  : 'outline'
+                        }
+                        className={
+                            videoMode
+                                ? 'border-primary text-foreground hover:bg-primary/10'
+                                : undefined
+                        }
                         onClick={() => {
                             close();
 

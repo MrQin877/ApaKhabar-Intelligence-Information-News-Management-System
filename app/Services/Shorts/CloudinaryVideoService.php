@@ -5,6 +5,7 @@ namespace App\Services\Shorts;
 use App\Services\CloudinaryService;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -19,6 +20,7 @@ class CloudinaryVideoService
         ksort($params);
         $signature = hash('sha256', urldecode(http_build_query($params)).config('services.cloudinary.api_secret'));
         $stream = fopen($file->getRealPath(), 'rb');
+        $started = hrtime(true);
         try {
             $r = Http::connectTimeout(10)->timeout(180)->attach('file', $stream, 'short.mp4', ['Content-Type' => 'video/mp4'])
                 ->post('https://api.cloudinary.com/v1_1/'.config('services.cloudinary.cloud_name').'/video/upload', [...$params, 'api_key' => config('services.cloudinary.api_key'), 'signature' => $signature]);
@@ -27,6 +29,10 @@ class CloudinaryVideoService
                 throw new \RuntimeException;
             }
             $this->assertUrl($data['secure_url'] ?? '');
+            Log::info('Short Cloudinary upload timing', [
+                'duration_ms' => (int) ((hrtime(true) - $started) / 1_000_000),
+                'bytes' => $file->getSize(),
+            ]);
 
             return $data;
         } catch (\Throwable) {
