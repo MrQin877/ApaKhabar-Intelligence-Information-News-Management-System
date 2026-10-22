@@ -40,11 +40,27 @@ test('only published Shorts open and homepage carries a real zero view count wit
     $archived = viewerVideo('archived');
 
     $this->get('/')->assertInertia(fn (Assert $page) => $page->where('shorts.0.id', $published->id)->where('shorts.0.view_count', 0)->has('shorts', 1));
-    $this->get('/shorts/'.$published->id)->assertInertia(fn (Assert $page) => $page->component('short-viewer')->where('short.id', $published->id)->where('short.view_count', 0));
+    $this->get('/shorts/'.$published->id)->assertInertia(fn (Assert $page) => $page->component('short-viewer')->where('short.id', $published->id)->where('short.view_count', 0)->has('short.published_at'));
     $this->get('/shorts/'.$draft->id)->assertNotFound();
     $this->get('/shorts/'.$archived->id)->assertNotFound();
     $this->getJson('/shorts/'.$draft->id.'/view-token')->assertNotFound();
     expect($published->fresh()->view_count)->toBe(0)->and(DB::table('short_video_viewers')->count())->toBe(0);
+});
+
+test('viewer exposes adjacent published Shorts for swipe navigation without counting impressions', function () {
+    $older = viewerVideo();
+    $older->update(['published_at' => now()->subDays(2)]);
+    $middle = viewerVideo();
+    $middle->update(['published_at' => now()->subDay()]);
+    $newer = viewerVideo();
+    viewerVideo('draft');
+
+    $this->get('/shorts/'.$middle->id)->assertInertia(fn (Assert $page) => $page
+        ->where('short.id', $middle->id)
+        ->where('nextShortId', $older->id)
+        ->where('nextShortPreview.id', $older->id)
+        ->where('previousShortId', $newer->id));
+    expect(DB::table('short_video_viewers')->count())->toBe(0);
 });
 
 test('five seconds of playback challenge and unique authenticated viewer count once per Short', function () {

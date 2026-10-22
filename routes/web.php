@@ -12,6 +12,7 @@ use App\Http\Controllers\Auth\MobileEmailVerificationController;
 use App\Http\Controllers\Home\WelcomeController;
 use App\Http\Controllers\Home\ShortViewerController;
 use App\Http\Controllers\Home\ShortEngagementController;
+use App\Http\Controllers\Home\VideoPageController;
 use App\Http\Controllers\News\CommentController;
 use App\Http\Controllers\News\EngagementController;
 use App\Http\Controllers\News\NewsController;
@@ -45,6 +46,7 @@ Route::post('/website/translate', WebsiteTranslationController::class)
 // Public routes — no auth required
 
 Route::get('/', [WelcomeController::class, 'index'])->name('home');
+Route::get('/videos', [VideoPageController::class, 'index'])->name('videos.index');
 Route::get('/shorts/{id}', [ShortViewerController::class, 'show'])->whereNumber('id')->name('shorts.show');
 Route::get('/shorts/{id}/view-token', [ShortViewerController::class, 'token'])->whereNumber('id')->middleware('throttle:30,1');
 Route::post('/shorts/{id}/view', [ShortViewerController::class, 'view'])->whereNumber('id')->middleware('throttle:30,1');
@@ -123,6 +125,7 @@ Route::prefix('admin')
         Route::post('/short-videos/upload', [ShortVideoController::class, 'upload'])->middleware('throttle:10,1');
         Route::post('/short-videos/{shortVideo}', [ShortVideoController::class, 'update']);
         Route::post('/short-videos/{shortVideo}/preview', [ShortVideoController::class, 'preview']);
+        Route::post('/short-videos/{shortVideo}/crop', [ShortVideoController::class, 'crop'])->middleware('throttle:5,1');
         Route::post('/short-videos/{shortVideo}/publish', [ShortVideoController::class, 'publish'])->middleware('throttle:10,1');
         Route::get('/short-videos/{shortVideo}/status', [ShortVideoController::class, 'status']);
         Route::post('/short-videos/{shortVideo}/retry/{platform}', [ShortVideoController::class, 'retry'])->middleware('throttle:10,1');

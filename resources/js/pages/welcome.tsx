@@ -1,11 +1,12 @@
 import { Head, Link, usePage } from '@inertiajs/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { HeaderBar } from '@/components/header-bar';
 import { HomeFeaturedCarousel } from '@/components/home-featured-carousel';
 import type { HomeShort } from '@/components/home-shorts';
 import { HomeShorts } from '@/components/home-shorts';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { observeHomeReveals } from '@/lib/home-reveal';
 import type { SharedData } from '@/types';
 
 interface NewsItem {
@@ -42,6 +43,13 @@ export default function Welcome({
         (news) => !category || news.category === category,
     );
     const [now, setNow] = useState(() => Date.now());
+    const mainRef = useRef<HTMLElement>(null);
+
+    useEffect(() => {
+        if (mainRef.current) {
+            return observeHomeReveals(mainRef.current);
+        }
+    }, []);
 
     useEffect(() => {
         const timer = window.setInterval(() => setNow(Date.now()), 60000);
@@ -70,7 +78,7 @@ export default function Welcome({
             </Head>
 
             <div className="min-h-screen bg-background text-foreground">
-                <HeaderBar homepage />
+                <HeaderBar />
 
                 {/* ── Darurat Broadcast Bar — shows 24 hours only ── */}
                 {breakingNews && timeRemaining > 0 && (
@@ -110,19 +118,29 @@ export default function Welcome({
                     </div>
                 )}
 
-                <main className="mx-auto max-w-7xl space-y-12 px-4 py-6 sm:px-6 lg:space-y-24 lg:px-8">
+                <main
+                    ref={mainRef}
+                    className="mx-auto max-w-7xl space-y-12 px-4 py-6 sm:px-6 lg:space-y-24 lg:px-8"
+                >
                     <div className="space-y-5">
-                        <HomeFeaturedCarousel items={featuredSlides} />
+                        <div data-home-reveal>
+                            <HomeFeaturedCarousel items={featuredSlides} />
+                        </div>
                         {supportingNews.length > 0 && (
                             <section
                                 aria-label="Berita pilihan lainnya"
                                 className="grid gap-4 sm:grid-cols-3"
+                                data-home-reveal
                             >
-                                {supportingNews.map((news) => (
+                                {supportingNews.map((news, index) => (
                                     <Link
                                         key={news.id}
                                         href={`/news/${news.id}`}
                                         className="group relative min-h-56 overflow-hidden rounded-xl bg-secondary"
+                                        data-home-reveal
+                                        style={{
+                                            animationDelay: `${index * 80}ms`,
+                                        }}
                                     >
                                         <img
                                             src={news.image}
@@ -186,9 +204,16 @@ export default function Welcome({
                         <div
                             className="divide-y divide-border"
                             aria-live="polite"
+                            data-home-reveal
                         >
-                            {filteredNews.map((news) => (
-                                <article key={news.id}>
+                            {filteredNews.map((news, index) => (
+                                <article
+                                    key={news.id}
+                                    data-home-reveal
+                                    style={{
+                                        animationDelay: `${(index % 6) * 80}ms`,
+                                    }}
+                                >
                                     <Link
                                         href={`/news/${news.id}`}
                                         className="group flex items-center justify-between gap-4 py-6 sm:gap-8"

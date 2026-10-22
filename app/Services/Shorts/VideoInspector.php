@@ -21,8 +21,12 @@ class VideoInspector
         $v = collect($data['streams'] ?? [])->firstWhere('codec_type', 'video');
         $a = collect($data['streams'] ?? [])->firstWhere('codec_type', 'audio');
         [$num, $den] = array_pad(explode('/', $v['avg_frame_rate'] ?? '0/1'), 2, 1);
+        [$sarNum, $sarDen] = array_pad(explode(':', $v['sample_aspect_ratio'] ?? '1:1'), 2, 1);
+        $sar = is_numeric($sarNum) && is_numeric($sarDen) && (float) $sarNum > 0 && (float) $sarDen > 0
+            ? (float) $sarNum / (float) $sarDen : 1;
         $m = ['format' => $data['format']['format_name'] ?? '', 'codec' => $v['codec_name'] ?? '', 'pixel_format' => $v['pix_fmt'] ?? '',
             'width' => (int) ($v['width'] ?? 0), 'height' => (int) ($v['height'] ?? 0),
+            'sample_aspect_ratio' => $sar,
             'duration' => (float) ($data['format']['duration'] ?? 0), 'fps' => (float) $num / max(1, (float) $den),
             'bitrate' => (int) ($v['bit_rate'] ?? $data['format']['bit_rate'] ?? 0), 'bytes' => $file->getSize(),
             'audio_codec' => $a['codec_name'] ?? null, 'audio_rate' => (int) ($a['sample_rate'] ?? 0), 'audio_channels' => (int) ($a['channels'] ?? 0),

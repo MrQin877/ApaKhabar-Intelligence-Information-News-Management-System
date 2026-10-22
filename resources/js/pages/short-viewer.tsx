@@ -1,11 +1,15 @@
-import { Head, Link, usePage } from '@inertiajs/react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
 import {
     ArrowDown,
     ArrowLeft,
-    Eye,
     Heart,
     MessageCircle,
+    Maximize,
+    Pause,
+    Play,
     Share2,
+    Volume2,
+    VolumeX,
 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { HeaderBar } from '@/components/header-bar';
@@ -17,6 +21,14 @@ import {
     DialogDescription,
     DialogTitle,
 } from '@/components/ui/dialog';
+import { Separator } from '@/components/ui/separator';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipProvider,
+    TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { metaRequest } from '@/lib/meta-auth';
 import type { SharedData } from '@/types';
 
@@ -28,15 +40,22 @@ type Short = {
     thumbnail_url: string;
     view_count: number;
     likes_count: number;
+    published_at: string;
 };
 
 type ShortViewerProps = {
     short: Short;
     nextShortId: number | null;
+    nextShortPreview?: Pick<Short, 'id' | 'title' | 'thumbnail_url'> | null;
+    previousShortId?: number | null;
     commentCount: number;
     likedByUser: boolean;
     canFlagComments: boolean;
 };
+
+let pendingTransition: { id: number; panel: 'comments' | 'details' | null } | null = null;
+let wheelCooldownUntil = 0;
+const playerWidth = 'min(460px, max(180px, calc(56.25dvh - 8.75rem)), calc(100vw - 5.5rem))';
 
 export default function ShortViewer(props: ShortViewerProps) {
     return <ShortViewerContent key={props.short.id} {...props} />;
@@ -45,6 +64,8 @@ export default function ShortViewer(props: ShortViewerProps) {
 function ShortViewerContent({
     short,
     nextShortId,
+    nextShortPreview,
+    previousShortId,
     commentCount,
     likedByUser,
     canFlagComments,
@@ -52,6 +73,16 @@ function ShortViewerContent({
     const { auth } = usePage<SharedData>().props;
     const authenticated = Boolean(auth.user);
     const player = useRef<HTMLVideoElement>(null);
+    const layout = useRef<HTMLElement>(null);
+    const commentTrigger = useRef<HTMLButtonElement>(null);
+    const commentPanel = useRef<HTMLDivElement>(null);
+    const restoreCommentFocus = useRef(false);
+    const pausedForComments = useRef(false);
+    const resumeAfterComments = useRef(false);
+    const swipeStart = useRef<{ x: number; y: number } | null>(null);
+    const transitionTimer = useRef<number | null>(null);
+    const transitionLocked = useRef(false);
+    const autoplayNext = useRef(pendingTransition?.id === short.id);
     const token = useRef<string | null>(null);
     const tokenRequest = useRef(false);
     const watched = useRef(0);
@@ -61,15 +92,288 @@ function ShortViewerContent({
     const [likes, setLikes] = useState(short.likes_count);
     const [liked, setLiked] = useState(likedByUser);
     const [comments, setComments] = useState(commentCount);
-    const [commentsOpen, setCommentsOpen] = useState(false);
+    const [panel, setPanel] = useState<'comments' | 'details' | null>(
+        () => pendingTransition?.id === short.id ? pendingTransition.panel : null,
+    );
+    const commentsOpen = panel === 'comments';
+    const detailsOpen = panel === 'details';
+    const panelOpen = panel !== null;
+    const [transitionPhase, setTransitionPhase] = useState<'idle' | 'exiting' | 'entering'>(
+        () => pendingTransition?.id === short.id ? 'entering' : 'idle',
+    );
+    const [wide, setWide] = useState(
+        () => typeof window !== 'undefined' && window.innerWidth >= 1080,
+    );
+    const [visibleViewport, setVisibleViewport] = useState<{
+        height: number;
+        top: number;
+    } | null>(null);
     const [loginPrompt, setLoginPrompt] = useState(false);
     const [liking, setLiking] = useState(false);
+    const [likeAnimation, setLikeAnimation] = useState(0);
     const [shareMessage, setShareMessage] = useState('');
     const [engagementError, setEngagementError] = useState('');
+    const [muted, setMuted] = useState(false);
+    const [playing, setPlaying] = useState(false);
+    const [progress, setProgress] = useState(0);
+    const [duration, setDuration] = useState(0);
     const onCountChange = useCallback(
         (value: number) => setComments(value),
         [],
     );
+
+    useEffect(() => {
+        if (transitionPhase !== 'entering') {
+            return;
+        }
+
+        pendingTransition = null;
+
+        let secondFrame: number | null = null;
+        const firstFrame = window.requestAnimationFrame(() => {
+            secondFrame = window.requestAnimationFrame(() => setTransitionPhase('idle'));
+        });
+
+        return () => {
+            window.cancelAnimationFrame(firstFrame);
+
+            if (secondFrame !== null) {
+                window.cancelAnimationFrame(secondFrame);
+            }
+        };
+    }, [transitionPhase]);
+
+    useEffect(() => {
+        if (!autoplayNext.current) {
+            return;
+        }
+
+        const timer = window.setTimeout(() => {
+            autoplayNext.current = false;
+
+            if (!(panelOpen && !wide)) {
+                void player.current?.play().catch(() => {});
+            }
+        }, window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 0 : 400);
+
+        return () => window.clearTimeout(timer);
+    }, [panelOpen, wide]);
+
+    useEffect(() => () => {
+        if (transitionTimer.current !== null) {
+            window.clearTimeout(transitionTimer.current);
+        }
+    }, []);
+
+    function navigateToShort(id: number) {
+        if (transitionLocked.current || id === short.id) {
+            return;
+        }
+
+        transitionLocked.current = true;
+        const wasPlaying = player.current ? !player.current.paused : false;
+        player.current?.pause();
+        const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+        if (!reducedMotion) {
+            setTransitionPhase('exiting');
+        }
+
+        const visit = () => {
+            pendingTransition = { id, panel };
+            const restoreCurrentVideo = () => {
+                pendingTransition = null;
+                transitionLocked.current = false;
+                setTransitionPhase('idle');
+
+                if (wasPlaying && !(panelOpen && !wide)) {
+                    void player.current?.play().catch(() => {});
+                }
+            };
+
+            router.visit(`/shorts/${id}`, {
+                onError: restoreCurrentVideo,
+                onCancel: restoreCurrentVideo,
+            });
+        };
+
+        if (reducedMotion) {
+            visit();
+        } else {
+            transitionTimer.current = window.setTimeout(visit, 400);
+        }
+    }
+
+    useEffect(() => {
+        const element = layout.current;
+
+        if (!element) {
+            return;
+        }
+
+        const measure = () => setWide(element.getBoundingClientRect().width >= 1080);
+
+        if (typeof ResizeObserver === 'undefined') {
+            window.addEventListener('resize', measure);
+            measure();
+
+            return () => window.removeEventListener('resize', measure);
+        }
+
+        const observer = new ResizeObserver(measure);
+        observer.observe(element);
+
+        return () => observer.disconnect();
+    }, []);
+
+    useEffect(() => {
+        if (!panelOpen || wide) {
+            if (commentsOpen) {
+                commentPanel.current?.querySelector<HTMLButtonElement>('[aria-label="Tutup komentar"]')?.focus();
+            }
+
+            if (pausedForComments.current) {
+                pausedForComments.current = false;
+
+                if (resumeAfterComments.current) {
+                    void player.current?.play().catch(() => {});
+                }
+            }
+
+            return;
+        }
+
+        const video = player.current;
+
+        if (video && !pausedForComments.current) {
+            resumeAfterComments.current = !video.paused;
+            pausedForComments.current = true;
+            video.pause();
+        }
+
+        const originalOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        const viewport = window.visualViewport;
+        const updateViewport = () => setVisibleViewport({
+            height: viewport?.height ?? window.innerHeight,
+            top: viewport?.offsetTop ?? 0,
+        });
+        updateViewport();
+        viewport?.addEventListener('resize', updateViewport);
+        viewport?.addEventListener('scroll', updateViewport);
+        commentPanel.current?.querySelector<HTMLButtonElement>('[aria-label="Tutup komentar"]')?.focus();
+
+        return () => {
+            document.body.style.overflow = originalOverflow;
+            viewport?.removeEventListener('resize', updateViewport);
+            viewport?.removeEventListener('scroll', updateViewport);
+        };
+    }, [panelOpen, commentsOpen, wide]);
+
+    useEffect(() => {
+        if (!commentsOpen) {
+            return;
+        }
+
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape' && !document.querySelector('[data-slot="dialog-content"][data-state="open"]')) {
+                event.preventDefault();
+                closeComments();
+            }
+        };
+        document.addEventListener('keydown', onKeyDown);
+
+        return () => document.removeEventListener('keydown', onKeyDown);
+    }, [commentsOpen]);
+
+    useEffect(() => {
+        if (!commentsOpen && restoreCommentFocus.current) {
+            restoreCommentFocus.current = false;
+            commentTrigger.current?.focus();
+        }
+    }, [commentsOpen]);
+
+    function closeComments() {
+        restoreCommentFocus.current = true;
+        setPanel(null);
+    }
+
+    function togglePlayback() {
+        const video = player.current;
+
+        if (!video) {
+            return;
+        }
+
+        if (video.paused) {
+            void video.play().catch(() => {});
+        } else {
+            video.pause();
+        }
+    }
+
+    function toggleMute() {
+        const video = player.current;
+
+        if (video) {
+            video.muted = !video.muted;
+            setMuted(video.muted);
+        }
+    }
+
+    function toggleFullscreen() {
+        const video = player.current;
+
+        if (!video) {
+            return;
+        }
+
+        if (document.fullscreenElement && document.exitFullscreen) {
+            void document.exitFullscreen();
+        } else if (video.parentElement?.requestFullscreen) {
+            void video.parentElement.requestFullscreen();
+        }
+    }
+
+    function onViewerWheel(event: React.WheelEvent<HTMLElement>) {
+        if (
+            Math.abs(event.deltaY) < 35 ||
+            (event.target as HTMLElement).closest('[data-short-panel]') ||
+            (layout.current && layout.current.scrollHeight > layout.current.clientHeight + 1)
+        ) {
+            return;
+        }
+
+        const target = event.deltaY > 0 ? nextShortId : previousShortId;
+
+        if (!target) {
+            return;
+        }
+
+        event.preventDefault();
+
+        if (transitionLocked.current || Date.now() < wheelCooldownUntil) {
+            return;
+        }
+
+        wheelCooldownUntil = Date.now() + 1000;
+        navigateToShort(target);
+    }
+
+    function endSwipe(x: number, y: number) {
+        const start = swipeStart.current;
+        swipeStart.current = null;
+
+        if (!start || Math.abs(y - start.y) < 70 || Math.abs(y - start.y) < Math.abs(x - start.x) * 1.4) {
+            return;
+        }
+
+        const target = y < start.y ? nextShortId : previousShortId;
+
+        if (target) {
+            navigateToShort(target);
+        }
+    }
 
     useEffect(() => {
         let last = performance.now();
@@ -156,6 +460,7 @@ function ShortViewerContent({
             }>(`/shorts/${short.id}/like`, {});
             setLiked(result.liked);
             setLikes(result.likes_count);
+            setLikeAnimation((value) => value + 1);
             setEngagementError('');
         } catch (caught) {
             setEngagementError((caught as Error).message);
@@ -179,156 +484,259 @@ function ShortViewerContent({
 
     const engagement = (
         <div
-            className={`hidden gap-3 lg:flex ${commentsOpen ? 'lg:flex-col' : ''}`}
+            className="flex flex-col items-center justify-center gap-5"
             aria-label="Interaksi video pendek"
         >
+            <div className="flex flex-col items-center gap-1">
             <Button
                 variant="ghost"
-                className="flex flex-col gap-1"
+                className="size-12 rounded-full border border-white/10 bg-white/5 text-foreground backdrop-blur-sm transition-colors hover:bg-white/15"
                 aria-label={`${liked ? 'Batal menyukai' : 'Sukai'} video: ${likes} suka`}
                 aria-pressed={liked}
                 disabled={liking}
                 onClick={() => void like()}
             >
                 <Heart
-                    className="size-5"
+                    key={likeAnimation}
+                    className={`size-5 ${liked ? 'text-red-500' : ''} ${likeAnimation > 0 ? 'short-like-pop' : ''}`}
                     fill={liked ? 'currentColor' : 'none'}
                 />
-                <span className="text-xs">{likes}</span>
             </Button>
+            <span className="text-xs">{likes}</span>
+            </div>
+            <div className="flex flex-col items-center gap-1">
             <Button
+                ref={commentTrigger}
                 variant="ghost"
-                className="hidden flex-col gap-1 lg:flex"
+                className={`size-12 rounded-full border border-white/10 bg-white/5 text-foreground backdrop-blur-sm transition-colors hover:bg-white/15 ${commentsOpen ? 'border-primary/60 bg-primary/15 text-primary' : ''}`}
                 aria-label={`Buka komentar: ${comments} komentar`}
                 aria-expanded={commentsOpen}
-                onClick={() => setCommentsOpen((open) => !open)}
+                onClick={() => commentsOpen ? closeComments() : setPanel('comments')}
             >
                 <MessageCircle className="size-5" />
-                <span className="text-xs">{comments}</span>
             </Button>
+            <span className="text-xs">{comments}</span>
+            </div>
+            <div className="flex flex-col items-center gap-1">
             <Button
                 variant="ghost"
-                className="flex flex-col gap-1"
+                className="size-12 rounded-full border border-white/10 bg-white/5 text-foreground backdrop-blur-sm transition-colors hover:bg-white/15"
                 aria-label="Bagikan video"
                 onClick={() => void share()}
             >
                 <Share2 className="size-5" />
-                <span className="text-xs">Bagikan</span>
             </Button>
+            <span className="text-xs">Bagikan</span>
+            </div>
         </div>
     );
 
     const details = (
-        <div className="space-y-4">
-            <h1 className="text-2xl font-bold">{short.title}</h1>
-            <p className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-                <Eye className="size-4" aria-hidden="true" />
-                {views.toLocaleString('id-ID')} tayangan
+        <div className="flex min-h-0 flex-col gap-5 overflow-y-auto p-5" data-short-panel>
+            <h2 className="pr-8 text-lg font-semibold">{short.title}</h2>
+            <div className="flex flex-wrap gap-5 text-sm text-muted-foreground">
+                <span>{likes.toLocaleString('id-ID')} suka</span>
+                <span>{views.toLocaleString('id-ID')} tayangan</span>
+            </div>
+            <Separator />
+            <p className="text-sm text-muted-foreground">
+                Terbit {new Intl.DateTimeFormat('id-ID', { dateStyle: 'long' }).format(new Date(short.published_at))}
             </p>
-            {short.description && (
-                <p className="leading-relaxed whitespace-pre-wrap text-muted-foreground">
-                    {short.description}
-                </p>
-            )}
+            <p className="text-sm leading-relaxed whitespace-pre-wrap">{short.description}</p>
         </div>
     );
 
     return (
         <>
             <Head title={`${short.title} — ApaKhabar Shorts`} />
-            <div className="min-h-screen bg-background text-foreground">
+            <div className="min-h-screen overflow-x-hidden bg-background text-foreground">
                 <HeaderBar />
                 <main
-                    className={`mx-auto px-4 py-8 sm:px-6 ${commentsOpen ? 'max-w-7xl' : 'max-w-5xl'}`}
+                    ref={layout}
+                    onWheel={onViewerWheel}
+                    className={`mx-auto flex max-w-7xl flex-col px-3 pt-3 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:px-6 ${wide ? 'h-[calc(100dvh-65px)] overflow-x-hidden overflow-y-auto' : 'min-h-[calc(100dvh-65px)]'}`}
                 >
+                    <div className="mx-auto flex w-fit max-w-full flex-1 flex-col justify-center">
                     <Link
                         href="/#shorts"
-                        className="mb-6 inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-primary"
+                        className={`mb-3 inline-flex min-h-11 w-fit shrink-0 items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-primary ${commentsOpen && !wide ? 'invisible' : ''}`}
                     >
                         <ArrowLeft className="size-4" aria-hidden="true" />
                         Kembali ke Shorts
                     </Link>
                     <div
-                        className={`grid gap-6 md:grid-cols-[minmax(0,360px)_1fr] md:items-start ${commentsOpen ? 'lg:grid-cols-[minmax(0,360px)_3.5rem_minmax(0,380px)_3.5rem]' : ''}`}
+                        className={`${panelOpen && !wide ? 'block' : 'grid items-start justify-center gap-3 sm:gap-5'}`}
+                        style={wide ? { gridTemplateColumns: panelOpen
+                            ? `${playerWidth} 3.25rem minmax(0, 380px) 3rem`
+                            : `${playerWidth} 3.25rem 3rem` } : panelOpen ? undefined : { gridTemplateColumns: `${playerWidth} 3.25rem` }}
                     >
-                        <div className="min-w-0 space-y-5">
+                        <div className={`min-w-0 ${panelOpen && !wide ? 'hidden' : ''} ${!wide ? 'row-span-2' : ''}`}>
+                        <div
+                            className={`relative aspect-[9/16] min-w-0 overflow-hidden rounded-xl bg-black transition-[transform,opacity] duration-[400ms] ease-out motion-reduce:transition-none ${transitionPhase === 'exiting' ? '-translate-y-[8%] opacity-0' : transitionPhase === 'entering' ? 'translate-y-[8%] opacity-0' : 'translate-y-0 opacity-100'} ${!wide ? 'touch-pan-x' : ''}`}
+                            style={{ width: '100%' }}
+                            onTouchStart={(event) => {
+                                swipeStart.current = {
+                                    x: event.touches[0].clientX,
+                                    y: event.touches[0].clientY,
+                                };
+                            }}
+                            onTouchEnd={(event) => endSwipe(event.changedTouches[0].clientX, event.changedTouches[0].clientY)}
+                            onTouchCancel={() => {
+                                swipeStart.current = null;
+                            }}
+                        >
                             <video
                                 ref={player}
                                 src={short.video_url}
                                 poster={short.thumbnail_url}
-                                controls
                                 playsInline
                                 preload="metadata"
-                                onPlay={startView}
-                                className="aspect-[9/16] w-full rounded-xl bg-black object-contain"
+                                onPlay={() => {
+                                    startView();
+                                    setPlaying(true);
+                                }}
+                                onPause={() => setPlaying(false)}
+                                onLoadedMetadata={(event) => setDuration(event.currentTarget.duration)}
+                                onTimeUpdate={(event) => setProgress(event.currentTarget.currentTime)}
+                                className="absolute inset-0 h-full w-full bg-black object-contain"
                                 aria-label={short.title}
                             />
-                            {commentsOpen && (
-                                <div className="hidden lg:block">{details}</div>
-                            )}
-                        </div>
-                        <div
-                            className={`min-w-0 space-y-5 ${commentsOpen ? 'lg:pt-20' : ''}`}
-                        >
-                            <div className={commentsOpen ? 'lg:hidden' : ''}>
-                                {details}
+                            <button
+                                type="button"
+                                aria-label="Putar atau jeda video"
+                                onClick={togglePlayback}
+                                className="absolute inset-x-0 top-14 bottom-8 z-10 cursor-pointer focus-visible:outline-2 focus-visible:outline-ring"
+                            />
+                            <div className="absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-black/75 to-transparent px-3 pt-3 pb-7 text-white">
+                                <div className="flex items-center gap-2">
+                                    <Button type="button" size="icon" variant="ghost" className="size-10 rounded-full bg-black/35 hover:bg-black/55" aria-label={playing ? 'Jeda video' : 'Putar video'} onClick={togglePlayback}>
+                                        {playing ? <Pause className="size-4" /> : <Play className="size-4" />}
+                                    </Button>
+                                    <Button type="button" size="icon" variant="ghost" className="size-10 rounded-full bg-black/35 hover:bg-black/55" aria-label={muted ? 'Bunyikan video' : 'Bisukan video'} onClick={toggleMute}>
+                                        {muted ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
+                                    </Button>
+                                    <Button type="button" size="icon" variant="ghost" className="ml-auto size-10 rounded-full bg-black/35 hover:bg-black/55" aria-label="Layar penuh" onClick={toggleFullscreen}>
+                                        <Maximize className="size-4" />
+                                    </Button>
+                                </div>
                             </div>
+                            <div className="absolute inset-x-3 bottom-2 z-20">
+                                <input type="range" min="0" max={duration || 0} value={progress} step="0.1" aria-label="Posisi video" className="h-2 w-full accent-primary" onChange={(event) => {
+                                    if (player.current) {
+                                        player.current.currentTime = Number(event.target.value);
+                                    }
+                                }} />
+                            </div>
+                        </div>
+                        <h1 className="mt-3 min-w-0">
+                            <button type="button" title={short.title} onClick={() => setPanel('details')} className="block max-w-full truncate text-left text-sm font-semibold text-foreground transition-colors hover:text-primary focus-visible:outline-2 focus-visible:outline-ring">
+                                {short.title}
+                            </button>
+                        </h1>
+                        {short.description && (
+                            <button type="button" onClick={() => setPanel('details')} className="mt-1 line-clamp-2 max-w-full text-left text-xs text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">
+                                {short.description}
+                            </button>
+                        )}
+                        {nextShortPreview && (
+                            <div className="mt-3 h-5 overflow-hidden rounded-t-lg opacity-65" aria-hidden="true">
+                                <img src={nextShortPreview.thumbnail_url} alt="" className="h-40 w-full object-cover object-top" loading="lazy" />
+                            </div>
+                        )}
+                        </div>
+                        <div className={`min-w-0 self-end justify-self-center pb-12 ${panelOpen && !wide ? 'hidden' : ''}`}>
                             {engagement}
-                            {engagementError && (
+                            {engagementError && !(commentsOpen && !wide) && (
                                 <p
                                     role="alert"
-                                    className="text-xs text-destructive"
+                                    className={`${wide ? 'text-xs' : 'fixed inset-x-4 bottom-[calc(1rem+env(safe-area-inset-bottom))] z-40 mx-auto max-w-sm rounded-lg border bg-card p-3 text-xs shadow-lg'} text-destructive`}
                                 >
                                     {engagementError}
                                 </p>
                             )}
-                            {shareMessage && (
+                            {shareMessage && !(commentsOpen && !wide) && (
                                 <p
                                     role="status"
-                                    className="text-xs text-muted-foreground"
+                                    className={`${wide ? 'text-xs' : 'fixed inset-x-4 bottom-[calc(1rem+env(safe-area-inset-bottom))] z-40 mx-auto max-w-sm rounded-lg border bg-card p-3 text-xs shadow-lg'} text-muted-foreground`}
                                 >
                                     {shareMessage}
                                 </p>
                             )}
-                            {!commentsOpen && nextShortId && (
-                                <Link
-                                    href={`/shorts/${nextShortId}`}
-                                    className="hidden items-center gap-2 text-sm text-primary lg:inline-flex"
-                                >
-                                    Video berikutnya{' '}
-                                    <ArrowDown className="size-4" />
-                                </Link>
-                            )}
                         </div>
                         {commentsOpen && (
-                            <div className="hidden min-w-0 lg:block">
+                            <div
+                                ref={commentPanel}
+                                className={wide ? 'min-w-0 animate-in slide-in-from-right-4 duration-300 motion-reduce:animate-none' : 'fixed inset-x-0 z-50 min-w-0 bg-background animate-in slide-in-from-right duration-300 motion-reduce:animate-none'}
+                                data-short-panel
+                                style={!wide ? {
+                                    top: visibleViewport?.top ?? 0,
+                                    height: visibleViewport ? `${visibleViewport.height}px` : '100dvh',
+                                } : undefined}
+                            >
                                 <ShortComments
                                     shortId={short.id}
                                     authenticated={authenticated}
                                     canFlag={canFlagComments}
                                     count={comments}
                                     onCountChange={onCountChange}
-                                    onClose={() => setCommentsOpen(false)}
+                                    onClose={closeComments}
                                     onLogin={() => setLoginPrompt(true)}
+                                    fullScreen={!wide}
                                 />
                             </div>
                         )}
-                        {commentsOpen && (
-                            <div className="hidden self-center justify-self-end lg:block">
-                                {nextShortId && (
-                                    <Link
-                                        href={`/shorts/${nextShortId}`}
-                                        aria-label="Video berikutnya"
-                                        className="flex size-12 items-center justify-center rounded-full border bg-secondary transition-colors hover:bg-accent"
-                                    >
-                                        <ArrowDown className="size-5" />
-                                    </Link>
-                                )}
-                            </div>
+                        {detailsOpen && wide && (
+                            <section aria-label="Detail video" data-short-panel className="flex h-[min(820px,calc(100dvh-11rem))] min-w-0 flex-col overflow-hidden rounded-xl border bg-card animate-in slide-in-from-right-4 duration-300 motion-reduce:animate-none">
+                                <div className="flex items-center justify-between border-b px-5 py-3">
+                                    <h2 className="font-semibold">Detail Video</h2>
+                                    <Button type="button" size="icon" variant="ghost" className="size-11" aria-label="Tutup detail video" onClick={() => setPanel(null)}>×</Button>
+                                </div>
+                                {details}
+                            </section>
                         )}
+                        <div
+                            className={`self-center justify-self-center -translate-y-8 ${panelOpen && !wide ? 'hidden' : ''} ${wide ? panelOpen ? 'col-start-4' : 'col-start-3' : 'col-start-2'}`}
+                        >
+                            {nextShortId && (
+                                <TooltipProvider>
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <button
+                                                type="button"
+                                                aria-label="Video berikutnya"
+                                                disabled={transitionPhase !== 'idle'}
+                                                onClick={() => navigateToShort(nextShortId)}
+                                                className="flex size-12 items-center justify-center rounded-full border border-white/10 bg-white/5 transition-colors hover:bg-white/15 focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50"
+                                            >
+                                                <ArrowDown
+                                                    className="size-5"
+                                                    aria-hidden="true"
+                                                />
+                                            </button>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="left">
+                                            Video berikutnya
+                                        </TooltipContent>
+                                    </Tooltip>
+                                </TooltipProvider>
+                            )}
+                        </div>
+                    </div>
                     </div>
                 </main>
             </div>
+            <Sheet open={detailsOpen && !wide} onOpenChange={(open) => {
+                if (!open) {
+                    setPanel(null);
+                }
+            }}>
+                <SheetContent side="right" className="w-full max-w-none gap-0 sm:max-w-none" data-short-panel>
+                    <SheetHeader className="border-b">
+                        <SheetTitle>Detail Video</SheetTitle>
+                    </SheetHeader>
+                    {details}
+                </SheetContent>
+            </Sheet>
             <Dialog open={loginPrompt} onOpenChange={setLoginPrompt}>
                 <DialogContent>
                     <DialogTitle>Masuk diperlukan</DialogTitle>

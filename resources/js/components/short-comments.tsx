@@ -25,7 +25,7 @@ type Page = { data: Comment[]; current_page: number; last_page: number };
 type ReplyPage = Page & { open: boolean; loading: boolean };
 
 const action =
-    'inline-flex items-center gap-1 rounded text-xs text-muted-foreground no-underline transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50';
+    'inline-flex items-center gap-1 rounded text-xs text-muted-foreground no-underline transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50 [@media(pointer:coarse)]:min-h-11';
 const primary =
     'border border-green-600 bg-green-600 text-white enabled:hover:border-green-700 enabled:hover:bg-green-700 disabled:opacity-50';
 
@@ -37,6 +37,7 @@ export function ShortComments({
     onCountChange,
     onClose,
     onLogin,
+    fullScreen = false,
 }: {
     shortId: number;
     authenticated: boolean;
@@ -45,6 +46,7 @@ export function ShortComments({
     onCountChange: (count: number) => void;
     onClose: () => void;
     onLogin: () => void;
+    fullScreen?: boolean;
 }) {
     const [comments, setComments] = useState<Comment[]>([]);
     const [page, setPage] = useState(0);
@@ -367,7 +369,7 @@ export function ShortComments({
                         >
                             <Flag size={13} aria-hidden="true" />
                             {canFlag
-                                ? 'Tandai'
+                                ? 'Tandai Admin'
                                 : alreadyReported
                                   ? 'Dilaporkan'
                                   : 'Laporkan'}
@@ -549,11 +551,13 @@ export function ShortComments({
     return (
         <section
             aria-label="Komentar video pendek"
-            className="flex h-[min(680px,calc(100dvh-9rem))] min-h-0 flex-col overflow-hidden rounded-xl border bg-card"
+            className={`flex min-h-0 flex-col overflow-hidden bg-card ${fullScreen ? 'h-full w-full' : 'rounded-xl border'}`}
+            style={!fullScreen ? { height: 'min(820px, max(320px, calc(100dvh - 11rem)))' } : undefined}
         >
-            <header className="flex shrink-0 items-center justify-between border-b px-4 py-3">
+            <header className={`flex shrink-0 items-center justify-between border-b px-4 py-3 ${fullScreen ? 'pt-[calc(0.75rem+env(safe-area-inset-top))]' : ''}`}>
                 <h2 className="text-sm font-semibold">Komentar ({count})</h2>
                 <Button
+                    className="size-11"
                     size="icon"
                     variant="ghost"
                     aria-label="Tutup komentar"
@@ -600,7 +604,7 @@ export function ShortComments({
                 )}
             </div>
             <form
-                className="shrink-0 space-y-2 border-t bg-card p-4"
+                className={`shrink-0 space-y-2 border-t bg-card p-4 ${fullScreen ? 'pb-[calc(1rem+env(safe-area-inset-bottom))]' : ''}`}
                 onSubmit={(event) => {
                     event.preventDefault();
                     void submit();

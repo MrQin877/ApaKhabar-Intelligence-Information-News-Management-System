@@ -25,11 +25,52 @@ const nodes = (node) =>
           ? node.flatMap(nodes)
           : [node, ...nodes(node.props?.children)];
 
-function mount() {
+function mount({ authenticated = true, likedByUser = false, width = 1280, reducedMotion = false } = {}) {
     const slots = [];
+    const requests = [];
+    const copied = [];
+    const visits = [];
+    let visitOptions;
+    const timers = [];
+    const effects = [];
+    let measuredWidth = width;
+    let resizeObserver;
+    let remoteLiked = likedByUser;
     let cursor = 0;
     const context = {
         exports: {},
+        URL,
+        ResizeObserver: class {
+            constructor(callback) {
+                resizeObserver = callback;
+            }
+            observe() {
+                resizeObserver();
+            }
+            disconnect() {}
+        },
+        window: {
+            innerWidth: width,
+            location: { origin: 'https://apakhabar.test' },
+            matchMedia: () => ({ matches: reducedMotion }),
+            setTimeout(callback) {
+                timers.push(callback);
+
+                return timers.length;
+            },
+            clearTimeout() {},
+            requestAnimationFrame(callback) {
+                callback();
+            },
+            cancelAnimationFrame() {},
+        },
+        navigator: {
+            clipboard: {
+                async writeText(value) {
+                    copied.push(value);
+                },
+            },
+        },
         require(name) {
             if (name === 'react') {
                 return {
@@ -58,7 +99,9 @@ function mount() {
 
                         return (slots[index] ??= { current: initial });
                     },
-                    useEffect() {},
+                    useEffect(callback) {
+                        effects.push(callback);
+                    },
                     useCallback(callback) {
                         return callback;
                     },
@@ -69,7 +112,31 @@ function mount() {
                 return {
                     Head: 'Head',
                     Link: 'Link',
-                    usePage: () => ({ props: { auth: { user: { id: 1 } } } }),
+                    router: {
+                        visit(path, options) {
+                            visits.push(path);
+                            visitOptions = options;
+                        },
+                    },
+                    usePage: () => ({
+                        props: {
+                            auth: { user: authenticated ? { id: 1 } : null },
+                        },
+                    }),
+                };
+            }
+
+            if (name === '@/lib/meta-auth') {
+                return {
+                    async metaRequest(path) {
+                        requests.push(path);
+                        remoteLiked = !remoteLiked;
+
+                        return {
+                            liked: remoteLiked,
+                            likes_count: remoteLiked ? 4 : 3,
+                        };
+                    },
                 };
             }
 
@@ -90,25 +157,270 @@ function mount() {
             thumbnail_url: 'https://res.cloudinary.com/demo/image/upload/7.jpg',
             view_count: 12,
             likes_count: 3,
+            published_at: '2026-10-20T12:00:00Z',
         },
         nextShortId: 8,
+        nextShortPreview: { id: 8, title: 'Video berikutnya', thumbnail_url: '/next.jpg' },
+        previousShortId: 6,
         commentCount: 2,
-        likedByUser: false,
+        likedByUser,
         canFlagComments: true,
     };
     const render = () => {
         cursor = 0;
+        effects.length = 0;
         const page = context.exports.default(props);
 
         return nodes(page.type(page.props));
     };
 
-    return { render };
+    const resize = (value) => {
+        measuredWidth = value;
+        const main = render().find((node) => node.type === 'main');
+        main.props.ref.current ??= {
+            getBoundingClientRect: () => ({ width: measuredWidth }),
+        };
+
+        if (!resizeObserver) {
+            effects.find((effect) => effect.toString().includes('ResizeObserver'))();
+        } else {
+            resizeObserver();
+        }
+    };
+
+    const advance = () => {
+        timers.shift()?.();
+    };
+
+    const switchShort = (id) => {
+        slots.length = 0;
+        props.short = {
+            ...props.short,
+            id,
+            title: 'Video berikutnya',
+            description: 'Kegiatan baru',
+            view_count: 25,
+            likes_count: 9,
+            video_url: `https://res.cloudinary.com/demo/video/upload/${id}.mp4`,
+        };
+        props.commentCount = 5;
+    };
+
+    return {
+        render, resize, advance, switchShort, requests, copied, visits,
+        get visitOptions() {
+            return visitOptions;
+        },
+    };
 }
 
-test('desktop comment panel occupies its own grid column and closing restores the original viewer layout', () => {
+test('resizing while comments are open switches between full view and side panel', () => {
+    const view = mount({ width: 800 });
+    let current = view.render();
+    current.find((node) => node.props?.['aria-label'] === 'Buka komentar: 2 komentar').props.onClick();
+    current = view.render();
+    assert.equal(current.find((node) => node.type === 'ShortComments').props.fullScreen, true);
+
+    view.resize(1000);
+    current = view.render();
+    assert.equal(current.find((node) => node.type === 'ShortComments').props.fullScreen, true);
+
+    view.resize(1100);
+    current = view.render();
+    assert.equal(current.find((node) => node.type === 'ShortComments').props.fullScreen, false);
+    assert.ok(current.some((node) => node.props?.style?.gridTemplateColumns?.includes('minmax(0, 380px)')));
+
+    view.resize(800);
+    current = view.render();
+    assert.equal(current.find((node) => node.type === 'ShortComments').props.fullScreen, true);
+});
+
+test('next video slides out once and opens new comments without showing the previous thread', () => {
     const view = mount();
     let current = view.render();
+    current.find((node) => node.props?.['aria-label'] === 'Buka komentar: 2 komentar').props.onClick();
+    current = view.render();
+    let pauses = 0;
+    current.find((node) => node.type === 'video').props.ref.current = {
+        paused: false,
+        pause() {
+            pauses++;
+        },
+    };
+    current.find((node) => node.props?.['aria-label'] === 'Video berikutnya').props.onClick();
+    current.find((node) => node.props?.['aria-label'] === 'Video berikutnya').props.onClick();
+    assert.equal(pauses, 1);
+    current = view.render();
+    assert.equal(current.find((node) => node.props?.['aria-label'] === 'Video berikutnya').props.disabled, true);
+    assert.ok(current.some((node) => node.props?.className?.includes('-translate-y-[8%]')));
+    view.advance();
+    assert.deepEqual(view.visits, ['/shorts/8']);
+
+    view.switchShort(8);
+    current = view.render();
+    assert.equal(current.find((node) => node.type === 'ShortComments').props.shortId, 8);
+    assert.equal(current.find((node) => node.type === 'ShortComments').props.count, 5);
+    assert.ok(current.some((node) => node.type === 'video' && node.props.src.endsWith('/8.mp4')));
+    assert.ok(current.some((node) => node.type === 'button' && node.props.title === 'Video berikutnya'));
+    assert.ok(current.some((node) => node.type === 'p' && node.props.children === 'Kegiatan baru'));
+    assert.ok(current.some((node) => node.props?.['aria-label'] === 'Sukai video: 9 suka'));
+    assert.ok(current.some((node) => node.props?.className?.includes('translate-y-[8%]')));
+    assert.equal(current.find((node) => node.type === 'button' && node.props?.['aria-label'] === 'Video berikutnya').props.disabled, true);
+});
+
+test('comment button and panel X both close the panel without replacing the video', () => {
+    const view = mount();
+    let current = view.render();
+    const videoRef = current.find((node) => node.type === 'video').props.ref;
+    current.find((node) => node.props?.['aria-label'] === 'Buka komentar: 2 komentar').props.onClick();
+    current = view.render();
+    assert.ok(current.find((node) => node.props?.['aria-label'] === 'Buka komentar: 2 komentar').props.className.includes('border-primary/60'));
+    current.find((node) => node.props?.['aria-label'] === 'Buka komentar: 2 komentar').props.onClick();
+    current = view.render();
+    assert.equal(current.filter((node) => node.type === 'ShortComments').length, 0);
+    assert.equal(current.find((node) => node.type === 'video').props.ref, videoRef);
+
+    current.find((node) => node.props?.['aria-label'] === 'Buka komentar: 2 komentar').props.onClick();
+    current = view.render();
+    current.find((node) => node.type === 'ShortComments').props.onClose();
+    current = view.render();
+    assert.equal(current.filter((node) => node.type === 'ShortComments').length, 0);
+    assert.equal(current.find((node) => node.type === 'video').props.ref, videoRef);
+});
+
+test('reduced motion navigates immediately without an outgoing slide', () => {
+    const view = mount({ reducedMotion: true });
+    const current = view.render();
+    current.find((node) => node.props?.['aria-label'] === 'Video berikutnya').props.onClick();
+    assert.deepEqual(view.visits, ['/shorts/8']);
+});
+
+test('failed next-video navigation unlocks the control and restores playback', () => {
+    const view = mount();
+    let current = view.render();
+    let plays = 0;
+    current.find((node) => node.type === 'video').props.ref.current = {
+        paused: false,
+        pause() {},
+        play() {
+            plays++;
+
+            return Promise.resolve();
+        },
+    };
+    current.find((node) => node.props?.['aria-label'] === 'Video berikutnya').props.onClick();
+    view.advance();
+    view.visitOptions.onError();
+    current = view.render();
+    assert.equal(current.find((node) => node.type === 'button' && node.props?.['aria-label'] === 'Video berikutnya').props.disabled, false);
+    assert.equal(plays, 1);
+});
+
+test('title opens details with real statistics and comments remain mutually exclusive', () => {
+    const view = mount();
+    let current = view.render();
+    const videoRef = current.find((node) => node.type === 'video').props.ref;
+    const title = current.find((node) => node.type === 'button' && node.props.title === 'Video warga');
+    assert.ok(title.props.className.includes('truncate'));
+    title.props.onClick();
+    current = view.render();
+    assert.ok(current.some((node) => node.props?.['aria-label'] === 'Detail video'));
+    assert.equal(current.filter((node) => node.type === 'ShortComments').length, 0);
+    assert.ok(current.some((node) => node.type === 'p' && node.props.children === 'Deskripsi'));
+    current.find((node) => node.props?.['aria-label'] === 'Tutup detail video').props.onClick();
+    current = view.render();
+    current.find((node) => node.type === 'button' && node.props.children === 'Deskripsi').props.onClick();
+    current = view.render();
+    assert.ok(current.some((node) => node.props?.['aria-label'] === 'Detail video'));
+
+    current.find((node) => node.props?.['aria-label'] === 'Buka komentar: 2 komentar').props.onClick();
+    current = view.render();
+    assert.equal(current.filter((node) => node.props?.['aria-label'] === 'Detail video').length, 0);
+    assert.equal(current.filter((node) => node.type === 'ShortComments').length, 1);
+    assert.equal(current.find((node) => node.type === 'video').props.ref, videoRef);
+});
+
+test('top player controls, external engagement counts and muted state use the same player', () => {
+    const view = mount();
+    let current = view.render();
+    const video = current.find((node) => node.type === 'video');
+    video.props.ref.current = { muted: false, currentTime: 0 };
+    assert.equal(video.props.controls, undefined);
+    assert.ok(current.some((node) => node.props?.['aria-label'] === 'Posisi video'));
+    assert.ok(current.some((node) => node.props?.['aria-label'] === 'Layar penuh'));
+    current.find((node) => node.props?.['aria-label'] === 'Bisukan video').props.onClick();
+    current = view.render();
+    assert.equal(video.props.ref.current.muted, true);
+    assert.ok(current.some((node) => node.props?.['aria-label'] === 'Bunyikan video'));
+    const like = current.find((node) => node.props?.['aria-label'] === 'Sukai video: 3 suka');
+    assert.equal(nodes(like).filter((node) => node.type === 'span').length, 0);
+    assert.ok(current.some((node) => node.type === 'span' && node.props.children === 3));
+});
+
+test('narrow details use a Sheet and replace the player without losing its ref', () => {
+    const view = mount({ width: 800 });
+    let current = view.render();
+    const videoRef = current.find((node) => node.type === 'video').props.ref;
+    current.find((node) => node.type === 'button' && node.props.title === 'Video warga').props.onClick();
+    current = view.render();
+    assert.equal(current.find((node) => node.type === 'Sheet').props.open, true);
+    assert.ok(current.some((node) => node.props?.className?.includes('row-span-2') && node.props.className.split(' ').includes('hidden')));
+    current.find((node) => node.type === 'Sheet').props.onOpenChange(false);
+    current = view.render();
+    assert.equal(current.find((node) => node.type === 'Sheet').props.open, false);
+    assert.equal(current.find((node) => node.type === 'video').props.ref, videoRef);
+});
+
+test('wheel navigation advances once and preserves the active details panel', () => {
+    const view = mount();
+    let current = view.render();
+    current.find((node) => node.type === 'button' && node.props.title === 'Video warga').props.onClick();
+    current = view.render();
+    const main = current.find((node) => node.type === 'main');
+    let prevented = 0;
+    const wheel = { deltaY: 110, target: { closest: () => null }, preventDefault: () => prevented++ };
+    main.props.onWheel(wheel);
+    main.props.onWheel(wheel);
+    assert.equal(prevented, 2);
+    view.advance();
+    assert.deepEqual(view.visits, ['/shorts/8']);
+    view.switchShort(8);
+    current = view.render();
+    assert.ok(current.some((node) => node.props?.['aria-label'] === 'Detail video'));
+    assert.ok(current.some((node) => node.type === 'button' && node.props.title === 'Video berikutnya'));
+    current.find((node) => node.type === 'main').props.onWheel(wheel);
+    view.advance();
+    assert.deepEqual(view.visits, ['/shorts/8']);
+});
+
+test('short browser heights keep internal wheel scrolling available', () => {
+    const view = mount();
+    const main = view.render().find((node) => node.type === 'main');
+    main.props.ref.current = { scrollHeight: 900, clientHeight: 600 };
+    let prevented = false;
+    main.props.onWheel({
+        deltaY: 100,
+        target: { closest: () => null },
+        preventDefault: () => {
+            prevented = true;
+        },
+    });
+    view.advance();
+    assert.equal(prevented, false);
+    assert.deepEqual(view.visits, []);
+});
+
+test('viewer centers the selected Short with one next-video control and an independent comment panel', () => {
+    const view = mount();
+    let current = view.render();
+    assert.ok(current.find((node) => node.type === 'main').props.className.includes('h-[calc(100dvh-65px)]'));
+    assert.ok(current.find((node) => node.type === 'main').props.className.includes('overflow-y-auto'));
+    assert.equal(current.find((node) => node.props?.className?.includes('aspect-[9/16]')).props.style.width, '100%');
+    const player = current.find((node) => node.props?.className?.includes('aspect-[9/16]'));
+    assert.equal(nodes(player).filter((node) => node.type === 'button' && node.props.title === 'Video warga').length, 0);
+    assert.ok(current.some((node) => node.type === 'button' && node.props.title === 'Video warga'));
+    assert.ok(current.some((node) => node.type === 'img' && node.props.src === '/next.jpg'));
+    assert.ok(current.some((node) => node.props?.['aria-label'] === 'Posisi video' && node.props?.className?.includes('accent-primary')));
     assert.ok(
         current.some(
             (node) =>
@@ -121,9 +433,31 @@ test('desktop comment panel occupies its own grid column and closing restores th
     );
     assert.ok(
         current.some((node) =>
-            node.props?.className?.includes(
-                'md:grid-cols-[minmax(0,360px)_1fr]',
-            ),
+            node.props?.style?.gridTemplateColumns?.endsWith('3.25rem 3rem'),
+        ),
+    );
+    assert.equal(
+        current.filter(
+            (node) => node.props?.['aria-label'] === 'Video berikutnya',
+        ).length,
+        1,
+    );
+    assert.equal(
+        current.find(
+            (node) => node.props?.['aria-label'] === 'Video berikutnya',
+        ).props.type,
+        'button',
+    );
+    assert.ok(current.some((node) => node.type === 'TooltipContent'));
+    assert.equal(
+        current.filter((node) => node.type === 'DropdownMenu').length,
+        0,
+    );
+    assert.ok(
+        current.some(
+            (node) =>
+                node.type === 'video' &&
+                node.props['aria-label'] === 'Video warga',
         ),
     );
 
@@ -136,9 +470,7 @@ test('desktop comment panel occupies its own grid column and closing restores th
     current = view.render();
     assert.ok(
         current.some((node) =>
-            node.props?.className?.includes(
-                'lg:grid-cols-[minmax(0,360px)_3.5rem_minmax(0,380px)_3.5rem]',
-            ),
+            node.props?.style?.gridTemplateColumns?.includes('minmax(0, 380px)'),
         ),
     );
     assert.ok(
@@ -154,8 +486,14 @@ test('desktop comment panel occupies its own grid column and closing restores th
     assert.equal(
         current.find(
             (node) => node.props?.['aria-label'] === 'Video berikutnya',
-        ).props.href,
-        '/shorts/8',
+        ).props.type,
+        'button',
+    );
+    assert.equal(
+        current.filter(
+            (node) => node.props?.['aria-label'] === 'Video berikutnya',
+        ).length,
+        1,
     );
     current.find((node) => node.type === 'ShortComments').props.onClose();
     current = view.render();
@@ -165,9 +503,125 @@ test('desktop comment panel occupies its own grid column and closing restores th
     );
     assert.ok(
         current.some((node) =>
-            node.props?.className?.includes(
-                'md:grid-cols-[minmax(0,360px)_1fr]',
-            ),
+            node.props?.style?.gridTemplateColumns?.endsWith('3.25rem 3rem'),
         ),
     );
+});
+
+for (const width of [800, 390]) {
+    test(`${width}px viewer replaces the player with full-height comments and restores it on close`, () => {
+        const view = mount({ width });
+        let current = view.render();
+        const videoRef = current.find((node) => node.type === 'video').props.ref;
+        assert.ok(current.some((node) => node.props?.style?.gridTemplateColumns?.endsWith('3.25rem')));
+        assert.ok(current.some((node) => node.props?.['aria-label'] === 'Video berikutnya'));
+
+        current.find((node) => node.props?.['aria-label'] === 'Buka komentar: 2 komentar').props.onClick();
+        current = view.render();
+        assert.ok(current.some((node) => node.type === 'ShortComments' && node.props.fullScreen === true));
+        assert.ok(current.some((node) => node.props?.className?.includes('fixed inset-x-0 z-50')));
+        assert.ok(current.some((node) => node.type === 'video' && node.props.src.endsWith('/7.mp4')));
+        assert.equal(current.find((node) => node.type === 'video').props.ref, videoRef);
+        assert.ok(current.some((node) => node.props?.className?.includes('row-span-2') && node.props.className.split(' ').includes('hidden')));
+        assert.ok(current.some((node) => node.props?.className?.includes('self-center justify-self-center') && node.props.className.includes('hidden')));
+
+        current.find((node) => node.type === 'ShortComments').props.onClose();
+        current = view.render();
+        assert.equal(current.filter((node) => node.type === 'ShortComments').length, 0);
+        assert.ok(current.some((node) => node.props?.['aria-label'] === 'Video berikutnya'));
+        assert.equal(current.find((node) => node.type === 'video').props.ref, videoRef);
+    });
+}
+
+test('mobile swipe navigates to adjacent published Shorts and tap toggles playback', () => {
+    const view = mount({ width: 390 });
+    const current = view.render();
+    const player = current.find((node) => node.type === 'video').props.ref;
+    let played = 0;
+    let paused = 0;
+    player.current = {
+        paused: true,
+        currentTime: 12,
+        play() {
+            played++;
+            this.paused = false;
+
+            return Promise.resolve();
+        },
+        pause() {
+            paused++;
+            this.paused = true;
+        },
+    };
+    const tap = current.find((node) => node.props?.['aria-label'] === 'Putar atau jeda video');
+    tap.props.onClick();
+    tap.props.onClick();
+    assert.equal(played, 1);
+    assert.equal(paused, 1);
+    assert.equal(player.current.currentTime, 12);
+
+    const surface = current.find((node) => node.props?.className?.includes('aspect-[9/16]'));
+    surface.props.onTouchStart({ touches: [{ clientX: 50, clientY: 200 }] });
+    surface.props.onTouchEnd({ changedTouches: [{ clientX: 55, clientY: 100 }] });
+    surface.props.onTouchStart({ touches: [{ clientX: 50, clientY: 100 }] });
+    surface.props.onTouchEnd({ changedTouches: [{ clientX: 55, clientY: 200 }] });
+    view.advance();
+    assert.deepEqual(view.visits, ['/shorts/8']);
+});
+
+test('like toggles backend count and red state with a restartable pop animation', async () => {
+    const view = mount();
+    let current = view.render();
+    await current
+        .find((node) => node.props?.['aria-label'] === 'Sukai video: 3 suka')
+        .props.onClick();
+    await new Promise(setImmediate);
+    current = view.render();
+    assert.equal(
+        current.find((node) => node.props?.['aria-label'] === 'Batal menyukai video: 4 suka').props['aria-pressed'],
+        true,
+    );
+    const likedHeart = current.find(
+        (node) => node.type === 'Heart' && node.props?.className?.includes('short-like-pop'),
+    );
+    assert.ok(likedHeart.props.className.includes('text-red-500'));
+    assert.equal(likedHeart.props.fill, 'currentColor');
+    const animationKey = likedHeart.key;
+    await current
+        .find((node) => node.props?.['aria-label'] === 'Batal menyukai video: 4 suka')
+        .props.onClick();
+    await new Promise(setImmediate);
+    current = view.render();
+    const unlikedHeart = current.find(
+        (node) => node.type === 'Heart' && node.props?.className?.includes('short-like-pop'),
+    );
+    assert.notEqual(unlikedHeart.key, animationKey);
+    assert.equal(unlikedHeart.props.fill, 'none');
+    assert.ok(
+        !unlikedHeart.props.className.includes('text-red-500'),
+    );
+    assert.deepEqual(view.requests, ['/shorts/7/like', '/shorts/7/like']);
+});
+
+test('share copies the selected Short URL and shows success feedback', async () => {
+    const view = mount();
+    let current = view.render();
+    await current
+        .find((node) => node.props?.['aria-label'] === 'Bagikan video')
+        .props.onClick();
+    await new Promise(setImmediate);
+    current = view.render();
+    assert.deepEqual(view.copied, ['https://apakhabar.test/shorts/7']);
+    assert.ok(current.some((node) => node.props?.children === 'Tautan berhasil disalin!'));
+});
+
+test('guests see the login dialog instead of sending a like request', async () => {
+    const view = mount({ authenticated: false });
+    let current = view.render();
+    await current
+        .find((node) => node.props?.['aria-label'] === 'Sukai video: 3 suka')
+        .props.onClick();
+    current = view.render();
+    assert.deepEqual(view.requests, []);
+    assert.equal(current.find((node) => node.type === 'Dialog').props.open, true);
 });

@@ -1,0 +1,38 @@
+.top-short-card {
+    animation: top-short-enter 450ms ease-out both;
+}
+
+.top-short-ambient {
+    mask-image: radial-gradient(
+        ellipse 140% 95% at 25% 110%,
+        black 30%,
+        rgb(0 0 0 / 0.7) 55%,
+        transparent 85%
+    );
+}
+
+.top-short-shade {
+    background: radial-gradient(
+        ellipse 150% 95% at 25% 110%,
+        rgb(0 0 0 / 0.85) 10%,
+        rgb(0 0 0 / 0.5) 45%,
+        transparent 85%
+    );
+}
+
+@keyframes top-short-enter {
+    from {
+        opacity: 0.35;
+        transform: translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .top-short-card {
+        animation: none;
+    }
+}

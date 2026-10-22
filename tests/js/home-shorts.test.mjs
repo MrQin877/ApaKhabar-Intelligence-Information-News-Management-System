@@ -18,12 +18,13 @@ const nodes = node => !node || typeof node !== 'object' ? [] : Array.isArray(nod
 test('homepage Shorts keep six responsive cards and link each thumbnail to its published viewer', () => {
     const shorts = Array.from({ length: 6 }, (_, id) => ({ id, title: `Video ${id}`, thumbnail_url: `/cover-${id}.jpg`, video_url: `/video-${id}.mp4`, view_count: id === 0 ? 1234 : id }));
     const view = nodes(context.exports.HomeShorts({ shorts }));
-    const cards = view.filter(node => node.type === 'Link');
+    const cards = view.filter(node => node.type === 'Link' && node.props.href.startsWith('/shorts/'));
     assert.equal(cards.length, 6);
     assert.deepEqual(cards.map(card => card.props.href), shorts.map(short => `/shorts/${short.id}`));
     assert.ok(view.some(node => node.props?.className?.includes('lg:grid-cols-6')));
     assert.ok(cards.every(card => nodes(card).some(node => node.props?.className?.includes('aspect-[9/16]'))));
     assert.ok(cards.every(card => nodes(card).some(node => node.type === 'img')));
+    assert.ok(view.some(node => node.type === 'Link' && node.props.href === '/videos'));
 });
 
 test('Shorts subtitle precedes cards and counts are rendered over thumbnail rather than as impressions', () => {

@@ -49,6 +49,7 @@ class ReelPublisher
     public function step(ShortVideoPublication $p): void
     {
         $video = $p->video;
+        $videoUrl = $video->metadata['social_asset']['url'] ?? $video->video_url;
         if ($p->status === 'published' && $p->stage === 'permalink') {
             // Metadata-only reads must never turn a successful publication into a failure.
             if (! $p->credential || ($p->credential_expires_at && $p->credential_expires_at->isPast())) {
@@ -78,15 +79,15 @@ class ReelPublisher
         }
         if ($p->stage === 'create') {
             $data = $this->mutate($p, 'create', fn () => $this->request($p, 'post', $p->account_id.($p->platform === 'instagram' ? '/media' : '/video_reels'),
-                $p->platform === 'instagram' ? ['media_type' => 'REELS', 'video_url' => $video->video_url, 'caption' => ReelCaption::format($video), 'cover_url' => $video->thumbnail_url]
+                $p->platform === 'instagram' ? ['media_type' => 'REELS', 'video_url' => $videoUrl, 'caption' => ReelCaption::format($video), 'cover_url' => $video->thumbnail_url]
                     : ['upload_phase' => 'start']));
             $p->update(['container_id' => $this->id($data, $p->platform === 'instagram' ? 'id' : 'video_id'), 'stage' => $p->platform === 'instagram' ? 'wait' : 'upload', 'status' => 'processing']);
 
             return;
         }
         if ($p->platform === 'facebook' && $p->stage === 'upload') {
-            $this->mutate($p, 'upload', function () use ($p, $video) {
-                $response = Http::withoutRedirecting()->connectTimeout(10)->timeout(45)->withHeaders(['Authorization' => 'OAuth '.$p->credential, 'file_url' => $video->video_url])
+            $this->mutate($p, 'upload', function () use ($p, $videoUrl) {
+                $response = Http::withoutRedirecting()->connectTimeout(10)->timeout(45)->withHeaders(['Authorization' => 'OAuth '.$p->credential, 'file_url' => $videoUrl])
                     ->post('https://rupload.facebook.com/video-upload/'.$p->graph_version.'/'.$p->container_id);
                 if (! $response->successful() || $response->json('success') !== true) {
                     throw new \RuntimeException('Transfer video Facebook belum dikonfirmasi.');

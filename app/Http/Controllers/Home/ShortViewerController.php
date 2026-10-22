@@ -26,10 +26,17 @@ class ShortViewerController extends Controller
                 ->orWhere(fn ($sameDate) => $sameDate->where('published_at', $video->published_at)->where('id', '<', $video->id));
         })->latest('published_at')->latest('id')->value('id');
         $next ??= (clone $base)->where('id', '<>', $video->id)->latest('published_at')->latest('id')->value('id');
+        $previous = (clone $base)->where(function ($query) use ($video) {
+            $query->where('published_at', '>', $video->published_at)
+                ->orWhere(fn ($sameDate) => $sameDate->where('published_at', $video->published_at)->where('id', '>', $video->id));
+        })->orderBy('published_at')->orderBy('id')->value('id');
+        $previous ??= (clone $base)->where('id', '<>', $video->id)->orderBy('published_at')->orderBy('id')->value('id');
 
         return Inertia::render('short-viewer', [
-            'short' => $video->only(['id', 'title', 'description', 'video_url', 'thumbnail_url', 'view_count', 'likes_count']),
+            'short' => $video->only(['id', 'title', 'description', 'video_url', 'thumbnail_url', 'view_count', 'likes_count', 'published_at']),
             'nextShortId' => $next,
+            'nextShortPreview' => $next ? (clone $base)->find($next, ['id', 'title', 'thumbnail_url'])?->only(['id', 'title', 'thumbnail_url']) : null,
+            'previousShortId' => $previous,
             'commentCount' => $video->comments()->where('status', 'published')->count(),
             'likedByUser' => $request->user() ? DB::table('short_video_likes')->where('short_video_id', $id)->where('user_id', $request->user()->getKey())->exists() : false,
             'canFlagComments' => $request->user() && ($request->user()->isAdmin() || $request->user()->isModerator()),

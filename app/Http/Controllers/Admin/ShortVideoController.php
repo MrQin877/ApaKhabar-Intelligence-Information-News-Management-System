@@ -8,9 +8,12 @@ use App\Models\ShortVideo;
 use App\Models\SocialConnection;
 use App\Services\News\MetaConnections;
 use App\Services\Shorts\CloudinaryVideoService;
+use App\Services\Shorts\LocalShortMedia;
 use App\Services\Shorts\ReelCaption;
+use App\Services\Shorts\VideoCropper;
 use App\Services\Shorts\VideoInspector;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -52,7 +55,7 @@ class ShortVideoController extends Controller
         abort_unless($video->created_by === $r->user()->getKey(), 403);
     }
 
-    public function upload(Request $r, VideoInspector $inspector, CloudinaryVideoService $cloud)
+    public function upload(Request $r, VideoInspector $inspector, LocalShortMedia $local)
     {
         $r->validate(['video' => ['required', 'file', 'mimetypes:video/mp4', 'extensions:mp4', 'max:'.config('shorts.max_upload_kb')], 'short_video_id' => 'nullable|integer|exists:short_videos,id']);
         $existing = $r->filled('short_video_id') ? ShortVideo::findOrFail($r->integer('short_video_id')) : null;
@@ -60,43 +63,161 @@ class ShortVideoController extends Controller
             $this->own($r, $existing);
             abort_unless($existing->status === 'draft', 422, 'Hanya draf dapat diedit.');
         }
-        $metadata = $inspector->inspect($r->file('video'));
-        $asset = $cloud->upload($r->file('video'));
-        $attributes = ['video_url' => $asset['secure_url'], 'video_public_id' => $asset['public_id'], 'thumbnail_url' => $cloud->frame($asset['public_id'], 0), 'thumbnail_public_id' => null, 'frame_offset' => 0, 'metadata' => $metadata];
-        if ($existing) {
-            DB::transaction(function () use ($existing, $attributes, $r) {
-                $video = ShortVideo::whereKey($existing->id)->lockForUpdate()->firstOrFail();
-                $this->own($r, $video);
-                abort_unless($video->status === 'draft', 422, 'Hanya draf dapat diedit.');
-                $video->update($attributes);
-            });
-            $video = $existing;
-        } else {
-            $video = ShortVideo::create(['created_by' => $r->user()->getKey(), ...$attributes]);
+        $lock = $existing ? Cache::lock('short-crop:'.$existing->id, 900) : null;
+        if ($lock) {
+            abort_unless($lock->get(), 409, 'Video sedang diproses. Tunggu sampai selesai.');
         }
+        try {
+            $metadata = $inspector->inspect($r->file('video'));
+            $oldMetadata = $existing?->metadata;
+            $oldCover = $existing?->thumbnail_url;
+            $asset = $local->store($r->file('video'));
+            try {
+                $frame = $local->frame($asset['path'], 0);
+                $attributes = ['video_url' => $asset['url'], 'video_public_id' => '', 'thumbnail_url' => $frame, 'thumbnail_public_id' => null, 'frame_offset' => 0,
+                    'metadata' => [...$metadata, 'local_path' => $asset['path'], 'cover_source' => 'frame']];
+                if ($existing) {
+                    DB::transaction(function () use ($existing, $attributes, $r) {
+                        $video = ShortVideo::whereKey($existing->id)->lockForUpdate()->firstOrFail();
+                        $this->own($r, $video);
+                        abort_unless($video->status === 'draft', 422, 'Hanya draf dapat diedit.');
+                        $video->update($attributes);
+                    });
+                    $video = $existing;
+                } else {
+                    $video = ShortVideo::create(['created_by' => $r->user()->getKey(), ...$attributes]);
+                }
+            } catch (\Throwable $e) {
+                $local->delete($asset['path']);
+                $local->delete($local->pathFromUrl($frame ?? null));
+                throw $e;
+            }
+            if ($existing) {
+                $local->delete($oldMetadata['local_path'] ?? null);
+                $local->delete($oldMetadata['crop_source']['path'] ?? null);
+                $local->delete($local->pathFromUrl($oldCover));
+            }
 
-        return response()->json(['video' => $video->refresh()], $existing ? 200 : 201);
+            return response()->json(['video' => $video->refresh()], $existing ? 200 : 201);
+        } finally {
+            $lock?->release();
+        }
     }
 
-    public function update(Request $r, ShortVideo $shortVideo, CloudinaryVideoService $cloud)
+    public function crop(Request $r, ShortVideo $shortVideo, VideoCropper $cropper, LocalShortMedia $local)
+    {
+        $this->own($r, $shortVideo);
+        abort_unless($shortVideo->status === 'draft', 422, 'Hanya draf dapat diedit.');
+        $data = $r->validate([
+            'expected_url' => 'required|string|max:2048',
+            'x' => 'required|numeric|between:0,1', 'y' => 'required|numeric|between:0,1',
+            'zoom' => 'required|numeric|between:1,4',
+            'start' => 'required|numeric|min:0', 'end' => 'required|numeric|gt:start',
+            'frame_offset' => 'sometimes|numeric|min:0',
+        ]);
+        $lock = Cache::lock('short-crop:'.$shortVideo->id, 900);
+        abort_unless($lock->get(), 409, 'Video sedang diproses. Tunggu sampai selesai.');
+        try {
+            $shortVideo->refresh();
+            abort_unless($shortVideo->status === 'draft' && $shortVideo->video_url === $data['expected_url'], 409, 'Video telah berubah. Muat ulang editor.');
+            $source = $shortVideo->metadata['crop_source'] ?? [
+                'url' => $shortVideo->video_url, 'path' => $shortVideo->metadata['local_path'] ?? null,
+                'public_id' => $shortVideo->video_public_id, 'metadata' => $shortVideo->metadata,
+            ];
+            $edit = array_map('floatval', Arr::only($data, ['x', 'y', 'zoom', 'start', 'end']));
+            $m = $source['metadata'];
+            abort_if($edit['end'] > $m['duration'] + 0.05 || $edit['end'] - $edit['start'] < 0.1, 422, 'Rentang waktu video tidak valid.');
+            $previous = $shortVideo->metadata['video_crop'] ?? null;
+            $selectedOffset = (float) ($data['frame_offset'] ?? $shortVideo->frame_offset);
+            abort_if($selectedOffset >= $shortVideo->metadata['duration'], 422, 'Bingkai video tidak valid.');
+            $nextOffset = max(0, min($selectedOffset + ($previous['start'] ?? 0) - $edit['start'], max(0, $edit['end'] - $edit['start'] - 0.05)));
+            $width = (int) round($m['width'] * ($m['sample_aspect_ratio'] ?? 1) / 2) * 2;
+            $rect = VideoCropper::rectangle($width, $m['height'], $edit);
+            $same = $previous && $rect === VideoCropper::rectangle($width, $m['height'], $previous)
+                && abs($edit['start'] - $previous['start']) < 0.001 && abs($edit['end'] - $previous['end']) < 0.001;
+            $unchanged = ! $previous && $rect['width'] === $width && $rect['height'] === $m['height']
+                && $edit['start'] === 0.0 && abs($edit['end'] - $m['duration']) < 0.001;
+            if ($same || $unchanged) {
+                return response()->json(['video' => $shortVideo, 'changed' => false]);
+            }
+            @set_time_limit(660);
+            $result = isset($source['path']) ? $cropper->export($source['url'], $edit, $source['path']) : $cropper->export($source['url'], $edit);
+            try {
+                $frame = ($shortVideo->metadata['cover_source'] ?? (str_contains($shortVideo->thumbnail_url, '/video/upload/') ? 'frame' : 'photo')) === 'frame'
+                    ? $local->frame($result['asset']['path'], $nextOffset) : null;
+                DB::transaction(function () use ($shortVideo, $data, $result, $source, $edit, $frame, $nextOffset) {
+                    $video = ShortVideo::whereKey($shortVideo->id)->lockForUpdate()->firstOrFail();
+                    abort_unless($video->status === 'draft' && $video->video_url === $data['expected_url'], 409, 'Video telah berubah. Muat ulang editor.');
+                    $attributes = ['video_url' => $result['asset']['url'], 'video_public_id' => '',
+                        'metadata' => [...$result['metadata'], 'local_path' => $result['asset']['path'], 'crop_source' => $source,
+                            'cover_source' => $frame ? 'frame' : 'photo', 'video_crop' => $edit], 'frame_offset' => $nextOffset];
+                    if ($frame) {
+                        $attributes['thumbnail_url'] = $frame;
+                    }
+                    $video->update($attributes);
+                });
+            } catch (\Throwable $e) {
+                $local->delete($result['asset']['path']);
+                $local->delete($local->pathFromUrl($frame ?? null));
+                throw $e;
+            }
+            $oldPath = $shortVideo->metadata['local_path'] ?? null;
+            if ($oldPath && $oldPath !== ($source['path'] ?? null)) {
+                $local->delete($oldPath);
+            }
+            if ($frame) {
+                $local->delete($local->pathFromUrl($shortVideo->thumbnail_url));
+            }
+
+            return response()->json(['video' => $shortVideo->fresh(), 'changed' => true]);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    public function update(Request $r, ShortVideo $shortVideo, CloudinaryVideoService $cloud, LocalShortMedia $local)
     {
         $this->own($r, $shortVideo);
         $data = $r->validate(['title' => 'required|string|max:255', 'description' => 'required|string|max:10000', 'frame_offset' => 'required|numeric|min:0', 'cover' => ['nullable', 'image', 'mimes:jpg,jpeg,png', 'max:5120', 'dimensions:max_width=4096,max_height=4096'], 'cover_mode' => ['required', Rule::in(['keep', 'frame', 'upload'])]]);
-        abort_unless($shortVideo->status === 'draft', 422, 'Hanya draf dapat diedit.');
-        if ($data['frame_offset'] >= $shortVideo->metadata['duration']) {
-            throw ValidationException::withMessages(['frame_offset' => 'Pilih bingkai sebelum video berakhir.']);
-        }
-        if ($data['cover_mode'] === 'upload' && ! $r->hasFile('cover')) {
-            throw ValidationException::withMessages(['cover' => 'Pilih gambar sampul.']);
-        }
-        $cover = $data['cover_mode'] === 'keep' ? ['url' => $shortVideo->thumbnail_url, 'public_id' => $shortVideo->thumbnail_public_id] : $cloud->cover($r->file('cover'), $shortVideo->video_public_id, (float) $data['frame_offset']);
-        DB::transaction(function () use ($shortVideo, $data, $cover) {
-            $v = ShortVideo::whereKey($shortVideo->id)->lockForUpdate()->firstOrFail();
-            abort_unless($v->status === 'draft', 422);
-            $v->update(['title' => $data['title'], 'description' => $data['description'], 'frame_offset' => $data['frame_offset'], 'thumbnail_url' => $cover['url'], 'thumbnail_public_id' => $cover['public_id']]);
-        });
+        $lock = Cache::lock('short-crop:'.$shortVideo->id, 900);
+        abort_unless($lock->get(), 409, 'Video sedang diproses. Tunggu sampai selesai.');
+        try {
+            $shortVideo->refresh();
+            abort_unless($shortVideo->status === 'draft', 422, 'Hanya draf dapat diedit.');
+            if ($data['frame_offset'] >= $shortVideo->metadata['duration']) {
+                throw ValidationException::withMessages(['frame_offset' => 'Pilih bingkai sebelum video berakhir.']);
+            }
+            if ($data['cover_mode'] === 'upload' && ! $r->hasFile('cover')) {
+                throw ValidationException::withMessages(['cover' => 'Pilih gambar sampul.']);
+            }
+            $localPath = $shortVideo->metadata['local_path'] ?? null;
+            $cover = $data['cover_mode'] === 'keep' ? ['url' => $shortVideo->thumbnail_url, 'public_id' => $shortVideo->thumbnail_public_id]
+                : ($localPath ? ['url' => $data['cover_mode'] === 'frame' ? $local->frame($localPath, (float) $data['frame_offset']) : $local->cover($r->file('cover')), 'public_id' => null]
+                    : $cloud->cover($r->file('cover'), $shortVideo->video_public_id, (float) $data['frame_offset']));
+            try {
+                DB::transaction(function () use ($shortVideo, $data, $cover) {
+                    $v = ShortVideo::whereKey($shortVideo->id)->lockForUpdate()->firstOrFail();
+                    abort_unless($v->status === 'draft', 422);
+                    $metadata = $v->metadata;
+                    $metadata['cover_source'] = $data['cover_mode'] === 'keep'
+                        ? ($metadata['cover_source'] ?? (str_contains($v->thumbnail_url, '/video/upload/') ? 'frame' : 'photo'))
+                        : ($data['cover_mode'] === 'frame' ? 'frame' : 'photo');
+                    $v->update(['title' => $data['title'], 'description' => $data['description'], 'frame_offset' => $data['frame_offset'], 'thumbnail_url' => $cover['url'], 'thumbnail_public_id' => $cover['public_id'], 'metadata' => $metadata]);
+                });
+            } catch (\Throwable $e) {
+                if ($cover['url'] !== $shortVideo->thumbnail_url) {
+                    $local->delete($local->pathFromUrl($cover['url']));
+                }
+                throw $e;
+            }
+            if ($cover['url'] !== $shortVideo->thumbnail_url) {
+                $local->delete($local->pathFromUrl($shortVideo->thumbnail_url));
+            }
 
-        return response()->json(['video' => $shortVideo->fresh()]);
+            return response()->json(['video' => $shortVideo->fresh()]);
+        } finally {
+            $lock->release();
+        }
     }
 
     private function targets(Request $r): array
@@ -133,7 +254,7 @@ class ShortVideoController extends Controller
         return response()->json(['token' => $token, 'title' => $shortVideo->title, 'content' => $shortVideo->description, 'caption' => $caption, 'category' => null, 'images' => array_fill_keys(['website', 'instagram', 'facebook'], null), 'issues' => [], 'video_url' => $shortVideo->video_url, 'thumbnail_url' => $shortVideo->thumbnail_url]);
     }
 
-    public function publish(Request $r, ShortVideo $shortVideo, VideoInspector $inspector)
+    public function publish(Request $r, ShortVideo $shortVideo, VideoInspector $inspector, CloudinaryVideoService $cloud, LocalShortMedia $local)
     {
         $this->own($r, $shortVideo);
         $platforms = $this->targets($r);
@@ -150,32 +271,63 @@ class ShortVideoController extends Controller
         if (in_array('facebook', $platforms) && mb_strlen($caption) > ReelCaption::FACEBOOK_MAX) {
             throw ValidationException::withMessages(['description' => 'Judul dan deskripsi Facebook maksimal 10000 karakter.']);
         }
-        DB::transaction(function () use ($shortVideo, $platforms, $r, $preview) {
-            $v = ShortVideo::whereKey($shortVideo->id)->lockForUpdate()->firstOrFail();
-            if ($v->status === 'published') {
-                return;
+        $lock = Cache::lock('short-crop:'.$shortVideo->id, 900);
+        abort_unless($lock->get(), 409, 'Video sedang diproses. Tunggu sampai selesai.');
+        try {
+            $shortVideo->refresh();
+            abort_unless($preview['fingerprint'] === $this->fingerprint($shortVideo, $platforms), 422, 'Pratinjau berubah. Buka kembali pratinjau.');
+            if ($shortVideo->status === 'published') {
+                return $this->status($r, $shortVideo);
             }
-            abort_unless($v->status === 'draft' && $preview['fingerprint'] === $this->fingerprint($v, $platforms), 422);
-            $v->update(['status' => 'published', 'published_at' => now()]);
-            foreach ($platforms as $platform) {
-                $c = $platform === 'website' ? null : SocialConnection::where('user_id', $r->user()->getKey())->where('platform', $platform)->first();
-                $p = $v->publications()->create(['platform' => $platform, 'connection_id' => $c?->id, 'account_id' => $c?->account_id, 'account_name' => $c?->account_name,
-                    'graph_host' => $c?->graphHost(), 'graph_version' => config($platform === 'facebook' ? 'services.facebook.graph_version' : 'services.instagram.graph_version'),
-                    'credential' => $c?->access_token, 'credential_expires_at' => $c?->expires_at,
-                    'status' => $platform === 'website' ? 'published' : ($c?->isConnected() ? 'queued' : 'failed'),
-                    'stage' => $platform === 'website' ? 'done' : 'create', 'published_at' => $platform === 'website' ? now() : null,
-                    'error_summary' => $platform !== 'website' && ! $c?->isConnected() ? 'Akun belum terhubung; ApaKhabar tetap diterbitkan.' : null, 'next_attempt_at' => now()]);
-                // Recovery scheduler also dispatches persisted queued records if queue insertion fails.
-                if ($p->status === 'queued') {
-                    DB::afterCommit(function () use ($p) {
-                        try {
-                            PublishShortVideo::dispatch($p->id);
-                        } catch (\Throwable) {
-                        }
-                    });
+            $social = (bool) array_intersect($platforms, ['instagram', 'facebook']);
+            $metadata = $shortVideo->metadata;
+            if ($social && ! empty($metadata['local_path'])) {
+                $cached = $metadata['social_asset'] ?? null;
+                if (! $cached || ($cached['source_path'] ?? null) !== $metadata['local_path']) {
+                    // Upload before publishing; a failure leaves the local draft untouched.
+                    $asset = $cloud->upload($local->file($metadata['local_path']));
+                    $cached = ['source_path' => $metadata['local_path'], 'url' => $asset['secure_url'], 'public_id' => $asset['public_id']];
                 }
+                $cloud->assertUrl($cached['url']);
+                $metadata['social_asset'] = $cached;
+                DB::transaction(function () use ($shortVideo, $preview, $platforms, $metadata) {
+                    $v = ShortVideo::whereKey($shortVideo->id)->lockForUpdate()->firstOrFail();
+                    abort_unless($v->status === 'draft' && $preview['fingerprint'] === $this->fingerprint($v, $platforms), 422, 'Pratinjau berubah. Buka kembali pratinjau.');
+                    $v->update(['metadata' => $metadata]);
+                });
+            } elseif ($social) {
+                $cloud->assertUrl($shortVideo->video_url);
+                $metadata['social_asset'] = ['url' => $shortVideo->video_url, 'public_id' => $shortVideo->video_public_id];
             }
-        });
+            DB::transaction(function () use ($shortVideo, $platforms, $r, $preview, $metadata) {
+                $v = ShortVideo::whereKey($shortVideo->id)->lockForUpdate()->firstOrFail();
+                if ($v->status === 'published') {
+                    return;
+                }
+                abort_unless($v->status === 'draft' && $preview['fingerprint'] === $this->fingerprint($v, $platforms), 422);
+                $v->update(['status' => 'published', 'published_at' => now(), 'metadata' => $metadata]);
+                foreach ($platforms as $platform) {
+                    $c = $platform === 'website' ? null : SocialConnection::where('user_id', $r->user()->getKey())->where('platform', $platform)->first();
+                    $p = $v->publications()->create(['platform' => $platform, 'connection_id' => $c?->id, 'account_id' => $c?->account_id, 'account_name' => $c?->account_name,
+                        'graph_host' => $c?->graphHost(), 'graph_version' => config($platform === 'facebook' ? 'services.facebook.graph_version' : 'services.instagram.graph_version'),
+                        'credential' => $c?->access_token, 'credential_expires_at' => $c?->expires_at,
+                        'status' => $platform === 'website' ? 'published' : ($c?->isConnected() ? 'queued' : 'failed'),
+                        'stage' => $platform === 'website' ? 'done' : 'create', 'published_at' => $platform === 'website' ? now() : null,
+                        'error_summary' => $platform !== 'website' && ! $c?->isConnected() ? 'Akun belum terhubung; ApaKhabar tetap diterbitkan.' : null, 'next_attempt_at' => now()]);
+                    // Recovery scheduler also dispatches persisted queued records if queue insertion fails.
+                    if ($p->status === 'queued') {
+                        DB::afterCommit(function () use ($p) {
+                            try {
+                                PublishShortVideo::dispatch($p->id);
+                            } catch (\Throwable) {
+                            }
+                        });
+                    }
+                }
+            });
+        } finally {
+            $lock->release();
+        }
 
         return $this->status($r, $shortVideo->fresh());
     }
@@ -265,14 +417,23 @@ class ShortVideoController extends Controller
         });
     }
 
-    public function destroy(Request $r, ShortVideo $shortVideo)
+    public function destroy(Request $r, ShortVideo $shortVideo, LocalShortMedia $local)
     {
         $this->own($r, $shortVideo);
-        DB::transaction(function () use ($shortVideo) {
-            $video = ShortVideo::whereKey($shortVideo->id)->lockForUpdate()->firstOrFail();
-            abort_unless($video->status === 'draft', 422, 'Arsipkan video yang sudah diterbitkan.');
-            $video->delete();
-        });
+        $lock = Cache::lock('short-crop:'.$shortVideo->id, 900);
+        abort_unless($lock->get(), 409, 'Video sedang diproses. Tunggu sampai selesai.');
+        try {
+            DB::transaction(function () use ($shortVideo) {
+                $video = ShortVideo::whereKey($shortVideo->id)->lockForUpdate()->firstOrFail();
+                abort_unless($video->status === 'draft', 422, 'Arsipkan video yang sudah diterbitkan.');
+                $video->delete();
+            });
+            $local->delete($shortVideo->metadata['local_path'] ?? null);
+            $local->delete($shortVideo->metadata['crop_source']['path'] ?? null);
+            $local->delete($local->pathFromUrl($shortVideo->thumbnail_url));
+        } finally {
+            $lock->release();
+        }
 
         return response()->json(['message' => 'Draf dihapus.']);
     }

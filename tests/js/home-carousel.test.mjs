@@ -74,7 +74,7 @@ test('homepage category pills filter the latest list and Latest restores every r
     const states = [];
     let cursor = 0;
     const context = { exports: {}, require(name) {
-        if (name === 'react') return { useEffect() {}, useState(initial) { const index = cursor++; if (!(index in states)) states[index] = typeof initial === 'function' ? initial() : initial; return [states[index], value => { states[index] = value; }]; } };
+        if (name === 'react') return { useEffect() {}, useRef(initial) { return { current: initial }; }, useState(initial) { const index = cursor++; if (!(index in states)) states[index] = typeof initial === 'function' ? initial() : initial; return [states[index], value => { states[index] = value; }]; } };
         if (name === '@inertiajs/react') return { Head: 'Head', Link: 'Link', usePage: () => ({ props: { categories: ['Desa', 'Budaya'] } }) };
         if (name === 'react/jsx-runtime') return require(name);
         return new Proxy({}, { get: (_, key) => String(key) });
@@ -103,7 +103,7 @@ test('Shorts renders exactly six linked previews with titles outside their portr
     vm.runInNewContext(compiled, context);
     function nodes(node) { return !node || typeof node !== 'object' ? [] : Array.isArray(node) ? node.flatMap(nodes) : [node, ...nodes(node.props?.children)]; }
     const elements = nodes(context.exports.HomeShorts({ shorts: Array.from({ length: 6 }, (_, id) => ({ id, title: `Video ${id}`, thumbnail_url: `/cover-${id}.jpg`, video_url: `/video-${id}.mp4` })) }));
-    const cards = elements.filter(node => node.type === 'Link');
+    const cards = elements.filter(node => node.type === 'Link' && node.props.href.startsWith('/shorts/'));
     assert.equal(cards.length, 6);
     for (const card of cards) {
         assert.equal(card.props.children[1].type, 'h3');

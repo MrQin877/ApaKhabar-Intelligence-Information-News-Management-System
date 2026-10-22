@@ -6,13 +6,17 @@ use App\Models\SocialConnection;
 use App\Models\User;
 use App\Models\UserRole;
 use App\Services\Shorts\CloudinaryVideoService;
+use App\Services\Shorts\LocalShortMedia;
 use App\Services\Shorts\PublicationPermalink;
 use App\Services\Shorts\ReelCaption;
 use App\Services\Shorts\ReelPublisher;
+use App\Services\Shorts\VideoCropper;
 use App\Services\Shorts\VideoInspector;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia as Assert;
 
@@ -38,9 +42,201 @@ function shortPublish($test, ShortVideo $v, array $platforms)
 
     return $test->postJson('/admin/short-videos/'.$v->id.'/publish', ['platforms' => $platforms, 'preview_token' => $token]);
 }
+
+test('landscape upload crop save draft publish sends cropped URL to both platforms', function () {
+    $user = shortUser();
+    $this->actingAs($user);
+    shortConnection($user, 'instagram');
+    shortConnection($user, 'facebook');
+    $socialUrl = 'https://res.cloudinary.com/demo/video/upload/confirmed-crop.mp4';
+    $croppedUrl = 'http://localhost/storage/shorts/edits/confirmed-crop.mp4';
+    $inspector = Mockery::mock(VideoInspector::class)->makePartial();
+    $inspector->shouldReceive('inspect')->once()->andReturn(array_replace(shortMetadata(), ['width' => 1920, 'height' => 1080]));
+    $this->app->instance(VideoInspector::class, $inspector);
+    $cloud = Mockery::mock(CloudinaryVideoService::class)->makePartial();
+    $cloud->shouldReceive('upload')->once()->andReturn(['secure_url' => $socialUrl, 'public_id' => 'confirmed-crop']);
+    $this->app->instance(CloudinaryVideoService::class, $cloud);
+    $uploaded = $this->postJson('/admin/short-videos/upload', ['video' => UploadedFile::fake()->create('wide.mp4', 100, 'video/mp4')])->assertCreated();
+    $id = $uploaded->json('video.id');
+    $originalUrl = $uploaded->json('video.video_url');
+    $originalPath = $uploaded->json('video.metadata.local_path');
+    $this->mock(VideoCropper::class)->shouldReceive('export')->once()->with($originalUrl, Mockery::any(), $originalPath)->andReturn([
+        'asset' => ['url' => $croppedUrl, 'path' => 'shorts/edits/confirmed-crop.mp4'], 'metadata' => shortMetadata(),
+    ]);
+    Storage::disk('public')->put('shorts/edits/confirmed-crop.mp4', 'edited bytes');
+    $this->postJson('/admin/short-videos/'.$id.'/crop', ['expected_url' => $originalUrl, 'x' => 0.75, 'y' => 0.5, 'zoom' => 1, 'start' => 0, 'end' => 20])
+        ->assertOk()->assertJsonPath('video.video_url', $croppedUrl)->assertJsonPath('video.metadata.crop_source.url', $originalUrl);
+    Storage::disk('public')->assertExists($originalPath);
+    $this->postJson('/admin/short-videos/'.$id, ['title' => 'Confirmed crop', 'description' => 'Preserved caption', 'frame_offset' => 0, 'cover_mode' => 'keep'])->assertOk();
+    $video = ShortVideo::findOrFail($id);
+    shortPublish($this, $video, ['website', 'instagram', 'facebook'])->assertOk();
+    expect($video->fresh()->video_url)->toBe($croppedUrl);
+    Http::fake([
+        '*/123/media' => Http::response(['id' => '456']),
+        '*/123/video_reels' => Http::sequence()->push(['video_id' => '567'])->push(['success' => true]),
+        'https://rupload.facebook.com/*' => Http::response(['success' => true]),
+        '*/456*' => Http::response(['status_code' => 'FINISHED']),
+        '*/123/media_publish' => Http::response(['id' => '789']),
+        '*/567*' => Http::response(['status' => ['publishing_phase' => ['status' => 'complete']]]),
+    ]);
+    $publisher = app(ReelPublisher::class);
+    $ig = $video->publications()->where('platform', 'instagram')->firstOrFail();
+    $fb = $video->publications()->where('platform', 'facebook')->firstOrFail();
+    for ($step = 0; $step < 2; $step++) {
+        $publisher->step($ig->fresh());
+    }
+    for ($step = 0; $step < 4; $step++) {
+        $publisher->step($fb->fresh());
+    }
+    expect($ig->fresh()->status)->toBe('published');
+    expect($fb->fresh()->status)->toBe('published');
+    Http::assertSent(fn ($r) => str_ends_with($r->url(), '/123/media') && $r['video_url'] === $socialUrl);
+    Http::assertSent(fn ($r) => str_contains($r->url(), 'rupload.facebook.com') && $r->hasHeader('file_url', $socialUrl));
+    Http::assertNotSent(fn ($r) => ($r['video_url'] ?? null) === $originalUrl || $r->hasHeader('file_url', $originalUrl));
+    expect($video->fresh()->metadata['crop_source']['url'])->toBe($originalUrl);
+    expect($video->fresh()->title)->toBe('Confirmed crop');
+});
+
+test('local edited drafts survive reload and website publishing never uploads to Cloudinary', function () {
+    $user = shortUser();
+    $this->actingAs($user);
+    $path = 'shorts/edits/persisted.mp4';
+    Storage::disk('public')->put($path, 'edited bytes');
+    $video = shortDraft($user);
+    $video->update(['video_url' => Storage::disk('public')->url($path), 'video_public_id' => '',
+        'thumbnail_url' => 'http://localhost/storage/shorts/covers/frame.jpg',
+        'metadata' => [...shortMetadata(), 'local_path' => $path, 'cover_source' => 'frame',
+            'crop_source' => ['url' => 'https://res.cloudinary.com/demo/video/upload/original.mp4', 'metadata' => shortMetadata()],
+            'video_crop' => ['x' => .5, 'y' => .5, 'zoom' => 2, 'start' => 1, 'end' => 21]]]);
+    $this->mock(CloudinaryVideoService::class)->shouldNotReceive('upload');
+    $this->postJson('/admin/short-videos/'.$video->id, ['title' => 'Local edit', 'description' => 'Persisted', 'frame_offset' => 0, 'cover_mode' => 'keep'])->assertOk();
+    $this->get('/admin/short-videos/create?draft='.$video->id)->assertInertia(fn (Assert $page) => $page
+        ->where('draft.video_url', Storage::disk('public')->url($path))
+        ->where('draft.metadata.video_crop.start', 1));
+    shortPublish($this, $video->fresh(), ['website'])->assertOk();
+    expect($video->fresh()->video_url)->toBe(Storage::disk('public')->url($path));
+    Storage::disk('public')->assertExists($path);
+});
+
+test('each social destination receives the final local edit through one reusable Cloudinary asset', function (array $platforms) {
+    $user = shortUser();
+    $this->actingAs($user);
+    foreach (array_diff($platforms, ['website']) as $platform) {
+        shortConnection($user, $platform);
+    }
+    $path = 'shorts/edits/final.mp4';
+    Storage::disk('public')->put($path, 'final edited bytes');
+    $video = shortDraft($user);
+    $video->update(['video_url' => Storage::disk('public')->url($path), 'video_public_id' => '',
+        'metadata' => [...shortMetadata(), 'local_path' => $path, 'video_crop' => ['x' => .5, 'y' => .5, 'zoom' => 2, 'start' => 1, 'end' => 21]]]);
+    $socialUrl = 'https://res.cloudinary.com/demo/video/upload/final.mp4';
+    $cloud = Mockery::mock(CloudinaryVideoService::class)->makePartial();
+    $cloud->shouldReceive('upload')->once()->andReturn(['secure_url' => $socialUrl, 'public_id' => 'final']);
+    $this->app->instance(CloudinaryVideoService::class, $cloud);
+    shortPublish($this, $video, $platforms)->assertOk();
+    shortPublish($this, $video->fresh(), $platforms)->assertOk();
+    expect($video->fresh()->metadata['social_asset']['url'])->toBe($socialUrl);
+    expect($video->fresh()->video_url)->toBe(Storage::disk('public')->url($path));
+    Http::fake(['*/123/media' => Http::response(['id' => '456']), '*/123/video_reels' => Http::response(['video_id' => '567']),
+        'https://rupload.facebook.com/*' => Http::response(['success' => true])]);
+    foreach (array_diff($platforms, ['website']) as $platform) {
+        $publication = $video->publications()->where('platform', $platform)->firstOrFail();
+        app(ReelPublisher::class)->step($publication);
+        if ($platform === 'facebook') {
+            app(ReelPublisher::class)->step($publication->fresh());
+        }
+    }
+    if (in_array('instagram', $platforms)) {
+        Http::assertSent(fn ($request) => str_ends_with($request->url(), '/123/media') && $request['video_url'] === $socialUrl);
+    }
+    if (in_array('facebook', $platforms)) {
+        Http::assertSent(fn ($request) => str_contains($request->url(), 'rupload.facebook.com') && $request->hasHeader('file_url', $socialUrl));
+    }
+})->with([[['website', 'instagram']], [['website', 'facebook']]]);
+
+test('social upload failure keeps the local draft and edited file', function () {
+    $user = shortUser();
+    $this->actingAs($user);
+    shortConnection($user, 'instagram');
+    $path = 'shorts/edits/retry.mp4';
+    Storage::disk('public')->put($path, 'edited bytes');
+    $video = shortDraft($user);
+    $video->update(['video_url' => Storage::disk('public')->url($path), 'video_public_id' => '', 'metadata' => [...shortMetadata(), 'local_path' => $path]]);
+    $this->mock(CloudinaryVideoService::class)->shouldReceive('upload')->once()->andThrow(ValidationException::withMessages(['video' => 'Upload failed']));
+    $token = $this->postJson('/admin/short-videos/'.$video->id.'/preview', ['platforms' => ['website', 'instagram']])->assertOk()->json('token');
+    $this->postJson('/admin/short-videos/'.$video->id.'/publish', ['platforms' => ['website', 'instagram'], 'preview_token' => $token])->assertUnprocessable();
+    expect($video->fresh()->status)->toBe('draft');
+    expect($video->publications()->count())->toBe(0);
+    Storage::disk('public')->assertExists($path);
+});
+
+test('a matching cached social asset is reused without uploading the local edit again', function () {
+    $user = shortUser();
+    $this->actingAs($user);
+    shortConnection($user, 'instagram');
+    $path = 'shorts/edits/cached.mp4';
+    Storage::disk('public')->put($path, 'edited bytes');
+    $url = 'https://res.cloudinary.com/demo/video/upload/cached.mp4';
+    $video = shortDraft($user);
+    $video->update(['video_url' => Storage::disk('public')->url($path), 'video_public_id' => '',
+        'metadata' => [...shortMetadata(), 'local_path' => $path,
+            'social_asset' => ['source_path' => $path, 'url' => $url, 'public_id' => 'cached']]]);
+    $this->mock(CloudinaryVideoService::class)->makePartial()->shouldNotReceive('upload');
+    shortPublish($this, $video, ['website', 'instagram'])->assertOk();
+    Http::fake(['*/123/media' => Http::response(['id' => '456'])]);
+    app(ReelPublisher::class)->step($video->publications()->where('platform', 'instagram')->firstOrFail());
+    Http::assertSent(fn ($request) => $request['video_url'] === $url);
+});
+
+test('deleting a local draft cleans its edit and preserved original', function () {
+    $user = shortUser();
+    $this->actingAs($user);
+    foreach (['shorts/original/source.mp4', 'shorts/edits/edit.mp4', 'shorts/covers/frame.jpg'] as $path) {
+        Storage::disk('public')->put($path, 'media');
+    }
+    $video = shortDraft($user);
+    $video->update(['video_url' => Storage::disk('public')->url('shorts/edits/edit.mp4'), 'video_public_id' => '',
+        'thumbnail_url' => Storage::disk('public')->url('shorts/covers/frame.jpg'),
+        'metadata' => [...shortMetadata(), 'local_path' => 'shorts/edits/edit.mp4',
+            'crop_source' => ['url' => Storage::disk('public')->url('shorts/original/source.mp4'), 'path' => 'shorts/original/source.mp4', 'metadata' => shortMetadata()]]]);
+    $this->postJson('/admin/short-videos/'.$video->id.'/delete')->assertOk();
+    foreach (['shorts/original/source.mp4', 'shorts/edits/edit.mp4', 'shorts/covers/frame.jpg'] as $path) {
+        Storage::disk('public')->assertMissing($path);
+    }
+});
+
+test('a publishing lease blocks replacement, draft updates, and deletion', function () {
+    $user = shortUser();
+    $this->actingAs($user);
+    $video = shortDraft($user);
+    $lock = Cache::lock('short-crop:'.$video->id, 30);
+    expect($lock->get())->toBeTrue();
+    try {
+        $this->postJson('/admin/short-videos/upload', ['short_video_id' => $video->id,
+            'video' => UploadedFile::fake()->create('replacement.mp4', 100, 'video/mp4')])->assertStatus(409);
+        $this->postJson('/admin/short-videos/'.$video->id, ['title' => 'Changed', 'description' => 'Text',
+            'frame_offset' => 0, 'cover_mode' => 'keep'])->assertStatus(409);
+        $this->postJson('/admin/short-videos/'.$video->id.'/delete')->assertStatus(409);
+    } finally {
+        $lock->release();
+    }
+    expect($video->fresh()->status)->toBe('draft');
+});
+
+test('local media cleanup rejects paths outside generated Shorts files', function () {
+    $local = app(LocalShortMedia::class);
+    expect($local->pathFromUrl('https://example.com/storage/shorts/../private/secret.mp4'))->toBeNull();
+    $local->delete('shorts/../private/secret.mp4');
+    expect($local->pathFromUrl(Storage::disk('public')->url('shorts/covers/frame.jpg')))->toBe('shorts/covers/frame.jpg');
+});
 beforeEach(function () {
     Queue::fake();
     Http::preventStrayRequests();
+    Storage::fake('public');
+    config(['services.cloudinary.cloud_name' => 'demo']);
+    $local = Mockery::mock(LocalShortMedia::class)->makePartial();
+    $local->shouldReceive('frame')->andReturn('http://localhost/storage/shorts/covers/frame.jpg');
+    $this->app->instance(LocalShortMedia::class, $local);
 });
 
 test('facebook permalink reads preserve returned relative path and wait for delayed metadata without reposting', function () {
@@ -175,20 +371,47 @@ test('destination video validation rejects bad codec duration and orientation', 
     }
     $service->validate(array_replace(shortMetadata(), ['duration' => 300]), ['website', 'instagram']);
 });
-test('upload uses inspected metadata and Cloudinary urls rather than client metadata', function () {
+test('saved active thumbnail source is returned to editor and used by Instagram publishing', function () {
+    $user = shortUser();
+    $this->actingAs($user);
+    shortConnection($user, 'instagram');
+    $video = shortDraft($user);
+    $photo = 'https://res.cloudinary.com/demo/image/upload/photo.jpg';
+    $frame = 'https://res.cloudinary.com/demo/video/upload/so_4.500,f_jpg/short.jpg';
+    $cloud = Mockery::mock(CloudinaryVideoService::class)->makePartial();
+    $cloud->shouldReceive('cover')->once()->with(null, 'short', 4.5)->andReturn(['url' => $frame, 'public_id' => null]);
+    $cloud->shouldReceive('cover')->once()->with(Mockery::type(UploadedFile::class), 'short', 4.5)->andReturn(['url' => $photo, 'public_id' => null]);
+    $this->app->instance(CloudinaryVideoService::class, $cloud);
+    $video->update(['thumbnail_url' => $photo]);
+    $this->postJson('/admin/short-videos/'.$video->id, ['title' => $video->title, 'description' => $video->description, 'frame_offset' => 4.5, 'cover_mode' => 'frame'])
+        ->assertOk()->assertJsonPath('video.thumbnail_url', $frame)->assertJsonPath('video.frame_offset', 4.5);
+    $this->post('/admin/short-videos/'.$video->id, ['title' => $video->title, 'description' => $video->description, 'frame_offset' => 4.5, 'cover_mode' => 'upload', 'cover' => UploadedFile::fake()->image('photo.jpg')], ['Accept' => 'application/json'])
+        ->assertOk()->assertJsonPath('video.thumbnail_url', $photo);
+    $this->get('/admin/short-videos/create?draft='.$video->id)->assertInertia(fn (Assert $page) => $page->where('draft.thumbnail_url', $photo)->where('draft.frame_offset', 4.5));
+    shortPublish($this, $video->fresh(), ['website', 'instagram'])->assertOk();
+    Http::fake(['*/123/media' => Http::response(['id' => '456'])]);
+    app(ReelPublisher::class)->step($video->publications()->where('platform', 'instagram')->firstOrFail());
+    Http::assertSent(fn ($request) => $request['cover_url'] === $photo);
+    expect($video->fresh()->thumbnail_url)->toBe($photo);
+});
+
+test('upload persists a local draft without Cloudinary', function () {
     $u = shortUser();
     $this->actingAs($u);
     $this->mock(VideoInspector::class)->shouldReceive('inspect')->once()->andReturn(shortMetadata());
-    $this->mock(CloudinaryVideoService::class)->shouldReceive('upload')->once()->andReturn(['secure_url' => 'https://res.cloudinary.com/demo/video/upload/test.mp4', 'public_id' => 'test'])->getMock()->shouldReceive('frame')->andReturn('https://res.cloudinary.com/demo/video/upload/so_0/test.jpg');
-    $this->postJson('/admin/short-videos/upload', ['video' => UploadedFile::fake()->create('short.mp4', 100, 'video/mp4')])->assertCreated()->assertJsonPath('video.metadata.codec', 'h264')->assertJsonPath('video.status', 'draft');
+    $this->mock(CloudinaryVideoService::class)->shouldNotReceive('upload');
+    $response = $this->postJson('/admin/short-videos/upload', ['video' => UploadedFile::fake()->create('short.mp4', 100, 'video/mp4')])->assertCreated()->assertJsonPath('video.metadata.codec', 'h264')->assertJsonPath('video.status', 'draft');
+    Storage::disk('public')->assertExists($response->json('video.metadata.local_path'));
+    expect($response->json('video.video_url'))->toContain('/storage/shorts/original/');
 });
 test('uploading a replacement updates the owned draft instead of creating another record', function () {
     $user = shortUser();
     $draft = shortDraft($user);
     $this->actingAs($user);
     $this->mock(VideoInspector::class)->shouldReceive('inspect')->once()->andReturn(shortMetadata());
-    $this->mock(CloudinaryVideoService::class)->shouldReceive('upload')->once()->andReturn(['secure_url' => 'https://res.cloudinary.com/demo/video/upload/replacement.mp4', 'public_id' => 'replacement'])->getMock()->shouldReceive('frame')->once()->with('replacement', 0)->andReturn('https://res.cloudinary.com/demo/video/upload/so_0/replacement.jpg');
-    $this->postJson('/admin/short-videos/upload', ['short_video_id' => $draft->id, 'video' => UploadedFile::fake()->create('replacement.mp4', 100, 'video/mp4')])->assertOk()->assertJsonPath('video.id', $draft->id)->assertJsonPath('video.video_public_id', 'replacement');
+    $this->mock(CloudinaryVideoService::class)->shouldNotReceive('upload');
+    $this->postJson('/admin/short-videos/upload', ['short_video_id' => $draft->id, 'video' => UploadedFile::fake()->create('replacement.mp4', 100, 'video/mp4')])->assertOk()->assertJsonPath('video.id', $draft->id)->assertJsonPath('video.video_public_id', '');
+    Storage::disk('public')->assertExists($draft->fresh()->metadata['local_path']);
     expect(ShortVideo::query()->count())->toBe(1);
 });
 test('another user cannot replace an existing draft video', function () {

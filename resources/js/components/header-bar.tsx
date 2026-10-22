@@ -35,13 +35,14 @@ import {
 } from './ui/sheet';
 import { VillagerUserMenuContent } from './villager-user-menu-content';
 
-export function HeaderBar({ homepage = false }: { homepage?: boolean }) {
+export function HeaderBar() {
     const getInitials = useInitials();
-    const {
-        auth,
-        categories = [],
-        unreadNotifications,
-    } = usePage<SharedData>().props;
+    const page = usePage<SharedData>();
+    const { auth, unreadNotifications } = page.props;
+    const path = page.url.split('?')[0];
+    const homeActive = path === '/';
+    const newsActive = path === '/news' || path.startsWith('/news/');
+    const videosActive = path === '/videos' || path.startsWith('/shorts/');
     const canAccessAdmin =
         auth.user?.role === 'admin' || auth.user?.role === 'moderator';
 
@@ -63,35 +64,28 @@ export function HeaderBar({ homepage = false }: { homepage?: boolean }) {
                 </div>
 
                 {/*  Nav links  */}
-                <div
-                    className={`hidden items-center space-x-6 text-sm font-medium text-foreground lg:flex ${homepage ? 'absolute left-1/2 -translate-x-1/2' : ''}`}
-                >
+                <div className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-6 text-sm font-medium text-foreground lg:flex">
                     <Link
                         href="/"
-                        className="relative text-foreground transition-colors duration-200 after:absolute after:bottom-[-2px] after:left-0 after:h-px after:w-0 after:bg-green-600 after:transition-[width] after:duration-300 hover:text-primary hover:after:w-full"
+                        aria-current={homeActive ? 'page' : undefined}
+                        className={`relative transition-colors duration-200 after:absolute after:bottom-[-2px] after:left-0 after:h-px after:bg-green-600 after:transition-[width] after:duration-300 hover:text-primary hover:after:w-full ${homeActive ? 'text-primary after:w-full' : 'text-foreground'}`}
                     >
                         Beranda
                     </Link>
-                    {homepage
-                        ? ['Latest News', 'Videos'].map((label) => (
-                              <Button
-                                  key={label}
-                                  variant="ghost"
-                                  disabled
-                                  title="Segera hadir"
-                              >
-                                  {label}
-                              </Button>
-                          ))
-                        : (categories as string[]).map((category) => (
-                              <Link
-                                  key={category}
-                                  href={`/news?category=${encodeURIComponent(category)}`}
-                                  className="relative text-foreground transition-colors duration-200 after:absolute after:bottom-[-2px] after:left-0 after:h-px after:w-0 after:bg-green-600 after:transition-[width] after:duration-300 hover:text-primary hover:after:w-full"
-                              >
-                                  {category}
-                              </Link>
-                          ))}
+                    <Link
+                        href="/news"
+                        aria-current={newsActive ? 'page' : undefined}
+                        className={`relative transition-colors duration-200 after:absolute after:bottom-[-2px] after:left-0 after:h-px after:w-0 after:bg-green-600 after:transition-[width] after:duration-300 hover:text-primary hover:after:w-full ${newsActive ? 'text-primary after:w-full' : 'text-foreground'}`}
+                    >
+                        Berita Terbaru
+                    </Link>
+                    <Link
+                        href="/videos"
+                        aria-current={videosActive ? 'page' : undefined}
+                        className={`relative transition-colors duration-200 after:absolute after:bottom-[-2px] after:left-0 after:h-px after:w-0 after:bg-green-600 after:transition-[width] after:duration-300 hover:text-primary hover:after:w-full ${videosActive ? 'text-primary after:w-full' : 'text-foreground'}`}
+                    >
+                        Video
+                    </Link>
                 </div>
 
                 {/* Auth Buttons */}
@@ -222,37 +216,30 @@ export function HeaderBar({ homepage = false }: { homepage?: boolean }) {
                                 <SheetClose asChild>
                                     <Link
                                         href="/"
-                                        className="flex min-h-11 items-center gap-3 rounded-md px-3 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-neutral-800"
+                                        aria-current={homeActive ? 'page' : undefined}
+                                        className={`flex min-h-11 items-center gap-3 rounded-md px-3 text-sm font-medium hover:bg-gray-100 dark:hover:bg-neutral-800 ${homeActive ? 'text-primary' : 'text-gray-700 dark:text-gray-300'}`}
                                     >
                                         Beranda
                                     </Link>
                                 </SheetClose>
-                                {homepage
-                                    ? ['Latest News', 'Videos'].map((label) => (
-                                          <Button
-                                              key={label}
-                                              variant="ghost"
-                                              disabled
-                                              title="Segera hadir"
-                                          >
-                                              {label}
-                                          </Button>
-                                      ))
-                                    : (categories as string[]).map(
-                                          (category) => (
-                                              <SheetClose
-                                                  asChild
-                                                  key={category}
-                                              >
-                                                  <Link
-                                                      href={`/news?category=${encodeURIComponent(category)}`}
-                                                      className="flex min-h-11 items-center rounded-md px-3 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-neutral-800"
-                                                  >
-                                                      {category}
-                                                  </Link>
-                                              </SheetClose>
-                                          ),
-                                      )}
+                                <SheetClose asChild>
+                                    <Link
+                                        href="/news"
+                                        aria-current={newsActive ? 'page' : undefined}
+                                        className={`flex min-h-11 items-center rounded-md px-3 text-sm font-medium hover:bg-gray-100 dark:hover:bg-neutral-800 ${newsActive ? 'text-primary' : 'text-gray-700 dark:text-gray-300'}`}
+                                    >
+                                        Berita Terbaru
+                                    </Link>
+                                </SheetClose>
+                                <SheetClose asChild>
+                                    <Link
+                                        href="/videos"
+                                        aria-current={videosActive ? 'page' : undefined}
+                                        className={`flex min-h-11 items-center rounded-md px-3 text-sm font-medium hover:bg-gray-100 dark:hover:bg-neutral-800 ${videosActive ? 'text-primary' : 'text-gray-700 dark:text-gray-300'}`}
+                                    >
+                                        Video
+                                    </Link>
+                                </SheetClose>
                             </div>
 
                             <div className="my-4 border-t border-border" />

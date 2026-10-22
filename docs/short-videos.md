@@ -2,9 +2,11 @@
 
 ## Local setup
 
+New Shorts keep their original, edited video, and selected cover on Laravel's public disk under `shorts/`; run `php artisan storage:link` and set `APP_URL` to the public site origin. `Simpan Perubahan` exports locally, and `Simpan Draf` persists local media and edit settings. Website-only publication keeps that local URL. Instagram/Facebook publication uploads the final local edit to Cloudinary once before queuing Meta jobs; failures leave the draft and local files intact. Existing valid Cloudinary Shorts and cached social assets are reused. Superseded local edits, abandoned export files, and deleted draft media are cleaned up.
+
 1. Start the existing MySQL server. Back up the database, then run `php artisan migrate`. The new migration adds `short_videos` and `short_video_publications`; it does not rewrite news/image data.
 2. Install FFmpeg locally (includes ffprobe). Set `FFPROBE_BINARY` to its full executable path in `.env`, or put it on PATH. Restart PHP after changes. Upload validation fails closed if ffprobe is unavailable.
-3. Keep the existing `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET` configuration. Public video/frame delivery uses HTTPS Cloudinary URLs, never localhost storage links. Cloudinary video upload and derived JPEG transformations must be allowed by the account; strict transformation mode may require an allowlist. Account usage quotas still apply.
+3. Keep Cloudinary credentials configured for Instagram/Facebook publication and older Cloudinary-backed Shorts. New upload, edit, and website-only playback use public local storage.
 4. PHP/web server must accept 100 MiB uploads: `upload_max_filesize=100M`, `post_max_size=110M`, enough temporary disk space, and an upload/request timeout long enough for Cloudinary (up to 180 seconds). The local serve script loads `config/php/uploads.ini`; XAMPP Apache must use equivalent settings in its own php.ini. Existing Laravel image/OCR endpoint limits remain unchanged.
 5. Keep `QUEUE_CONNECTION=database`. Run `php artisan queue:work --queue=video-publishing --tries=1 --timeout=90` and `php artisan schedule:work` (production: scheduler every minute). `composer dev` includes both. Other worker commands, including `dev:ssr`, need this additional dedicated worker separately.
 6. Connect each user's Instagram professional account / Facebook Page in Settings > Social Media Integration. Existing Meta app permissions, approved app mode, Page access and token validity still apply. This feature adds no OAuth scopes. Facebook Page video publishing uses the existing Page publishing permissions; verify permission approval and Reel eligibility against the configured Graph API version.
@@ -17,23 +19,37 @@ The image includes PHP extensions and ffprobe. It runs only the dedicated queue 
 
 ## Supported upload profile
 
-The app deliberately accepts a conservative subset, without automatic transcoding: MP4/H.264/yuv420p, <=100 MiB, <=15 minutes, AAC audio <=48 kHz/stereo when present, and baked-in orientation. Social destinations also require 23?60 FPS, progressive video, width <=1920, bitrate <=25 Mbps, >=3 seconds. Facebook currently uses a conservative 9:16, >=540x960, 4?60-second profile. Wider provider format support is not implied. Actual Meta processing may reject additional content/account-specific constraints.
+The app deliberately accepts a conservative subset, without automatic transcoding on upload: MP4/H.264/yuv420p, <=100 MiB, <=15 minutes, AAC audio <=48 kHz/stereo when present, and baked-in orientation. Social destinations also require 23?60 FPS, progressive video, width <=1920, bitrate <=25 Mbps, >=3 seconds. Facebook currently uses a conservative 9:16, >=540x960, 4?60-second profile. Wider provider format support is not implied. Actual Meta processing may reject additional content/account-specific constraints.
 
-Frame covers are stored as Cloudinary video-to-JPEG transformation URLs plus frame offset. Custom JPG/PNG covers are converted to JPEG using existing GD/Cloudinary image upload. ApaKhabar and Instagram use the selected cover. The implemented Facebook Reel workflow uses an automatic Facebook cover; the preview explicitly explains this.
+### Explicit Edit & Crop Video
+
+The draft's Edit menu opens a single 9:16 editing canvas (no separate preview panel). Drag or use arrow keys to pan, adjust zoom, play/pause, seek, mute, and adjust start/end times. Batal discards the selection. Simpan Perubahan saves the source and FFmpeg output locally; an untouched exact 9:16 source is a no-op.
+
+After video metadata loads, non-9:16 uploads automatically open this dialog. Cancelling leaves the original selected and requires reopening/confirming the crop before Save Draft or Publish proceeds. Valid 9:16 uploads skip this step. This does not bypass upload codec, duration, size, audio or rotation checks, or any platform publication checks.
+
+The server reads the preserved local original (or downloads a legacy Cloudinary original), probes it again, normalizes pixel aspect ratio, crops without stretching, and exports H.264/AAC MP4 at 1080×1920 with square pixels. FFprobe checks the output before saving it locally. Output and platform limits remain in force.
+
+The original URL/path/metadata remain in `metadata.crop_source`, and crop settings in `metadata.video_crop`. Reopening the editor uses that original to avoid repeated lossy crops. Custom covers are retained; video-frame covers are regenerated at the adjusted frame offset. Export failure leaves the saved video untouched. Only owned drafts may be edited; stale and concurrent crop requests are rejected.
+
+Install FFmpeg in the **web server environment**, not just the queue worker. `FFMPEG_BINARY` is optional; by default the app uses `ffmpeg` beside the configured `FFPROBE_BINARY`. Allow sufficient PHP/proxy request time for export (up to 300 seconds) and social Cloudinary upload. Export is synchronous and the dialog shows a busy state; there is no new queue or migration.
+
+New frame and custom JPG/PNG covers are stored locally. Legacy Cloudinary covers remain valid. ApaKhabar and Instagram use the selected cover; the implemented Facebook Reel workflow uses an automatic Facebook cover.
+
+The upload editor uses a responsive two-column layout: portrait playback and media information on the left, title/description and inline cover tabs on the right. `Dari Video` selects a frame from the filmstrip/slider; `Unggah Foto` selects a JPG/PNG. Switching tabs preserves both selections within the editor, and only the active source is sent on Save Draft or Publish. Saving persists the active thumbnail and frame offset through the existing cover API. Reopening a draft restores the tab corresponding to its saved thumbnail. The Edit Video menu contains only crop and video replacement.
 
 ## Publication safety
 
-- Website publication commits independently before social jobs. Selected platforms have one unique publication row each.
+- Social video upload completes before website and social publication records are committed. Selected platforms have one unique publication row each.
 - Account ID, connection ID, graph host/version, and encrypted token snapshot are saved at publication time. Switching accounts later cannot redirect a job. Retry can refresh credentials only for the SAME account.
 - A database lease prevents concurrent jobs. Every remote write persists intent first. Unknown outcomes are reconciled with read-only status requests, not blindly replayed.
 - Unknown container creation responses cannot safely be retried automatically because no remote ID was recovered. An Instagram publish timeout can confirm a published container without recovering its media ID; it remains marked uncertain and requires operator investigation. Do not create a duplicate draft to bypass this protection.
 - Recovery scheduler resumes stalled queued/processing rows and pending permalink lookups. Definite provider rejections are retryable. Maximum automatic polling is 120 attempts at 30-second intervals.
-- Archive removes the video from the homepage and stops unstarted jobs. Already in-flight requests / existing remote posts cannot be recalled. Draft deletion is soft deletion. Cloudinary assets are retained; this feature does not delete potentially referenced remote files. Asset retention/cleanup needs a separate policy.
+- Archive removes the video from the homepage and stops unstarted jobs. Draft deletion removes its local media; published local media and legacy Cloudinary assets are retained.
 - Access is Admin/Moderator, with ownership checks for all video operations. Management lists show the current user's videos.
 
 ## Manual acceptance checks
 
-1. Upload a real supported MP4 as Admin and Moderator: verify immediate local player, progress, server validation, Cloudinary asset and automatic cover. Try invalid MIME, codec and oversized video.
+1. Upload a real supported MP4 as Admin and Moderator: verify immediate local player, progress, server validation, local asset and automatic cover. Try invalid MIME, codec and oversized video.
 2. Choose a frame, save/reopen the draft, then try a custom cover. Confirm title, description and thumbnail persist.
 3. Publish website-only: mandatory ApaKhabar checkbox stays selected; newest video appears among the six homepage cards. Video URL is prepared for future playback; cards intentionally do not add a new playback page.
 4. Test Instagram-only optional destination, Facebook-only optional destination, then both. Check saved account names, async status changes, provider IDs/permalinks and real remote posts. Confirm selected IG cover and Facebook automatic cover.
@@ -65,7 +81,7 @@ The application targets loopback TCP port 3306. No MySQL process/listener was fo
 
 ## Exact Windows FFprobe setup
 
-Only **ffprobe** is invoked by the app; ffmpeg is not invoked for transcoding. The FFmpeg Windows distribution includes both. Use the Windows builds linked by https://ffmpeg.org/download.html (Gyan or BtbN), download an appropriate 64-bit archive, and extract so `C:/Tools/ffmpeg/bin/ffprobe.exe` and `ffmpeg.exe` exist. No paid service is required for local inspection.
+Upload inspection invokes **ffprobe**. Explicit changed crop saves also invoke **ffmpeg**. The FFmpeg Windows distribution includes both. Use the Windows builds linked by https://ffmpeg.org/download.html (Gyan or BtbN), download an appropriate 64-bit archive, and extract so `C:/Tools/ffmpeg/bin/ffprobe.exe` and `ffmpeg.exe` exist. No paid service is required for local processing.
 
 Add `C:\Tools\ffmpeg\bin` through Windows **Edit environment variables for your account > Path > New**, then reopen PowerShell/IDE. For Apache running as a service, use System Path (administrator) or configure FFPROBE_BINARY as an absolute path; restart Apache. Do not replace the entire existing PATH.
 
