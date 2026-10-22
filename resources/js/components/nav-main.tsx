@@ -150,12 +150,23 @@ export function NavMain({ items = [] }: { items: NavItem[] }) {
                         <SidebarMenuItem key={item.title}>
                             <SidebarMenuButton
                                 asChild
-                                isActive={url === toUrl(item.href ?? '#')}
+                                isActive={isCurrentPage(item.href ?? '#')}
                                 tooltip={{ children: item.title }}
                             >
-                                <Link href={item.href ?? '#'} prefetch>
+                                <Link
+                                    href={item.href ?? '#'}
+                                    prefetch
+                                    className="relative"
+                                >
                                     {item.icon && <item.icon />}
                                     <span>{item.title}</span>
+                                    {item.attention && (
+                                        <span
+                                            role="status"
+                                            aria-label="Komentar menunggu peninjauan"
+                                            className="absolute top-1/2 right-1.5 size-2 -translate-y-1/2 rounded-full bg-destructive"
+                                        />
+                                    )}
                                 </Link>
                             </SidebarMenuButton>
                         </SidebarMenuItem>

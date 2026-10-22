@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class Like extends Model
 {
+    public const UPDATED_AT = null;
+
     protected $primaryKey = 'likeID';
 
     protected $fillable = [

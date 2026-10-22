@@ -3,72 +3,86 @@
 namespace App\Services\News;
 
 use App\Models\Comment;
+use App\Models\CommentModerationAssessment;
 use App\Models\Like;
 use App\Models\News;
-use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class InteractionService
 {
     public function likeNews(int $userId, string $newsId): array
     {
-        $news = News::find($newsId);
+        return DB::transaction(function () use ($userId, $newsId) {
+            $news = News::active()->lockForUpdate()->findOrFail($newsId);
+            $existing = Like::where('postID', $news->getKey())->where('userID', $userId)->first();
+            if ($existing) {
+                $existing->delete();
+            } else {
+                Like::create(['postID' => $news->getKey(), 'userID' => $userId]);
+            }
+            $count = Like::where('postID', $news->getKey())->count();
+            $news->update(['likes_count' => $count]);
 
-        if (! $news) {
-            abort(404);
-        }
-
-        $existing = Like::where('postID', $news->getKey())
-            ->where('userID', $userId)
-            ->first();
-
-        if ($existing) {
-            $existing->delete();
-            $news->decrement('likes_count');
-            $liked = false;
-        } else {
-            Like::create([
-                'postID' => $news->getKey(),
-                'userID' => $userId,
-            ]);
-            $news->increment('likes_count');
-            $liked = true;
-        }
-
-        return [
-            'liked' => $liked,
-            'likes_count' => $news->fresh()->likes_count,
-        ];
+            return ['liked' => ! $existing, 'likes_count' => $count];
+        });
     }
 
-    public function addComment(int $userId, string $newsId, string $content): Comment
+    public function likeComment(int $userId, string $commentId): array
     {
-        $news = News::find($newsId);
+        return DB::transaction(function () use ($userId, $commentId) {
+            $comment = Comment::where('status', 'published')->lockForUpdate()->findOrFail($commentId);
+            News::active()->findOrFail($comment->newsID);
+            $query = DB::table('comment_likes')->where('comment_id', $commentId)->where('user_id', $userId);
+            $existing = $query->exists();
+            if ($existing) {
+                $query->delete();
+            } else {
+                DB::table('comment_likes')->insert(['comment_id' => $commentId, 'user_id' => $userId]);
+            }
 
-        if (! $news) {
-            abort(404);
+            return ['liked' => ! $existing, 'likes_count' => DB::table('comment_likes')->where('comment_id', $commentId)->count()];
+        });
+    }
+
+    public function addComment(?int $userId, string $newsId, string $content, ?int $parentId = null): Comment
+    {
+        $news = News::active()->findOrFail($newsId);
+        $content = trim($content);
+        $hash = hash('sha256', $newsId.'|'.mb_strtolower(preg_replace('/\s+/u', ' ', $content)));
+        if (Comment::where('submission_hash', $hash)->exists()) {
+            throw ValidationException::withMessages(['content' => 'Komentar yang sama sudah dikirim.']);
         }
+        $moderation = app(CommentModeration::class)->check($content);
+        $assessment = $moderation['_assessment'] ?? [];
+        unset($moderation['_assessment']);
 
-        return Comment::create([
-            'newsID' => $news->getKey(),
-            'userID' => $userId,
-            'content' => $content,
-            'parentID' => null,
-        ]);
+        return DB::transaction(function () use ($news, $userId, $content, $parentId, $hash, $moderation, $assessment) {
+            // Serialize the duplicate check and insert, including concurrent submissions.
+            News::whereKey($news->getKey())->lockForUpdate()->firstOrFail();
+            if (Comment::where('submission_hash', $hash)->exists()) {
+                throw ValidationException::withMessages(['content' => 'Komentar yang sama sudah dikirim.']);
+            }
+            $comment = Comment::create(array_merge($moderation, [
+                'newsID' => $news->getKey(), 'userID' => $userId, 'content' => $content,
+                'guest_name' => $userId ? null : 'guest'.random_int(100000, 999999), 'parentID' => $parentId,
+                'submission_hash' => $hash,
+            ]));
+            CommentModerationAssessment::capture($comment, $assessment);
+            DB::table('comment_moderation_history')->insert([
+                'comment_id' => $comment->getKey(), 'from_status' => null,
+                'to_status' => $comment->status, 'reason' => $comment->moderation_reason,
+                'created_at' => now(),
+            ]);
+
+            return $comment;
+        });
     }
 
     public function addReply(int $userId, string $commentId, string $content): Comment
     {
-        $comment = Comment::find($commentId);
+        $parent = Comment::where('status', 'published')->findOrFail($commentId);
 
-        if (! $comment) {
-            abort(404);
-        }
-
-        return Comment::create([
-            'newsID' => $comment->newsID,
-            'userID' => $userId,
-            'content' => $content,
-            'parentID' => $comment->getKey(),
-        ]);
+        return $this->addComment($userId, (string) $parent->newsID, $content, $parent->getKey());
     }
 }

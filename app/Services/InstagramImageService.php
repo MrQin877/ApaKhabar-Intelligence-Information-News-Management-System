@@ -173,10 +173,11 @@ class InstagramImageService
         }
 
         $destination = 'news-images/instagram/'.hash('sha256', $source).'.jpg';
-        if (! Storage::disk('public')->put($destination, $jpegBytes)) {
+        if (! $sourceDisk->put($destination, $jpegBytes, ['visibility' => 'public', 'ContentType' => 'image/jpeg'])) {
             throw ValidationException::withMessages(['platforms' => 'JPEG Instagram gagal disimpan pada penyimpanan publik.']);
         }
 
-        return '/storage/'.$destination;
+        return config('filesystems.news_media_disk', 'public') === 'public'
+            ? '/storage/'.$destination : $sourceDisk->url($destination);
     }
 }

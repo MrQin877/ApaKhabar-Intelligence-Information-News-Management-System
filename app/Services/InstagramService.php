@@ -43,10 +43,10 @@ class InstagramService
         }
         $credentials = app(MetaCredentials::class)->forPlatform('instagram');
         $extension = strtolower(pathinfo(parse_url($imageUrl, PHP_URL_PATH) ?: '', PATHINFO_EXTENSION));
-        if ($extension === 'png') {
+        if (in_array($extension, ['png', 'webp'], true)) {
             $imageUrl = app(InstagramImageService::class)->convertPngToJpeg($imageUrl);
         } elseif (! in_array($extension, ['jpg', 'jpeg'], true)) {
-            throw ValidationException::withMessages(['platforms' => 'Instagram memerlukan gambar JPG atau PNG.']);
+            throw ValidationException::withMessages(['platforms' => 'Instagram memerlukan gambar JPG, PNG, atau WebP.']);
         }
         if (! trim($caption) || mb_strlen($caption) > 2200) {
             throw ValidationException::withMessages(['platforms' => 'Caption Instagram harus berisi 1–2200 karakter.']);
@@ -58,7 +58,7 @@ class InstagramService
             if (str_contains('/'.$relativePath.'/', '/../') || str_contains($relativePath, '\\')) {
                 throw ValidationException::withMessages(['platforms' => 'Path gambar Instagram tidak valid.']);
             }
-            $disk = Storage::disk($extension === 'png' ? 'public' : config('filesystems.news_media_disk', 'public'));
+            $disk = Storage::disk(config('filesystems.news_media_disk', 'public'));
             if (! $disk->exists($relativePath)) {
                 throw ValidationException::withMessages(['platforms' => 'Gambar Instagram tidak ditemukan.']);
             }

@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Comment;
 use App\Models\NewsCategory;
 use App\Models\Notification;
 use Illuminate\Http\Request;
@@ -25,6 +26,12 @@ class HandleInertiaRequests extends Middleware
             'auth' => [
                 'user' => $request->user() ? [...$request->user()->toArray(), ...$request->user()->demographicProfile()] : null,
             ],
+            'moderationPendingCount' => function () use ($request) {
+                $user = $request->user();
+
+                return $user && $user->hasVerifiedEmail() && ($user->isAdmin() || $user->isModerator())
+                    ? Comment::awaitingReview()->count() : 0;
+            },
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
 
             'categories' => fn () => NewsCategory::active()

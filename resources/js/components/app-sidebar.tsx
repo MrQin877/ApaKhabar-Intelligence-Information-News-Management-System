@@ -1,6 +1,7 @@
-import { Link, usePage } from '@inertiajs/react';
+import { Link, usePage, usePoll } from '@inertiajs/react';
 import {
     LayoutGrid,
+    MessageSquare,
     Newspaper,
     Radio,
     ChartNoAxesCombined,
@@ -74,8 +75,14 @@ const footerNavItems: NavItem[] = [
     },
 ];
 
+function ModerationCountPolling() {
+    usePoll(15000, { only: ['moderationPendingCount'] });
+
+    return null;
+}
+
 export function AppSidebar() {
-    const { auth } = usePage<SharedData>().props;
+    const { auth, moderationPendingCount = 0 } = usePage<SharedData>().props;
     const newsItems: NavItem[] = [
         {
             title: 'Daftar Berita',
@@ -114,6 +121,12 @@ export function AppSidebar() {
             icon: Newspaper,
             items: newsItems,
         },
+        {
+            title: 'Moderasi Komentar',
+            href: '/admin/comments',
+            attention: moderationPendingCount > 0,
+            icon: MessageSquare,
+        },
         ...mainNavItems
             .slice(1)
             .filter(
@@ -123,27 +136,32 @@ export function AppSidebar() {
     ];
 
     return (
-        <Sidebar collapsible="icon" variant="inset">
-            <SidebarHeader>
-                <SidebarMenu>
-                    <SidebarMenuItem>
-                        <SidebarMenuButton size="lg" asChild>
-                            <Link href={dashboard()} prefetch>
-                                <AppLogo />
-                            </Link>
-                        </SidebarMenuButton>
-                    </SidebarMenuItem>
-                </SidebarMenu>
-            </SidebarHeader>
+        <>
+            {['admin', 'moderator'].includes(auth.user?.role ?? '') && (
+                <ModerationCountPolling />
+            )}
+            <Sidebar collapsible="icon" variant="inset">
+                <SidebarHeader>
+                    <SidebarMenu>
+                        <SidebarMenuItem>
+                            <SidebarMenuButton size="lg" asChild>
+                                <Link href={dashboard()} prefetch>
+                                    <AppLogo />
+                                </Link>
+                            </SidebarMenuButton>
+                        </SidebarMenuItem>
+                    </SidebarMenu>
+                </SidebarHeader>
 
-            <SidebarContent>
-                <NavMain items={visibleMainNavItems} />
-            </SidebarContent>
+                <SidebarContent>
+                    <NavMain items={visibleMainNavItems} />
+                </SidebarContent>
 
-            <SidebarFooter>
-                <NavFooter items={footerNavItems} className="mt-auto" />
-                <NavUser />
-            </SidebarFooter>
-        </Sidebar>
+                <SidebarFooter>
+                    <NavFooter items={footerNavItems} className="mt-auto" />
+                    <NavUser />
+                </SidebarFooter>
+            </Sidebar>
+        </>
     );
 }

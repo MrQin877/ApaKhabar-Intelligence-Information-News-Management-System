@@ -124,3 +124,8 @@ Schedule::job(new SyncMetaInsights)->hourly()->withoutOverlapping();
 Schedule::call(function () {
     DB::table('villager_activity_hours')->where('hour', '<', now('UTC')->subDays(config('analytics.activity_retention_days')))->delete();
 })->daily()->name('prune-villager-activity')->withoutOverlapping();
+
+Schedule::call(function () {
+    DB::table('news_viewers')->where('expires_at', '<', now())->delete();
+    DB::table('news_visits')->where('expires_at', '<', now())->delete();
+})->daily()->name('engagement-retention')->withoutOverlapping();

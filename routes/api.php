@@ -8,6 +8,7 @@ use App\Http\Controllers\Auth\MobilePhoneVerificationController;
 use App\Http\Controllers\Auth\PhonePasswordResetController;
 use App\Http\Controllers\Home\EmergencyBroadcastController;
 use App\Http\Controllers\News\CommentController;
+use App\Http\Controllers\News\EngagementController;
 use App\Http\Controllers\News\NewsController;
 use App\Http\Controllers\News\PostLikeController;
 use App\Http\Controllers\Village\ActivityController;
@@ -58,9 +59,10 @@ Route::middleware(ApiAuth::class)->group(function () {
     Route::get('/notifications', [NotificationController::class, 'index']);
     Route::patch('/notifications/read-all', [NotificationController::class, 'markAllRead']);
     Route::patch('/notifications/{id}/read', [NotificationController::class, 'markRead']);
-    Route::post('/news/{id}/like', [PostLikeController::class, 'store']);
-    Route::post('/news/{id}/comment', [CommentController::class, 'store']);
-    Route::post('/comments/{id}/replies', [CommentController::class, 'reply']);
+    Route::post('/news/{id}/like', [PostLikeController::class, 'store'])->middleware('throttle:30,1');
+    Route::post('/news/{id}/comment', [CommentController::class, 'store'])->middleware('throttle:5,1');
+    Route::post('/comments/{id}/replies', [CommentController::class, 'reply'])->middleware('throttle:5,1');
+    Route::post('/comments/{id}/report', [EngagementController::class, 'report'])->middleware('throttle:10,1');
     Route::post('/push-token', [AuthController::class, 'savePushToken']);    // ← save on login
     Route::delete('/push-token', [AuthController::class, 'removePushToken']); // ← remove on logout
 });

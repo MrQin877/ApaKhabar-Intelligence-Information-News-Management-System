@@ -8,17 +8,11 @@ use Illuminate\Http\Request;
 
 class PostLikeController extends Controller
 {
-    public function __construct(protected InteractionService $interactionService)
-    {
-    }
+    public function __construct(protected InteractionService $interactionService) {}
 
     public function store(Request $request, $id)
     {
-        try {
-            $result = $this->interactionService->likeNews(auth()->id(), $id);
-        } catch (\Throwable $e) {
-            abort(404);
-        }
+        $result = $this->interactionService->likeNews($request->user()->getKey(), $id);
 
         if ($request->expectsJson()) {
             return response()->json($result);

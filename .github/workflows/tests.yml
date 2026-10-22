@@ -22,7 +22,7 @@ jobs:
         with:
           php-version: ${{ matrix.php-version }}
           tools: composer:v2
-          extensions: mongodb, pdo_sqlite
+          extensions: mongodb, pdo_sqlite, gd, exif, mbstring
           coverage: none
 
       - name: Setup Node
