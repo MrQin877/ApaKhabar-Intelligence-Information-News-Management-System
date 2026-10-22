@@ -30,19 +30,25 @@ type Short = {
     likes_count: number;
 };
 
-export default function ShortViewer({
-    short,
-    nextShortId,
-    commentCount,
-    likedByUser,
-    canFlagComments,
-}: {
+type ShortViewerProps = {
     short: Short;
     nextShortId: number | null;
     commentCount: number;
     likedByUser: boolean;
     canFlagComments: boolean;
-}) {
+};
+
+export default function ShortViewer(props: ShortViewerProps) {
+    return <ShortViewerContent key={props.short.id} {...props} />;
+}
+
+function ShortViewerContent({
+    short,
+    nextShortId,
+    commentCount,
+    likedByUser,
+    canFlagComments,
+}: ShortViewerProps) {
     const { auth } = usePage<SharedData>().props;
     const authenticated = Boolean(auth.user);
     const player = useRef<HTMLVideoElement>(null);

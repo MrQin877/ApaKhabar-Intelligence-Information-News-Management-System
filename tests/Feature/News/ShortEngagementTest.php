@@ -68,9 +68,12 @@ test('Shorts likes and one-level reply pagination use separate persistent record
     $root = $this->postJson($url.'/comments', ['content' => 'Komentar pertama'])->assertCreated()->json('comment.id');
     $reply = $this->postJson($url.'/comments/'.$root.'/replies', ['content' => 'Balasan pertama'])->assertCreated()->json('comment.id');
     $this->postJson($url.'/comments/'.$reply.'/replies', ['content' => 'Balasan kedua'])->assertCreated()->assertJsonPath('comment.recipient', $user->name);
+    $this->postJson($url.'/comments/'.$reply.'/replies', ['content' => 'Balasan ketiga'])->assertCreated();
+    $this->postJson($url.'/comments/'.$root.'/replies', ['content' => 'Balasan keempat'])->assertCreated();
     expect(ShortVideoComment::find($reply)->root_id)->toBe((int) $root);
-    $this->getJson($url.'/comments')->assertJsonPath('count', 3)->assertJsonPath('comments.data.0.replies_count', 2);
-    $this->getJson($url.'/comments/'.$root.'/replies')->assertJsonCount(2, 'data');
+    $this->getJson($url.'/comments')->assertJsonPath('count', 5)->assertJsonPath('comments.data.0.replies_count', 4);
+    $this->getJson($url.'/comments/'.$root.'/replies')->assertJsonCount(3, 'data')->assertJsonPath('last_page', 2);
+    $this->getJson($url.'/comments/'.$root.'/replies?page=2')->assertJsonCount(1, 'data');
     $this->postJson($url.'/comments/'.$root.'/like')->assertJsonPath('likes_count', 1)->assertJsonPath('liked', true);
     $this->postJson($url.'/comments/'.$root.'/like')->assertJsonPath('likes_count', 0)->assertJsonPath('liked', false);
     expect(DB::table('short_video_comment_likes')->count())->toBe(0);
