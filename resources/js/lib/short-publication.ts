@@ -15,17 +15,22 @@ export function publicationActive(result?: PublishResult) {
     );
 }
 
+export function publicationPolling(result?: PublishResult) {
+    return publicationActive(result) || result?.permalink_pending === true;
+}
+
 export function publicationUrl(
     platform: string,
     status?: string,
     permalink?: string | null,
+    videoId?: number,
 ) {
     if (status !== 'published') {
         return null;
     }
 
     if (platform === 'website') {
-        return '/#shorts';
+        return videoId ? `/shorts/${videoId}` : null;
     }
 
     if (!['instagram', 'facebook'].includes(platform)) {

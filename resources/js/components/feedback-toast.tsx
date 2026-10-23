@@ -53,7 +53,7 @@ export function FeedbackToast({
     return (
         <div
             role={feedback.variant === 'error' ? 'alert' : 'status'}
-            className={`flex items-start gap-3 rounded-xl border p-4 text-sm ${inline ? 'w-full' : 'fixed top-4 right-4 z-[100] w-[calc(100%-2rem)] max-w-sm shadow-lg'} ${colors[feedback.variant]}`}
+            className={`flex items-start gap-3 rounded-xl border p-4 text-sm ${inline ? 'w-full' : 'fixed top-[calc(env(safe-area-inset-top)+5rem)] right-3 z-[100] w-[calc(100%-1.5rem)] max-w-sm shadow-lg sm:right-4'} ${colors[feedback.variant]}`}
         >
             <Icon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
             <div className="min-w-0 flex-1">

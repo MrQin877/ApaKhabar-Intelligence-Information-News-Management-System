@@ -79,7 +79,7 @@ class ReelPublisher
         }
         if ($p->stage === 'create') {
             $data = $this->mutate($p, 'create', fn () => $this->request($p, 'post', $p->account_id.($p->platform === 'instagram' ? '/media' : '/video_reels'),
-                $p->platform === 'instagram' ? ['media_type' => 'REELS', 'video_url' => $videoUrl, 'caption' => ReelCaption::format($video), 'cover_url' => $video->thumbnail_url]
+                $p->platform === 'instagram' ? ['media_type' => 'REELS', 'video_url' => $videoUrl, 'caption' => ReelCaption::format($video), 'cover_url' => $video->metadata['social_cover']['url'] ?? $video->thumbnail_url]
                     : ['upload_phase' => 'start']));
             $p->update(['container_id' => $this->id($data, $p->platform === 'instagram' ? 'id' : 'video_id'), 'stage' => $p->platform === 'instagram' ? 'wait' : 'upload', 'status' => 'processing']);
 

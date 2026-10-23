@@ -5,6 +5,8 @@ use App\Models\User;
 use App\Models\UserRole;
 use App\Services\Shorts\LocalShortMedia;
 use App\Services\Shorts\VideoCropper;
+use App\Services\Shorts\VideoInspector;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -146,3 +148,45 @@ test('real FFmpeg crop export is portrait, unrotated, playable and trimmed', fun
         unlink($fixture);
     }
 });
+
+test('real Fit and Crop bake display matrices into upright pixels and keep audio', function ($rotation, $mode, $width = 320, $height = 180) {
+    $binary = config('shorts.ffmpeg') ?: preg_replace('/ffprobe(\.exe)?$/i', 'ffmpeg$1', config('shorts.ffprobe'));
+    try {
+        (new Process([$binary, '-version']))->mustRun();
+    } catch (Throwable) {
+        $this->markTestSkipped('FFmpeg is required for media integration test.');
+    }
+    $fixture = tempnam(sys_get_temp_dir(), 'fit-source-');
+    $rotated = tempnam(sys_get_temp_dir(), 'fit-rotated-');
+    try {
+        (new Process([$binary, '-v', 'error', '-y', '-f', 'lavfi', '-i', "testsrc2=size={$width}x{$height}:rate=30", '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000', '-t', '0.4', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-f', 'mp4', $fixture]))->mustRun();
+        (new Process([$binary, '-v', 'error', '-y', '-display_rotation', (string) $rotation, '-i', $fixture, '-c', 'copy', '-f', 'mp4', $rotated]))->mustRun();
+        $local = new LocalShortMedia;
+        $this->app->instance(LocalShortMedia::class, $local);
+        $file = new UploadedFile($rotated, 'rotated.mp4', 'video/mp4', null, true);
+        $inspector = app(VideoInspector::class);
+        $source = $inspector->inspect($file, true);
+        expect(($source['rotation'] % 360 + 360) % 360)->toBe(($rotation % 360 + 360) % 360);
+        $stored = $local->store($file);
+        $result = app(VideoCropper::class)->export($stored['url'], ['mode' => $mode, 'x' => 0.5, 'y' => 0.5, 'zoom' => 1, 'start' => 0, 'end' => 0.4], $stored['path']);
+        expect($result['metadata']['width'])->toBe(1080);
+        expect($result['metadata']['height'])->toBe(1920);
+        expect($result['metadata']['rotation'])->toBe(0);
+        expect($result['metadata']['audio_codec'])->toBe('aac');
+        Storage::disk('public')->assertExists($stored['path']);
+        // Compare the centre pixel grid to FFmpeg's independently autorotated source.
+        $expected = new Process([$binary, '-v', 'error', '-i', $rotated, '-frames:v', '1', '-vf', 'scale=9:16', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-']);
+        $actual = new Process([$binary, '-v', 'error', '-i', $local->file($result['asset']['path'])->getRealPath(), '-frames:v', '1', '-vf', 'scale=9:16', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-']);
+        if ($mode === 'fit' && abs($rotation) % 180 === 90) {
+            $expected->mustRun();
+            $actual->mustRun();
+            $a = array_values(unpack('C*', $expected->getOutput()));
+            $b = array_values(unpack('C*', $actual->getOutput()));
+            $error = array_sum(array_map(fn ($x, $y) => abs($x - $y), $a, $b)) / count($a);
+            expect($error)->toBeLessThan(15);
+        }
+    } finally {
+        @unlink($fixture);
+        @unlink($rotated);
+    }
+})->with([[90, 'fit'], [-90, 'fit'], [180, 'fit'], [270, 'crop'], [0, 'fit'], [0, 'fit', 180, 320], [0, 'fit', 180, 180]]);

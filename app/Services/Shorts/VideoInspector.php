@@ -8,7 +8,7 @@ use Symfony\Component\Process\Process;
 
 class VideoInspector
 {
-    public function inspect(UploadedFile $file): array
+    public function inspect(UploadedFile $file, bool $source = false): array
     {
         $process = new Process([config('shorts.ffprobe'), '-v', 'error', '-protocol_whitelist', 'file', '-show_format', '-show_streams', '-of', 'json', $file->getRealPath()]);
         $process->setTimeout(30);
@@ -20,6 +20,13 @@ class VideoInspector
         }
         $v = collect($data['streams'] ?? [])->firstWhere('codec_type', 'video');
         $a = collect($data['streams'] ?? [])->firstWhere('codec_type', 'audio');
+        $matrix = collect($v['side_data_list'] ?? [])->firstWhere('side_data_type', 'Display Matrix');
+        $matrixValues = [];
+        foreach (explode("\n", trim($matrix['displaymatrix'] ?? '')) as $row) {
+            if (str_contains($row, ':')) {
+                $matrixValues = [...$matrixValues, ...array_map('intval', preg_split('/\s+/', trim(explode(':', $row, 2)[1])))];
+            }
+        }
         [$num, $den] = array_pad(explode('/', $v['avg_frame_rate'] ?? '0/1'), 2, 1);
         [$sarNum, $sarDen] = array_pad(explode(':', $v['sample_aspect_ratio'] ?? '1:1'), 2, 1);
         $sar = is_numeric($sarNum) && is_numeric($sarDen) && (float) $sarNum > 0 && (float) $sarDen > 0
@@ -31,15 +38,16 @@ class VideoInspector
             'bitrate' => (int) ($v['bit_rate'] ?? $data['format']['bit_rate'] ?? 0), 'bytes' => $file->getSize(),
             'audio_codec' => $a['codec_name'] ?? null, 'audio_rate' => (int) ($a['sample_rate'] ?? 0), 'audio_channels' => (int) ($a['channels'] ?? 0),
             'field_order' => $v['field_order'] ?? 'unknown',
-            'rotation' => (int) ($v['tags']['rotate'] ?? collect($v['side_data_list'] ?? [])->firstWhere('side_data_type', 'Display Matrix')['rotation'] ?? 0)];
-        $this->validate($m, ['website']);
+            'display_transform' => $matrixValues && $matrixValues !== [65536, 0, 0, 0, 65536, 0, 0, 0, 1073741824],
+            'rotation' => (int) ($matrix['rotation'] ?? $v['tags']['rotate'] ?? 0)];
+        $this->validate($m, ['website'], $source);
 
         return $m;
     }
 
-    public function validate(array $m, array $platforms): void
+    public function validate(array $m, array $platforms, bool $source = false): void
     {
-        // Deliberately conservative MP4/H.264 profile for browser playback; never silently transcode.
+        // Keep the existing MP4/H.264 upload profile; only orientation and framing are normalized.
         $errors = [];
         if (! str_contains($m['format'] ?? '', 'mp4') || ($m['codec'] ?? '') !== 'h264' || ($m['pixel_format'] ?? '') !== 'yuv420p') {
             $errors[] = 'Gunakan MP4 H.264, warna yuv420p.';
@@ -50,7 +58,7 @@ class VideoInspector
         if (($m['audio_codec'] ?? null) && (($m['audio_codec'] !== 'aac') || $m['audio_rate'] > 48000 || $m['audio_channels'] > 2)) {
             $errors[] = 'Audio harus AAC, maksimal 48 kHz dan stereo.';
         }
-        if (($m['rotation'] ?? 0) % 360 !== 0) {
+        if (! $source && (($m['rotation'] ?? 0) % 360 !== 0 || ($m['display_transform'] ?? false))) {
             $errors[] = 'Ekspor video dengan orientasi final tanpa metadata rotasi.';
         }
         if (array_intersect($platforms, ['instagram', 'facebook'])) {

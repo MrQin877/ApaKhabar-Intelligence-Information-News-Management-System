@@ -102,7 +102,7 @@ function mount(initial, fail = false) {
             tree.find(
                 (n) =>
                     n.type === 'Button' &&
-                    n.props.className?.includes('bg-emerald-600'),
+                    n.props.children?.includes?.('Terapkan'),
             ),
     };
 }

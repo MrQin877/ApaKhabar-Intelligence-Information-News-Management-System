@@ -2,7 +2,7 @@
 
 ## Local setup
 
-New Shorts keep their original, edited video, and selected cover on Laravel's public disk under `shorts/`; run `php artisan storage:link` and set `APP_URL` to the public site origin. `Simpan Perubahan` exports locally, and `Simpan Draf` persists local media and edit settings. Website-only publication keeps that local URL. Instagram/Facebook publication uploads the final local edit to Cloudinary once before queuing Meta jobs; failures leave the draft and local files intact. Existing valid Cloudinary Shorts and cached social assets are reused. Superseded local edits, abandoned export files, and deleted draft media are cleaned up.
+New Shorts keep their original, edited video, and selected cover on Laravel's public disk under `shorts/`; run `php artisan storage:link` and set `APP_URL` to the public site origin. `Terapkan` exports locally, and `Simpan Draf` persists local media and edit settings. Website-only publication keeps that local URL. Instagram/Facebook publication uploads the final local edit to Cloudinary once before queuing Meta jobs; failures leave the draft and local files intact. Existing valid Cloudinary Shorts and cached social assets are reused. Superseded local edits, abandoned export files, and deleted draft media are cleaned up.
 
 1. Start the existing MySQL server. Back up the database, then run `php artisan migrate`. The new migration adds `short_videos` and `short_video_publications`; it does not rewrite news/image data.
 2. Install FFmpeg locally (includes ffprobe). Set `FFPROBE_BINARY` to its full executable path in `.env`, or put it on PATH. Restart PHP after changes. Upload validation fails closed if ffprobe is unavailable.
@@ -19,15 +19,15 @@ The image includes PHP extensions and ffprobe. It runs only the dedicated queue 
 
 ## Supported upload profile
 
-The app deliberately accepts a conservative subset, without automatic transcoding on upload: MP4/H.264/yuv420p, <=100 MiB, <=15 minutes, AAC audio <=48 kHz/stereo when present, and baked-in orientation. Social destinations also require 23?60 FPS, progressive video, width <=1920, bitrate <=25 Mbps, >=3 seconds. Facebook currently uses a conservative 9:16, >=540x960, 4?60-second profile. Wider provider format support is not implied. Actual Meta processing may reject additional content/account-specific constraints.
+The app deliberately accepts a conservative subset, with automatic orientation/Fit normalization when needed: MP4/H.264/yuv420p, <=100 MiB, <=15 minutes, AAC audio <=48 kHz/stereo when present, with rotation metadata accepted as source input. Final exports have baked-in orientation. Social destinations also require 23?60 FPS, progressive video, width <=1920, bitrate <=25 Mbps, >=3 seconds. Facebook currently uses a conservative 9:16, >=540x960, 4?60-second profile. Wider provider format support is not implied. Actual Meta processing may reject additional content/account-specific constraints.
 
 ### Explicit Edit & Crop Video
 
-The draft's Edit menu opens a single 9:16 editing canvas (no separate preview panel). Drag or use arrow keys to pan, adjust zoom, play/pause, seek, mute, and adjust start/end times. Batal discards the selection. Simpan Perubahan saves the source and FFmpeg output locally; an untouched exact 9:16 source is a no-op.
+The draft's Edit menu opens a single 9:16 editing canvas (no separate preview panel). Drag or use arrow keys to pan, adjust zoom, play/pause, seek, mute, and adjust start/end times. Batal discards the selection. Terapkan saves the source and FFmpeg output locally; an untouched exact 9:16 source is a no-op.
 
-After video metadata loads, non-9:16 uploads automatically open this dialog. Cancelling leaves the original selected and requires reopening/confirming the crop before Save Draft or Publish proceeds. Valid 9:16 uploads skip this step. This does not bypass upload codec, duration, size, audio or rotation checks, or any platform publication checks.
+Uploads default to Sesuaikan (Fit): the complete oriented image is contained in 9:16 with a blurred background. Pangkas (Crop) opens the existing draggable/zoomable editor; Batal discards pending changes and Terapkan confirms them. Source validation accepts rotation for normalization, while final export and publication validation still reject residual transforms. Already upright square-pixel 9:16 videos are reused. An initial confirmed edit is exported once during upload, without an intermediate Fit export.
 
-The server reads the preserved local original (or downloads a legacy Cloudinary original), probes it again, normalizes pixel aspect ratio, crops without stretching, and exports H.264/AAC MP4 at 1080×1920 with square pixels. FFprobe checks the output before saving it locally. Output and platform limits remain in force.
+The server reads the preserved local original (or downloads a legacy Cloudinary original), probes it again, applies FFmpeg autorotation once before geometry, normalizes pixel aspect ratio, fits or crops without stretching, and exports H.264/AAC MP4 at 1080×1920 with square pixels. FFprobe checks the output before saving it locally. Output and platform limits remain in force.
 
 The original URL/path/metadata remain in `metadata.crop_source`, and crop settings in `metadata.video_crop`. Reopening the editor uses that original to avoid repeated lossy crops. Custom covers are retained; video-frame covers are regenerated at the adjusted frame offset. Export failure leaves the saved video untouched. Only owned drafts may be edited; stale and concurrent crop requests are rejected.
 
@@ -35,7 +35,7 @@ Install FFmpeg in the **web server environment**, not just the queue worker. `FF
 
 New frame and custom JPG/PNG covers are stored locally. Legacy Cloudinary covers remain valid. ApaKhabar and Instagram use the selected cover; the implemented Facebook Reel workflow uses an automatic Facebook cover.
 
-The upload editor uses a responsive two-column layout: portrait playback and media information on the left, title/description and inline cover tabs on the right. `Dari Video` selects a frame from the filmstrip/slider; `Unggah Foto` selects a JPG/PNG. Switching tabs preserves both selections within the editor, and only the active source is sent on Save Draft or Publish. Saving persists the active thumbnail and frame offset through the existing cover API. Reopening a draft restores the tab corresponding to its saved thumbnail. The Edit Video menu contains only crop and video replacement.
+The upload editor uses a responsive two-column layout: portrait playback and media information on the left, title/description and inline cover tabs on the right. `Dari Video` selects a frame from the filmstrip/slider; `Unggah Foto` selects a JPG/PNG. Switching tabs preserves both selections within the editor, and only the active source is sent on Save Draft or Publish. Saving persists the active thumbnail and frame offset through the existing cover API. Reopening a draft restores the tab corresponding to its saved thumbnail. The Edit Video menu contains Fit/Crop and video replacement. Gallery covers default to Fit, correct JPEG EXIF orientation, and save as 1080x1920 JPEGs. The top-right Pangkas Sampul button opens a 9:16 Fit/Crop dialog with drag, zoom, Batal and Terapkan. Originals and settings persist in `metadata.cover_original` and `metadata.cover_crop`; unchanged settings reuse the existing thumbnail. Instagram uploads the final local cover once and caches it in `metadata.social_cover`, without changing the website thumbnail. Facebook retains its automatic cover selection.
 
 ## Publication safety
 
@@ -81,7 +81,7 @@ The application targets loopback TCP port 3306. No MySQL process/listener was fo
 
 ## Exact Windows FFprobe setup
 
-Upload inspection invokes **ffprobe**. Explicit changed crop saves also invoke **ffmpeg**. The FFmpeg Windows distribution includes both. Use the Windows builds linked by https://ffmpeg.org/download.html (Gyan or BtbN), download an appropriate 64-bit archive, and extract so `C:/Tools/ffmpeg/bin/ffprobe.exe` and `ffmpeg.exe` exist. No paid service is required for local processing.
+Upload inspection invokes **ffprobe**. Uploads requiring orientation/Fit normalization and explicit changed crop saves also invoke **ffmpeg**. The FFmpeg Windows distribution includes both. Use the Windows builds linked by https://ffmpeg.org/download.html (Gyan or BtbN), download an appropriate 64-bit archive, and extract so `C:/Tools/ffmpeg/bin/ffprobe.exe` and `ffmpeg.exe` exist. No paid service is required for local processing.
 
 Add `C:\Tools\ffmpeg\bin` through Windows **Edit environment variables for your account > Path > New**, then reopen PowerShell/IDE. For Apache running as a service, use System Path (administrator) or configure FFPROBE_BINARY as an absolute path; restart Apache. Do not replace the entire existing PATH.
 

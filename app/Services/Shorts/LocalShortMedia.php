@@ -2,6 +2,7 @@
 
 namespace App\Services\Shorts;
 
+use App\Services\NewsImageOptimizer;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -64,6 +65,56 @@ class LocalShortMedia
         }
 
         return Storage::disk('public')->url($path);
+    }
+
+    public function editCover(string $url, array $edit): string
+    {
+        $path = $this->pathFromUrl($url);
+        abort_unless($path && Storage::disk('public')->exists($path), 422, 'Sampul asli tidak tersedia.');
+        $bytes = Storage::disk('public')->get($path);
+        $source = imagecreatefromstring($bytes);
+        if (! $source) {
+            throw ValidationException::withMessages(['cover' => 'Sampul tidak dapat dibaca.']);
+        }
+        if ((getimagesizefromstring($bytes)[2] ?? null) === IMAGETYPE_JPEG) {
+            $source = NewsImageOptimizer::orientJpeg($source, $bytes);
+        }
+        $w = imagesx($source);
+        $h = imagesy($source);
+        $canvas = imagecreatetruecolor(1080, 1920);
+        try {
+            if ($edit['mode'] === 'fit') {
+                // Blur a small background, then upscale: bounded memory and smooth padding.
+                $bg = imagecreatetruecolor(54, 96);
+                $scale = max(54 / $w, 96 / $h);
+                imagecopyresampled($bg, $source, (int) round((54 - $w * $scale) / 2), (int) round((96 - $h * $scale) / 2), 0, 0, (int) round($w * $scale), (int) round($h * $scale), $w, $h);
+                for ($i = 0; $i < 12; $i++) {
+                    imagefilter($bg, IMG_FILTER_GAUSSIAN_BLUR);
+                }
+                imagecopyresampled($canvas, $bg, 0, 0, 0, 0, 1080, 1920, 54, 96);
+                imagedestroy($bg);
+                $scale = min(1080 / $w, 1920 / $h);
+                $dw = (int) round($w * $scale);
+                $dh = (int) round($h * $scale);
+                imagecopyresampled($canvas, $source, (int) floor((1080 - $dw) / 2), (int) floor((1920 - $dh) / 2), 0, 0, $dw, $dh, $w, $h);
+            } else {
+                $cw = max(1, (int) round(min($w, $h * 9 / 16) / $edit['zoom']));
+                $ch = max(1, (int) round(min($h, $w * 16 / 9) / $edit['zoom']));
+                imagecopyresampled($canvas, $source, 0, 0, (int) round(($w - $cw) * $edit['x']), (int) round(($h - $ch) * $edit['y']), 1080, 1920, $cw, $ch);
+            }
+            $target = 'shorts/covers/'.Str::uuid().'.jpg';
+            ob_start();
+            imagejpeg($canvas, null, 92);
+            $encoded = ob_get_clean();
+            if (! Storage::disk('public')->put($target, $encoded)) {
+                throw ValidationException::withMessages(['cover' => 'Sampul tidak dapat disimpan.']);
+            }
+
+            return Storage::disk('public')->url($target);
+        } finally {
+            imagedestroy($source);
+            imagedestroy($canvas);
+        }
     }
 
     public function delete(?string $path): void

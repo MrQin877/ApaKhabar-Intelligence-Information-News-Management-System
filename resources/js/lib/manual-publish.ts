@@ -1,5 +1,6 @@
 export type PublishResult = {
     pending?: boolean;
+    permalink_pending?: boolean;
     success: boolean;
     attempt_id: string;
     retry_url?: string;

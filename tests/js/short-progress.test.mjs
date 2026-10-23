@@ -7,12 +7,23 @@ import ts from 'typescript';
 const require = createRequire(import.meta.url);
 function compile(path) { return ts.transpileModule(readFileSync(path, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText; }
 const lib = { exports: {}, URL }; vm.runInNewContext(compile('resources/js/lib/short-publication.ts'), lib);
+const icons = { exports: {}, require(name) {
+    if (name === 'react/jsx-runtime') return require(name);
+    if (name === '@/components/app-logo-icon') return { default: 'AppLogoIcon' };
+    return new Proxy({}, { get: (_, key) => String(key) });
+} }; vm.runInNewContext(compile('resources/js/components/publication-preview.tsx'), icons);
 const nodes = node => !node || typeof node !== 'object' ? [] : Array.isArray(node) ? node.flatMap(nodes) : [node, ...nodes(node.props?.children)];
 const text = node => node == null ? '' : typeof node !== 'object' ? String(node) : Array.isArray(node) ? node.map(text).join(' ') : text(node.props?.children);
-function panel() {
+test('status and preview reuse the original static platform assets',()=>{
+    assert.equal(icons.exports.PlatformIcon({platform:'website'}).type,'AppLogoIcon');
+    assert.equal(icons.exports.PlatformIcon({platform:'instagram'}).props.src,'/images/integrations/instagram.svg');
+    assert.equal(icons.exports.PlatformIcon({platform:'facebook'}).props.src,'/images/integrations/facebook.png');
+    for (const platform of ['instagram','facebook']) assert.doesNotMatch(icons.exports.PlatformIcon({platform}).props.className,/animate/);
+});
+function panel(saved = []) {
     const slots = []; let cursor = 0; const effects = []; const events = new Map(); const timers = new Map(); const timeouts = new Map(); let timer = 0;
     const requests = []; let response = { result: { attempt_id: 'short-7', pending: true, results: { website: { status: 'published' }, instagram: { status: 'processing' } } } };
-    const storage = new Map();
+    const storage = new Map(saved);
     const context = { exports: {}, sessionStorage: { getItem: k => storage.get(k), setItem: (k,v) => storage.set(k,v) }, window: { addEventListener: (n,f) => events.set(n,f), removeEventListener: n => events.delete(n), setInterval: f => { timers.set(++timer,f); return timer; }, clearInterval: id => timers.delete(id), setTimeout: (f,ms)=>{timeouts.set(++timer,{f,ms});return timer;}, clearTimeout:id=>timeouts.delete(id) }, require(name) {
         if (name === 'react') return {
             useState(init) { const i=cursor++; if (!(i in slots)) slots[i]=typeof init==='function'?init():init; return [slots[i], v=>{slots[i]=typeof v==='function'?v(slots[i]):v;}]; },
@@ -63,6 +74,39 @@ test('expanded panel keeps multiple jobs separate and progress reflects terminal
     assert.match(text(view),/3 dari 5 platform selesai/);
     assert.ok(view.some(n=>n.type==='VideoPublicationRing'));
 });
+test('expanded progress aligns a platform icon beside every selected destination',()=>{
+    const app=panel();
+    app.receive({id:7,title:'Video',result:{attempt_id:'short-7',pending:true,results:{website:{status:'published'},instagram:{status:'processing'},facebook:{status:'queued'}}}});
+    const view=app.render();
+    assert.equal(view.filter(n=>n.type==='PlatformIcon').length,3);
+    assert.deepEqual(view.filter(n=>n.type==='PlatformIcon').map(n=>n.props.platform),['website','instagram','facebook']);
+});
+test('selected icons and queued states appear before any request, then backend statuses replace them independently',async()=>{
+    const app=panel();
+    app.receive({id:-17,title:'Video baru',ready:false,destinations:['website','instagram','facebook'],result:{attempt_id:'pending-17',pending:true,success:false,results:{website:{status:'queued'},instagram:{status:'queued'},facebook:{status:'queued'}}}});
+    let view=app.render();
+    assert.deepEqual(view.filter(n=>n.type==='PlatformIcon').map(n=>n.props.platform),['website','instagram','facebook']);
+    assert.equal(view.filter(n=>n.type==='VideoPublicationIndicator').length,3);
+    await app.tick();
+    assert.equal(app.requests.length,0);
+    assert.deepEqual(JSON.parse(app.storage.get('short-publications:42')),[]);
+    app.receive({id:7,replaceId:-17,title:'Video baru',ready:true,destinations:['website','instagram','facebook'],result:{attempt_id:'short-7',pending:true,success:false,results:{website:{status:'published'},instagram:{status:'processing'},facebook:{status:'failed'}}}});
+    view=app.render();
+    assert.deepEqual(view.filter(n=>n.type==='PlatformIcon').map(n=>n.props.platform),['website','instagram','facebook']);
+    assert.deepEqual(view.filter(n=>n.type==='VideoPublicationIndicator').map(n=>n.props.status),['published','processing','failed']);
+    assert.equal(JSON.parse(app.storage.get('short-publications:42'))[0].id,7);
+    const reopened=panel([['short-publications:42',app.storage.get('short-publications:42')]]);
+    assert.equal(reopened.render().filter(n=>n.type==='PlatformIcon').length,3);
+    assert.equal(reopened.render().filter(n=>n.type==='VideoPublicationIndicator').length,3);
+});
+test('failed publishing removes its temporary icons without persisting a phantom job',()=>{
+    const app=panel();
+    app.receive({id:-9,title:'Gagal',ready:false,destinations:['website','instagram'],result:{attempt_id:'pending-9',pending:true,success:false,results:{website:{status:'queued'},instagram:{status:'queued'}}}});
+    assert.equal(app.render().filter(n=>n.type==='PlatformIcon').length,2);
+    app.receive({removeId:-9});
+    assert.equal(app.render().filter(n=>n.type==='PlatformIcon').length,0);
+    assert.deepEqual(JSON.parse(app.storage.get('short-publications:42')),[]);
+});
 test('thumbnail comes from the existing status API and persists across navigation',async()=>{
     const app=panel();
     app.response({video:{title:'Video terbaru',thumbnail_url:'https://example.com/cover.jpg'},result:{attempt_id:'short-7',pending:true,results:{website:{status:'published'},instagram:{status:'processing'}}}});
@@ -94,11 +138,14 @@ test('failed publication stays compact until acknowledged without canceling back
     assert.equal(app.storage.get('short-publications:42'),'[]');
     assert.equal(app.requests.length,0);
 });
-test('backend pending flag keeps permalink lookup polling even after publication success',()=>{
-    assert.equal(lib.exports.publicationActive({pending:true,results:{instagram:{status:'published'}}}),true);
+test('confirmed publishing stops loading while permalink lookup keeps polling',()=>{
+    assert.equal(lib.exports.publicationActive({pending:false,permalink_pending:true,results:{instagram:{status:'published'}}}),false);
+    assert.equal(lib.exports.publicationPolling({pending:false,permalink_pending:true,results:{instagram:{status:'published'}}}),true);
+    assert.equal(lib.exports.publicationPolling({pending:false,permalink_pending:false,results:{instagram:{status:'published'}}}),false);
     assert.equal(lib.exports.publicationActive({pending:false,results:{instagram:{status:'uncertain'}}}),false);
     assert.equal(lib.exports.publicationUrl('instagram','failed','https://instagram.com/reel/a'),null);
     assert.equal(lib.exports.publicationUrl('instagram','published','https://instagram.com.evil.test/a'),null);
+    assert.equal(lib.exports.publicationUrl('website','published',null,42),'/shorts/42');
 });
 test('processing ring is indeterminate while completed and queued states use backend-driven icons',()=>{
     const css=readFileSync('resources/css/app.css','utf8');
@@ -118,7 +165,7 @@ test('processing ring is indeterminate while completed and queued states use bac
             assert.equal(track.type,'circle');
             assert.equal(arc.props.pathLength,'100');
             assert.match(arc.props.className,/video-publication-ring-fill/);
-            assert.equal(tree.props.children[1],status==='uploading'?'Mengunggah':'Diproses');
+            assert.equal(tree.props.children[1],status==='uploading'?'Mengunggah':'Memproses');
         } else {
             assert.notEqual(icon.type,'svg');
             assert.ok(!icon.props.className.includes('animate-spin'));

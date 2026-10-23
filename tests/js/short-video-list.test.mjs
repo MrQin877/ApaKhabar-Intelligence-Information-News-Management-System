@@ -50,11 +50,17 @@ test('draft primary action preserves draft ID and archived cards remain accessib
 });
 test('only real safe successful publication permalinks become links', () => {
     const { publicationUrl: url } = mount().exports;
-    assert.equal(url('website', 'published'), '/#shorts');
+    assert.equal(url('website', 'published', null, false, 1), '/shorts/1');
+    assert.equal(url('website', 'published'), null);
     assert.equal(url('website', 'published', null, true), null);
     assert.equal(url('instagram', 'published', 'https://www.instagram.com/reel/real/'), 'https://www.instagram.com/reel/real/');
     for (const status of ['failed', 'processing', 'queued', 'uncertain', 'not_selected']) assert.equal(url('facebook', status, 'https://www.facebook.com/reel/1'), null);
     for (const unsafe of ['javascript:alert(1)', 'https://instagram.com.evil.test/reel/1', 'https://evil.test/', '']) assert.equal(url('instagram', 'published', unsafe), null);
+});
+test('published ApaKhabar destination opens the selected video detail', () => {
+    const view = mount([video]).render();
+    const link = view.nodes.find(n => n.type === 'a' && n.props.href === '/shorts/1');
+    assert.ok(link);
 });
 test('every platform status has an accessible label and processing animates', () => {
     const { VideoPlatformStatus } = mount().exports;

@@ -73,13 +73,14 @@ export function publicationUrl(
     status: string,
     permalink?: string | null,
     archived = false,
+    videoId?: number,
 ) {
     if (status !== 'published') {
         return null;
     }
 
     if (platform === 'website') {
-        return archived ? null : '/#shorts';
+        return archived || !videoId ? null : `/shorts/${videoId}`;
     }
 
     try {
@@ -322,6 +323,7 @@ export function ShortVideoList({
                                                         'not_selected',
                                                     publication?.permalink,
                                                     item.status === 'archived',
+                                                    item.id,
                                                 );
 
                                                 return url ? (
@@ -355,7 +357,8 @@ export function ShortVideoList({
                                                         <PlatformIcon
                                                             platform={platform}
                                                         />
-                                                        {names[platform]}{' \u2014 '}
+                                                        {names[platform]}
+                                                        {' \u2014 '}
                                                         {publication?.status ===
                                                         'published'
                                                             ? 'Tautan belum tersedia'

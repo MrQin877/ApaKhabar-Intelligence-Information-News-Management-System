@@ -10,6 +10,22 @@ use Symfony\Component\Process\Process;
 
 class VideoCropper
 {
+    public static function displaySize(array $metadata): array
+    {
+        $width = (int) round($metadata['width'] * ($metadata['sample_aspect_ratio'] ?? 1) / 2) * 2;
+        $height = $metadata['height'];
+
+        return abs($metadata['rotation'] ?? 0) % 180 === 90 ? [$height, $width] : [$width, $height];
+    }
+
+    public static function needsFit(array $metadata): bool
+    {
+        return ($metadata['rotation'] ?? 0) % 360 !== 0
+            || ($metadata['display_transform'] ?? false)
+            || abs(($metadata['sample_aspect_ratio'] ?? 1) - 1) > 0.0001
+            || $metadata['width'] * 16 !== $metadata['height'] * 9;
+    }
+
     public static function rectangle(int $width, int $height, array $edit): array
     {
         // Multiples of 18/32 give an exact 9:16 crop with even H.264 dimensions.
@@ -47,17 +63,20 @@ class VideoCropper
                 }
             }
             $inspector = app(VideoInspector::class);
-            $metadata = $inspector->inspect(new UploadedFile($input, 'source.mp4', 'video/mp4', null, true));
+            $metadata = $inspector->inspect(new UploadedFile($input, 'source.mp4', 'video/mp4', null, true), true);
             if ($edit['end'] > $metadata['duration'] + 0.05 || $edit['start'] >= $edit['end']) {
                 throw ValidationException::withMessages(['video' => 'Rentang waktu video tidak valid.']);
             }
-            $sar = $metadata['sample_aspect_ratio'] ?? 1;
-            $width = (int) round($metadata['width'] * $sar / 2) * 2;
-            if ($width < 18 || $width > 8192 || $metadata['height'] < 32 || $metadata['height'] > 8192) {
+            [$width, $height] = self::displaySize($metadata);
+            if ($width < 18 || $width > 8192 || $height < 32 || $height > 8192) {
                 throw ValidationException::withMessages(['video' => 'Dimensi sumber tidak didukung untuk crop (maksimal 8192 px).']);
             }
-            $rect = self::rectangle($width, $metadata['height'], $edit);
-            $filters = "scale={$width}:{$metadata['height']},setsar=1,crop={$rect['width']}:{$rect['height']}:{$rect['x']}:{$rect['y']},scale=1080:1920,setsar=1";
+            $rect = self::rectangle($width, $height, $edit);
+            // FFmpeg autorotates exactly once, before this graph. Geometry uses display dimensions.
+            $filters = "[0:v:0]scale={$width}:{$height},setsar=1,";
+            $filters .= ($edit['mode'] ?? 'crop') === 'fit'
+                ? 'split=2[bg][fg];[bg]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,gblur=sigma=30[blur];[fg]scale=1080:1920:force_original_aspect_ratio=decrease:force_divisible_by=2[front];[blur][front]overlay=(W-w)/2:(H-h)/2,setsar=1[out]'
+                : "crop={$rect['width']}:{$rect['height']}:{$rect['x']}:{$rect['y']},scale=1080:1920,setsar=1[out]";
             $binary = config('shorts.ffmpeg');
             if (! $binary) {
                 $probe = config('shorts.ffprobe');
@@ -65,8 +84,8 @@ class VideoCropper
             }
             $process = new Process([$binary, '-hide_banner', '-loglevel', 'error', '-nostdin', '-y',
                 '-protocol_whitelist', 'file', '-i', $input, '-ss', (string) $edit['start'],
-                '-t', (string) ($edit['end'] - $edit['start']), '-map', '0:v:0', '-map', '0:a:0?',
-                '-vf', $filters, '-c:v', 'libx264', '-preset', 'fast', '-crf', '20', '-maxrate', '8M', '-bufsize', '16M',
+                '-t', (string) ($edit['end'] - $edit['start']), '-map', '[out]', '-map', '0:a:0?',
+                '-filter_complex', $filters, '-c:v', 'libx264', '-preset', 'fast', '-crf', '20', '-maxrate', '8M', '-bufsize', '16M',
                 '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '128k', '-ar', '48000', '-ac', '2',
                 '-map_metadata', '-1', '-metadata:s:v:0', 'rotate=0', '-movflags', '+faststart', '-f', 'mp4', $output]);
             $process->setTimeout(config('shorts.crop_timeout', 300));

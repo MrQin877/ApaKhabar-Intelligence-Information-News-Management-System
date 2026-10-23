@@ -34,11 +34,12 @@ export function VideoCropDialog({
     onClose: () => void;
     onSave: (crop: VideoCrop) => Promise<void>;
 }) {
+    const background = useRef<HTMLVideoElement>(null);
     const video = useRef<HTMLVideoElement>(null);
     const drag = useRef<{ x: number; y: number; crop: VideoCrop } | null>(null);
     const [size, setSize] = useState({ width: 0, height: 0, duration: 0 });
     const [crop, setCrop] = useState<VideoCrop>(
-        initial ?? { x: 0.5, y: 0.5, zoom: 1, start: 0, end: 0 },
+        initial ?? { mode: 'fit', x: 0.5, y: 0.5, zoom: 1, start: 0, end: 0 },
     );
     const [time, setTime] = useState(initial?.start ?? 0);
     const [playing, setPlaying] = useState(false);
@@ -100,11 +101,37 @@ export function VideoCropDialog({
                     }
                 }}
             >
-                <DialogTitle>Edit &amp; Crop Video</DialogTitle>
+                <DialogTitle>Sesuaikan / Pangkas Video</DialogTitle>
                 <DialogDescription>
                     Geser dan zoom video untuk menyesuaikan area dalam rasio
                     9:16 (Reels). Video asli tetap tersimpan.
                 </DialogDescription>
+                <div className="flex gap-2">
+                    <Button
+                        variant={crop.mode === 'fit' ? 'default' : 'outline'}
+                        className={
+                            crop.mode === 'fit'
+                                ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                                : ''
+                        }
+                        disabled={saving}
+                        onClick={() => setCrop({ ...crop, mode: 'fit' })}
+                    >
+                        Sesuaikan (Fit)
+                    </Button>
+                    <Button
+                        variant={crop.mode !== 'fit' ? 'default' : 'outline'}
+                        className={
+                            crop.mode !== 'fit'
+                                ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                                : ''
+                        }
+                        disabled={saving}
+                        onClick={() => setCrop({ ...crop, mode: 'crop' })}
+                    >
+                        Pangkas (Crop)
+                    </Button>
+                </div>
                 <div className="rounded-xl bg-zinc-950 p-3">
                     <div
                         role="group"
@@ -112,7 +139,7 @@ export function VideoCropDialog({
                         tabIndex={saving ? -1 : 0}
                         className="relative mx-auto aspect-[9/16] h-[min(46dvh,420px)] max-w-full touch-none overflow-hidden rounded-md border-2 border-emerald-400 bg-black outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
                         onPointerDown={(event) => {
-                            if (!ready || saving) {
+                            if (!ready || saving || crop.mode === 'fit') {
                                 return;
                             }
 
@@ -126,7 +153,11 @@ export function VideoCropDialog({
                             };
                         }}
                         onPointerMove={(event) => {
-                            if (!drag.current || saving) {
+                            if (
+                                !drag.current ||
+                                saving ||
+                                crop.mode === 'fit'
+                            ) {
                                 return;
                             }
 
@@ -175,6 +206,7 @@ export function VideoCropDialog({
                         onKeyDown={(event) => {
                             if (
                                 saving ||
+                                crop.mode === 'fit' ||
                                 ![
                                     'ArrowLeft',
                                     'ArrowRight',
@@ -217,9 +249,9 @@ export function VideoCropDialog({
                             playsInline
                             muted={muted}
                             preload="metadata"
-                            className="pointer-events-none absolute max-w-none"
+                            className="pointer-events-none absolute z-10 max-w-none"
                             style={
-                                ready
+                                ready && crop.mode !== 'fit'
                                     ? {
                                           width: `${(size.width / rect.width) * 100}%`,
                                           height: `${(size.height / rect.height) * 100}%`,
@@ -243,6 +275,7 @@ export function VideoCropDialog({
                                     previous.end > 0
                                         ? previous
                                         : (initial ?? {
+                                              mode: 'fit',
                                               x: 0.5,
                                               y: 0.5,
                                               zoom: 1,
@@ -269,8 +302,27 @@ export function VideoCropDialog({
 
                                 setTime(v.currentTime);
                             }}
-                            onPlay={() => setPlaying(true)}
-                            onPause={() => setPlaying(false)}
+                            onSeeked={() => {
+                                if (background.current && video.current) {
+                                    background.current.currentTime =
+                                        video.current.currentTime;
+                                }
+                            }}
+                            onPlay={() => {
+                                setPlaying(true);
+
+                                if (background.current && video.current) {
+                                    background.current.currentTime =
+                                        video.current.currentTime;
+                                    void background.current
+                                        .play()
+                                        .catch(() => {});
+                                }
+                            }}
+                            onPause={() => {
+                                setPlaying(false);
+                                background.current?.pause();
+                            }}
                             onEnded={() => setPlaying(false)}
                             onError={() => {
                                 setError(
@@ -279,8 +331,33 @@ export function VideoCropDialog({
                                 setSize({ width: 0, height: 0, duration: 0 });
                             }}
                         />
+                        {crop.mode === 'fit' && (
+                            <video
+                                ref={background}
+                                src={source}
+                                muted
+                                playsInline
+                                aria-hidden="true"
+                                onLoadedData={(event) => {
+                                    event.currentTarget.currentTime =
+                                        video.current?.currentTime ??
+                                        crop.start;
+
+                                    if (
+                                        video.current &&
+                                        !video.current.paused
+                                    ) {
+                                        void event.currentTarget
+                                            .play()
+                                            .catch(() => {});
+                                    }
+                                }}
+                                className="pointer-events-none absolute inset-0 -z-0 h-full w-full scale-110 object-cover blur-xl"
+                                style={{ zIndex: 0 }}
+                            />
+                        )}
                         <div
-                            className="pointer-events-none absolute inset-0 grid grid-cols-3 grid-rows-3 opacity-40"
+                            className="pointer-events-none absolute inset-0 z-20 grid grid-cols-3 grid-rows-3 opacity-40"
                             aria-hidden="true"
                         >
                             {Array.from({ length: 9 }, (_, index) => (
@@ -384,6 +461,7 @@ export function VideoCropDialog({
                             onChange={(event) =>
                                 setCrop({
                                     ...crop,
+                                    mode: 'crop',
                                     zoom: Number(event.target.value),
                                 })
                             }
@@ -403,6 +481,7 @@ export function VideoCropDialog({
                             disabled={!ready || saving}
                             onClick={() => {
                                 setCrop({
+                                    mode: 'fit',
                                     x: 0.5,
                                     y: 0.5,
                                     zoom: 1,
@@ -445,7 +524,7 @@ export function VideoCropDialog({
                         {saving && (
                             <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" />
                         )}
-                        Simpan Perubahan
+                        Terapkan
                     </Button>
                 </div>
             </DialogContent>

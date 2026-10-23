@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia as Assert;
 
@@ -56,15 +57,19 @@ test('landscape upload crop save draft publish sends cropped URL to both platfor
     $cloud = Mockery::mock(CloudinaryVideoService::class)->makePartial();
     $cloud->shouldReceive('upload')->once()->andReturn(['secure_url' => $socialUrl, 'public_id' => 'confirmed-crop']);
     $this->app->instance(CloudinaryVideoService::class, $cloud);
+    $this->mock(VideoCropper::class)->shouldReceive('export')->once()->with(Mockery::any(), Mockery::on(fn ($edit) => $edit['mode'] === 'fit'), Mockery::any())->andReturn([
+        'asset' => ['url' => 'http://localhost/storage/shorts/edits/fit.mp4', 'path' => 'shorts/edits/fit.mp4'], 'metadata' => shortMetadata(),
+    ]);
+    $cloud->shouldReceive('cover')->once()->andReturn(['url' => 'https://res.cloudinary.com/demo/image/upload/frame.jpg', 'public_id' => null]);
     $uploaded = $this->postJson('/admin/short-videos/upload', ['video' => UploadedFile::fake()->create('wide.mp4', 100, 'video/mp4')])->assertCreated();
     $id = $uploaded->json('video.id');
-    $originalUrl = $uploaded->json('video.video_url');
-    $originalPath = $uploaded->json('video.metadata.local_path');
+    $originalUrl = $uploaded->json('video.metadata.crop_source.url');
+    $originalPath = $uploaded->json('video.metadata.crop_source.path');
     $this->mock(VideoCropper::class)->shouldReceive('export')->once()->with($originalUrl, Mockery::any(), $originalPath)->andReturn([
         'asset' => ['url' => $croppedUrl, 'path' => 'shorts/edits/confirmed-crop.mp4'], 'metadata' => shortMetadata(),
     ]);
     Storage::disk('public')->put('shorts/edits/confirmed-crop.mp4', 'edited bytes');
-    $this->postJson('/admin/short-videos/'.$id.'/crop', ['expected_url' => $originalUrl, 'x' => 0.75, 'y' => 0.5, 'zoom' => 1, 'start' => 0, 'end' => 20])
+    $this->postJson('/admin/short-videos/'.$id.'/crop', ['expected_url' => $uploaded->json('video.video_url'), 'x' => 0.75, 'y' => 0.5, 'zoom' => 1, 'start' => 0, 'end' => 20])
         ->assertOk()->assertJsonPath('video.video_url', $croppedUrl)->assertJsonPath('video.metadata.crop_source.url', $originalUrl);
     Storage::disk('public')->assertExists($originalPath);
     $this->postJson('/admin/short-videos/'.$id, ['title' => 'Confirmed crop', 'description' => 'Preserved caption', 'frame_offset' => 0, 'cover_mode' => 'keep'])->assertOk();
@@ -235,7 +240,13 @@ beforeEach(function () {
     Storage::fake('public');
     config(['services.cloudinary.cloud_name' => 'demo']);
     $local = Mockery::mock(LocalShortMedia::class)->makePartial();
-    $local->shouldReceive('frame')->andReturn('http://localhost/storage/shorts/covers/frame.jpg');
+    $local->shouldReceive('frame')->andReturnUsing(function () {
+        $file = UploadedFile::fake()->image('frame.jpg');
+        $path = 'shorts/covers/'.Str::uuid().'.jpg';
+        Storage::disk('public')->put($path, file_get_contents($file->getRealPath()));
+
+        return Storage::disk('public')->url($path);
+    });
     $this->app->instance(LocalShortMedia::class, $local);
 });
 
@@ -293,7 +304,7 @@ test('provider permalink normalization rejects external origins credentials and 
     expect(PublicationPermalink::normalize('instagram', 'https://www.instagram.com/reel/saved/'))->toBe('https://www.instagram.com/reel/saved/');
 });
 
-test('video progress reports backend pending work through permalink completion without dispatching jobs', function () {
+test('video progress ends on confirmed publication while permalink lookup continues without dispatching jobs', function () {
     $user = shortUser();
     $video = shortDraft($user);
     $video->update(['status' => 'published']);
@@ -302,9 +313,9 @@ test('video progress reports backend pending work through permalink completion w
     $url = '/admin/short-videos/'.$video->id.'/status';
     $this->getJson($url)->assertOk()->assertJsonPath('result.pending', true)->assertJsonPath('result.results.instagram.status', 'processing');
     $record->update(['status' => 'published', 'stage' => 'permalink', 'media_id' => '123']);
-    $this->getJson($url)->assertJsonPath('result.pending', true)->assertJsonPath('result.results.instagram.success', true);
+    $this->getJson($url)->assertJsonPath('result.pending', false)->assertJsonPath('result.permalink_pending', true)->assertJsonPath('result.results.instagram.success', true);
     $record->update(['stage' => 'done', 'permalink' => 'https://www.instagram.com/reel/saved/']);
-    $this->getJson($url)->assertJsonPath('result.pending', false)->assertJsonPath('result.results.instagram.permalink', 'https://www.instagram.com/reel/saved/');
+    $this->getJson($url)->assertJsonPath('result.pending', false)->assertJsonPath('result.permalink_pending', false)->assertJsonPath('result.results.instagram.permalink', 'https://www.instagram.com/reel/saved/');
     $record->update(['status' => 'uncertain', 'stage' => 'publish_inflight']);
     $this->getJson($url)->assertJsonPath('result.pending', false)->assertJsonPath('result.results.instagram.success', false);
     Queue::assertNothingPushed();
@@ -386,13 +397,14 @@ test('saved active thumbnail source is returned to editor and used by Instagram 
     $this->postJson('/admin/short-videos/'.$video->id, ['title' => $video->title, 'description' => $video->description, 'frame_offset' => 4.5, 'cover_mode' => 'frame'])
         ->assertOk()->assertJsonPath('video.thumbnail_url', $frame)->assertJsonPath('video.frame_offset', 4.5);
     $this->post('/admin/short-videos/'.$video->id, ['title' => $video->title, 'description' => $video->description, 'frame_offset' => 4.5, 'cover_mode' => 'upload', 'cover' => UploadedFile::fake()->image('photo.jpg')], ['Accept' => 'application/json'])
-        ->assertOk()->assertJsonPath('video.thumbnail_url', $photo);
-    $this->get('/admin/short-videos/create?draft='.$video->id)->assertInertia(fn (Assert $page) => $page->where('draft.thumbnail_url', $photo)->where('draft.frame_offset', 4.5));
+        ->assertOk();
+    $localPhoto = $video->fresh()->thumbnail_url;
+    $this->get('/admin/short-videos/create?draft='.$video->id)->assertInertia(fn (Assert $page) => $page->where('draft.thumbnail_url', $localPhoto)->where('draft.frame_offset', 4.5));
     shortPublish($this, $video->fresh(), ['website', 'instagram'])->assertOk();
     Http::fake(['*/123/media' => Http::response(['id' => '456'])]);
     app(ReelPublisher::class)->step($video->publications()->where('platform', 'instagram')->firstOrFail());
     Http::assertSent(fn ($request) => $request['cover_url'] === $photo);
-    expect($video->fresh()->thumbnail_url)->toBe($photo);
+    expect($video->fresh()->thumbnail_url)->toBe($localPhoto);
 });
 
 test('upload persists a local draft without Cloudinary', function () {
@@ -530,6 +542,28 @@ test('stale previews and invalid covers cannot publish or change a draft', funct
     $this->postJson('/admin/short-videos/'.$v->id, ['title' => 'Title', 'description' => 'Description', 'frame_offset' => 21, 'cover_mode' => 'frame'])->assertUnprocessable();
     $this->postJson('/admin/short-videos/'.$v->id, ['title' => 'Title', 'description' => 'Description', 'frame_offset' => 0, 'cover_mode' => 'upload'])->assertUnprocessable();
     expect($v->fresh()->status)->toBe('draft');
+});
+
+test('a draft keeps its video and cover when title and description are empty, but cannot publish', function () {
+    $user = shortUser();
+    $video = shortDraft($user);
+    $this->actingAs($user);
+
+    $this->postJson('/admin/short-videos/'.$video->id, [
+        'title' => '', 'description' => '', 'frame_offset' => 0, 'cover_mode' => 'keep',
+    ])->assertOk()->assertJsonPath('video.id', $video->id)->assertJsonPath('video.title', '')->assertJsonPath('video.description', '');
+
+    expect(ShortVideo::count())->toBe(1);
+    expect($video->fresh()->video_url)->toBe($video->video_url);
+    expect($video->fresh()->thumbnail_url)->toBe($video->thumbnail_url);
+    $this->get('/admin/short-videos/create?draft='.$video->id)->assertInertia(fn (Assert $page) => $page
+        ->where('draft.id', $video->id)
+        ->where('draft.title', '')
+        ->where('draft.description', '')
+        ->where('draft.video_url', $video->video_url)
+        ->where('draft.thumbnail_url', $video->thumbnail_url));
+    $this->postJson('/admin/short-videos/'.$video->id.'/preview', ['platforms' => ['website']])->assertUnprocessable();
+    expect($video->fresh()->status)->toBe('draft');
 });
 
 test('a definite Meta rejection preserves its safe error and can be retried', function () {
@@ -702,10 +736,9 @@ test('selected frame and custom cover persist through draft reload and website p
     $cloud->shouldReceive('cover')->once()->with(null, $video->video_public_id, 4.5)->andReturn(['url' => 'https://res.cloudinary.com/demo/video/upload/so_4.500/short.jpg', 'public_id' => null]);
     $this->postJson('/admin/short-videos/'.$video->id, ['title' => 'New title', 'description' => 'Description', 'frame_offset' => 4.5, 'cover_mode' => 'frame'])->assertOk()->assertJsonPath('video.frame_offset', 4.5);
     $this->get('/admin/short-videos')->assertInertia(fn (Assert $page) => $page->where('videos.data.0.frame_offset', 4.5)->where('videos.data.0.thumbnail_url', 'https://res.cloudinary.com/demo/video/upload/so_4.500/short.jpg'));
-    $cloud->shouldReceive('cover')->once()->with(Mockery::type(UploadedFile::class), $video->video_public_id, 4.5)->andReturn(['url' => 'https://res.cloudinary.com/demo/image/upload/cover.jpg', 'public_id' => null]);
     $this->postJson('/admin/short-videos/'.$video->id, ['title' => 'New title', 'description' => 'Description', 'frame_offset' => 4.5, 'cover_mode' => 'upload', 'cover' => UploadedFile::fake()->image('cover.jpg')])->assertOk();
     shortPublish($this, $video->fresh(), ['website'])->assertOk();
-    $this->get('/')->assertInertia(fn (Assert $page) => $page->where('shorts.0.thumbnail_url', 'https://res.cloudinary.com/demo/image/upload/cover.jpg'));
+    $this->get('/')->assertInertia(fn (Assert $page) => $page->where('shorts.0.thumbnail_url', $video->fresh()->thumbnail_url));
 });
 
 test('shorts list and publication routes preserve roles ownership and draft deep links', function () {
@@ -743,4 +776,54 @@ test('video management searches filters and paginates only owned records with pu
     $this->get('/admin/short-videos?status=draft&page=2')->assertInertia(fn (Assert $p) => $p->has('videos.data', 1)->where('videos.total', 13)->where('videos.current_page', 2));
     $this->get('/admin/short-videos?search=tidak-ada')->assertInertia(fn (Assert $p) => $p->has('videos.data', 0));
     $this->getJson('/admin/short-videos?status=invalid')->assertUnprocessable();
+});
+
+test('gallery covers fit locally, preserve EXIF original and restore crop settings without duplicate rendering', function () {
+    $video = shortDraft(shortUser());
+    $this->actingAs(User::find($video->created_by));
+    $image = imagecreatetruecolor(160, 90);
+    imagefilledrectangle($image, 0, 0, 79, 89, imagecolorallocate($image, 255, 0, 0));
+    imagefilledrectangle($image, 80, 0, 159, 89, imagecolorallocate($image, 0, 0, 255));
+    ob_start();
+    imagejpeg($image, null, 100);
+    $jpeg = ob_get_clean();
+    imagedestroy($image);
+    $exif = "Exif\0\0".'II'.pack('vV', 42, 8).pack('v', 1).pack('vvV', 0x112, 3, 1).pack('v', 6)."\0\0".pack('V', 0);
+    $jpeg = substr($jpeg, 0, 2)."\xff\xe1".pack('n', strlen($exif) + 2).$exif.substr($jpeg, 2);
+    $file = UploadedFile::fake()->createWithContent('oriented.jpg', $jpeg);
+    $body = ['title' => $video->title, 'description' => $video->description, 'frame_offset' => 0, 'cover_mode' => 'upload', 'cover' => $file];
+    $this->postJson('/admin/short-videos/'.$video->id, $body)->assertOk()->assertJsonPath('video.metadata.cover_crop.mode', 'fit');
+    $video->refresh();
+    $local = app(LocalShortMedia::class);
+    $original = $video->metadata['cover_original'];
+    expect(Storage::disk('public')->get($local->pathFromUrl($original)))->toBe($jpeg);
+    $bytes = Storage::disk('public')->get($local->pathFromUrl($video->thumbnail_url));
+    expect(array_slice(getimagesizefromstring($bytes), 0, 2))->toBe([1080, 1920]);
+    $result = imagecreatefromstring($bytes);
+    $top = imagecolorsforindex($result, imagecolorat($result, 540, 400));
+    $bottom = imagecolorsforindex($result, imagecolorat($result, 540, 1500));
+    expect($top['red'])->toBeGreaterThan(240);
+    expect($bottom['blue'])->toBeGreaterThan(240);
+    imagedestroy($result);
+    unset($body['cover']);
+    $body['cover_mode'] = 'keep';
+    $body['cover_crop'] = ['mode' => 'crop', 'x' => '0.2', 'y' => '0.8', 'zoom' => '2'];
+    $this->postJson('/admin/short-videos/'.$video->id, $body)->assertOk()->assertJsonPath('video.metadata.cover_original', $original);
+    $url = $video->fresh()->thumbnail_url;
+    $this->postJson('/admin/short-videos/'.$video->id, $body)->assertOk()->assertJsonPath('video.thumbnail_url', $url);
+    $this->get('/admin/short-videos/create?draft='.$video->id)->assertInertia(fn (Assert $page) => $page->where('draft.metadata.cover_crop.zoom', 2)->where('draft.metadata.cover_original', $original));
+    $this->postJson('/admin/short-videos/'.$video->id, [...$body, 'cover_mode' => 'frame'])->assertOk();
+    $this->postJson('/admin/short-videos/'.$video->id, [...$body, 'cover_mode' => 'photo'])->assertOk()->assertJsonPath('video.metadata.cover_source', 'photo');
+    Storage::disk('public')->assertExists($local->pathFromUrl($original));
+});
+
+test('confirmed initial crop exports once and preserves original with adjusted cover offset', function () {
+    $this->actingAs(shortUser());
+    $this->mock(VideoInspector::class)->shouldReceive('inspect')->once()->andReturn(shortMetadata());
+    $this->mock(VideoCropper::class)->shouldReceive('export')->once()->with(Mockery::any(), Mockery::on(fn ($e) => $e['mode'] === 'crop' && $e['start'] == 5), Mockery::any())->andReturn([
+        'asset' => ['url' => '/storage/shorts/edits/initial.mp4', 'path' => 'shorts/edits/initial.mp4'], 'metadata' => [...shortMetadata(), 'duration' => 5],
+    ]);
+    $this->postJson('/admin/short-videos/upload', ['video' => UploadedFile::fake()->create('source.mp4', 100, 'video/mp4'), 'frame_offset' => 9,
+        'edit' => ['mode' => 'crop', 'x' => '0.5', 'y' => '0.5', 'zoom' => '2', 'start' => '5', 'end' => '10']])
+        ->assertCreated()->assertJsonPath('video.frame_offset', 4)->assertJsonPath('video.metadata.video_crop.start', 5)->assertJsonPath('video.metadata.crop_source.metadata.duration', 20);
 });

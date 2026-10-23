@@ -17,6 +17,13 @@ import type {
     PublishPlatform,
     PublishPlatformId,
 } from '@/components/publish-news-dialog';
+import {
+    CoverPreview,
+    ShortCoverDialog,
+    defaultCoverCrop,
+    coverPoster,
+} from '@/components/short-cover-dialog';
+import type { CoverCrop } from '@/components/short-cover-dialog';
 import { ShortVideoList } from '@/components/short-video-list';
 import { Button } from '@/components/ui/button';
 import {
@@ -35,6 +42,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { VideoCropDialog } from '@/components/video-crop-dialog';
 import { VideoFrameTimeline } from '@/components/video-frame-timeline';
 import { useUnsavedNews } from '@/hooks/use-unsaved-news';
@@ -57,6 +69,8 @@ type ShortVideo = {
         duration: number;
         bytes?: number;
         cover_source?: 'frame' | 'photo';
+        cover_original?: string;
+        cover_crop?: CoverCrop;
         local_path?: string;
         social_asset?: { source_path?: string; url: string; public_id: string };
         video_crop?: VideoCrop;
@@ -90,6 +104,10 @@ function savedVideoState(video: ShortVideo | null) {
             ? `frame:${video?.frame_offset ?? 0}`
             : (video?.thumbnail_url ?? ''),
         cover: null as File | null,
+        coverCrop:
+            video && !hasFrameCover(video)
+                ? (video.metadata.cover_crop ?? defaultCoverCrop)
+                : null,
     };
 }
 type Result = { video: ShortVideo; result: PublishResult };
@@ -197,10 +215,13 @@ export function ShortVideos({
     const [duration, setDuration] = useState(draft?.metadata.duration ?? 0);
     const [offset, setOffset] = useState(draft?.frame_offset ?? 0);
     const [cover, setCover] = useState<File | null>(null);
-    const [coverMode, setCoverMode] = useState<'keep' | 'frame' | 'upload'>(
-        'keep',
-    );
+    const [coverMode, setCoverMode] = useState<
+        'keep' | 'frame' | 'upload' | 'photo'
+    >('keep');
     const [busy, setBusy] = useState(false);
+    const [savingAction, setSavingAction] = useState<
+        'draft' | 'crop' | 'publish' | null
+    >(null);
     const [progress, setProgress] = useState<number | null>(null);
     const [message, setMessage] = useState('');
     const [error, setError] = useState('');
@@ -230,12 +251,18 @@ export function ShortVideos({
         hasFrameCover(draft) ? (draft?.thumbnail_url ?? '') : '',
     );
     const [coverError, setCoverError] = useState('');
+    const [coverCrop, setCoverCrop] = useState<CoverCrop>(
+        draft?.metadata.cover_crop ?? defaultCoverCrop,
+    );
+    const [coverCropOpen, setCoverCropOpen] = useState(false);
+    const coverOriginal = cover
+        ? photoUrl
+        : (current?.metadata.cover_original ?? photoUrl);
     const [cropOpen, setCropOpen] = useState(false);
-    const [cropRequired, setCropRequired] = useState(false);
-    const inspectedSource = useRef('');
     const coverInput = useRef<HTMLInputElement>(null);
     const framePlayer = useRef<HTMLVideoElement>(null);
     const player = useRef<HTMLVideoElement>(null);
+    const fitBackground = useRef<HTMLVideoElement>(null);
     const fileInput = useRef<HTMLInputElement>(null);
     const guard = useRef(false);
     const [savedSnapshot, setSavedSnapshot] = useState(() =>
@@ -253,6 +280,7 @@ export function ShortVideos({
                   ? `frame:${offset}`
                   : savedVideoState(current).thumbnail,
         cover: coverMode === 'upload' ? cover : null,
+        coverCrop: coverTab === 'photo' ? coverCrop : null,
     });
     const unsaved = useUnsavedNews(
         mode === 'editor' && snapshot !== savedSnapshot,
@@ -260,7 +288,7 @@ export function ShortVideos({
     );
     const titleError =
         touched.title || attempted
-            ? !title.trim()
+            ? attempted && !title.trim()
                 ? 'Judul video wajib diisi.'
                 : title.length > 255
                   ? 'Judul maksimal 255 karakter.'
@@ -268,7 +296,7 @@ export function ShortVideos({
             : undefined;
     const descriptionError =
         touched.description || attempted
-            ? !description.trim()
+            ? attempted && !description.trim()
                 ? 'Deskripsi video wajib diisi.'
                 : description.length > 10000
                   ? 'Deskripsi maksimal 10000 karakter.'
@@ -326,6 +354,28 @@ export function ShortVideos({
         },
         [photoUrl],
     );
+    useEffect(() => {
+        if (coverTab !== 'photo' || !coverOriginal) {
+            return;
+        }
+
+        let active = true;
+        void coverPoster(coverOriginal, coverCrop)
+            .then((url) => {
+                if (active) {
+                    setThumbnail(url);
+                }
+            })
+            .catch(() => {
+                if (active) {
+                    setCoverError('Pratinjau sampul tidak dapat dimuat.');
+                }
+            });
+
+        return () => {
+            active = false;
+        };
+    }, [coverOriginal, coverCrop, coverTab]);
     const refresh = () => router.reload({ only: ['videos'] });
     function selectVideo(file?: File) {
         if (!file || guard.current) {
@@ -352,7 +402,6 @@ export function ShortVideos({
         setLocalFile(file);
         setLocalVideoError(false);
         setDuration(0);
-        setCropRequired(false);
         setCropOpen(false);
         setCoverTab('video');
         setPhotoUrl('');
@@ -364,7 +413,7 @@ export function ShortVideos({
         setThumbnail('');
         setSource(URL.createObjectURL(file));
     }
-    async function ensureUploaded(): Promise<ShortVideo> {
+    async function ensureUploaded(edit?: VideoCrop): Promise<ShortVideo> {
         if (!localFile) {
             if (!current) {
                 throw new Error('Pilih video terlebih dahulu.');
@@ -375,6 +424,16 @@ export function ShortVideos({
 
         const body = new FormData();
         body.append('video', localFile);
+
+        if (edit) {
+            body.append('frame_offset', String(offset));
+        }
+
+        if (edit) {
+            for (const [key, value] of Object.entries(edit)) {
+                body.append(`edit[${key}]`, String(value));
+            }
+        }
 
         if (current) {
             body.append('short_video_id', String(current.id));
@@ -406,15 +465,19 @@ export function ShortVideos({
         }
     }
     async function saveCrop(edit: VideoCrop) {
+        edit = { ...edit, mode: edit.mode ?? 'crop' };
+
         if (guard.current) {
             throw new Error('Tunggu proses video selesai.');
         }
 
         guard.current = true;
         setBusy(true);
+        setSavingAction('crop');
 
         try {
-            const video = await ensureUploaded();
+            const wasLocal = !!localFile;
+            const video = await ensureUploaded(edit);
             const body = new FormData();
             body.append('expected_url', video.video_url);
 
@@ -424,15 +487,13 @@ export function ShortVideos({
 
             body.append('frame_offset', String(offset));
 
-            const data = await upload(
-                `/admin/short-videos/${video.id}/crop`,
-                body,
-            );
+            const data = wasLocal
+                ? { video }
+                : await upload(`/admin/short-videos/${video.id}/crop`, body);
             setCurrent(data.video);
             setSource(data.video.video_url);
             setDuration(data.video.metadata.duration);
             setSavedSnapshot(editorSnapshot(savedVideoState(data.video)));
-            setCropRequired(false);
 
             // Keep an unsaved custom cover; regenerate selected video frames from the new asset.
             if (coverMode === 'frame') {
@@ -448,7 +509,7 @@ export function ShortVideos({
 
             setFeedback({
                 variant: 'success',
-                title: 'Video berhasil diperbarui',
+                title: 'Perubahan berhasil disimpan',
                 message:
                     'Hasil crop tersimpan. Video asli tetap tersedia untuk pengeditan berikutnya.',
             });
@@ -456,6 +517,7 @@ export function ShortVideos({
         } finally {
             guard.current = false;
             setBusy(false);
+            setSavingAction(null);
         }
     }
     function frame(force = false) {
@@ -520,6 +582,7 @@ export function ShortVideos({
         setError('');
         setCoverError('');
         setCover(file);
+        setCoverCrop(defaultCoverCrop);
         const url = URL.createObjectURL(file);
         setPhotoUrl(url);
 
@@ -551,9 +614,13 @@ export function ShortVideos({
         } else {
             setThumbnail(photoUrl);
             setCoverMode(
-                photoUrl && photoUrl === current?.thumbnail_url
-                    ? 'keep'
-                    : 'upload',
+                cover
+                    ? 'upload'
+                    : current?.metadata.cover_original
+                      ? 'photo'
+                      : photoUrl && photoUrl === current?.thumbnail_url
+                        ? 'keep'
+                        : 'upload',
             );
         }
     }
@@ -568,6 +635,16 @@ export function ShortVideos({
         const body = new FormData();
         body.append('title', title);
         body.append('description', description);
+
+        if (
+            coverTab === 'photo' &&
+            (coverMode !== 'keep' || current?.metadata.cover_original)
+        ) {
+            for (const [key, value] of Object.entries(coverCrop)) {
+                body.append(`cover_crop[${key}]`, String(value));
+            }
+        }
+
         body.append('frame_offset', String(offset));
         body.append(
             'cover_mode',
@@ -576,7 +653,7 @@ export function ShortVideos({
                 : coverMode,
         );
 
-        if (coverTab === 'photo' && coverMode !== 'keep') {
+        if (coverTab === 'photo' && coverMode === 'upload') {
             let selectedPhoto = cover;
 
             if (!selectedPhoto && photoUrl) {
@@ -615,6 +692,11 @@ export function ShortVideos({
         }
 
         setCoverMode('keep');
+
+        if (coverTab === 'photo') {
+            setCover(null);
+        }
+
         refresh();
 
         return data.video;
@@ -624,28 +706,10 @@ export function ShortVideos({
             return;
         }
 
-        if (cropRequired) {
-            player.current?.pause();
-            setCropOpen(true);
-
-            return;
-        }
-
-        if (!title.trim() || !description.trim()) {
-            setAttempted(true);
-            setFeedback({
-                variant: 'error',
-                title: 'Lengkapi informasi video',
-                message: 'Judul dan deskripsi wajib diisi.',
-            });
-
-            return;
-        }
-
         guard.current = true;
         setBusy(true);
+        setSavingAction('draft');
         setError('');
-        setAttempted(true);
 
         try {
             await save();
@@ -655,23 +719,17 @@ export function ShortVideos({
             });
 
             if (unsaved.open) {
-                unsaved.leave();
+                unsaved.continueEditing();
             }
         } catch (failure) {
             showFailure(failure, 'Gagal menyimpan draf');
         } finally {
             setBusy(false);
+            setSavingAction(null);
             guard.current = false;
         }
     }
     async function prepare(): Promise<PublicationPreviewData> {
-        if (cropRequired) {
-            setDialog(false);
-            setCropOpen(true);
-
-            throw new Error('Konfirmasi crop 9:16 sebelum melanjutkan.');
-        }
-
         if (coverTab === 'photo' && !photoUrl) {
             throw new Error('Pilih foto sampul atau gunakan tab Dari Video.');
         }
@@ -710,7 +768,7 @@ export function ShortVideos({
             category: null,
             images: { website: null, instagram: null, facebook: null },
             issues: {},
-            video_url: source,
+            video_url: localFile ? source : (current?.video_url ?? source),
             thumbnail_url: thumbnail || undefined,
         };
     }
@@ -719,16 +777,37 @@ export function ShortVideos({
             return;
         }
 
-        if (cropRequired) {
-            setDialog(false);
-            setCropOpen(true);
-
-            return;
-        }
-
         guard.current = true;
         setBusy(true);
+        setSavingAction('publish');
         setError('');
+        const pendingId = -Date.now();
+        window.dispatchEvent(
+            new CustomEvent('short-publication', {
+                detail: {
+                    id: pendingId,
+                    title,
+                    thumbnail_url: thumbnail,
+                    destinations: selected,
+                    ready: false,
+                    result: {
+                        attempt_id: `pending-${-pendingId}`,
+                        pending: true,
+                        success: false,
+                        results: Object.fromEntries(
+                            selected.map((platform) => [
+                                platform,
+                                {
+                                    success: false,
+                                    status: 'queued',
+                                    message: 'Menunggu',
+                                },
+                            ]),
+                        ),
+                    },
+                },
+            }),
+        );
 
         try {
             const video = await save();
@@ -740,6 +819,13 @@ export function ShortVideos({
                 `/admin/short-videos/${video.id}/publish`,
                 { preview_token: preview.token, platforms: selected },
             );
+
+            if (data.video.status !== 'published') {
+                throw new Error(
+                    'Publikasi belum dikonfirmasi. Periksa status video dan coba lagi.',
+                );
+            }
+
             setDialog(false);
             setSavedSnapshot(editorSnapshot(savedVideoState(data.video)));
             setCurrent(data.video);
@@ -750,17 +836,27 @@ export function ShortVideos({
                         title: data.video.title,
                         thumbnail_url: data.video.thumbnail_url,
                         duration: data.video.metadata?.duration,
+                        destinations: selected,
+                        ready: true,
+                        replaceId: pendingId,
                         result: data.result,
                         open: true,
                     },
                 }),
             );
-            refresh();
+            unsaved.allowLeave();
+            router.visit('/admin/short-videos');
         } catch (failure) {
+            window.dispatchEvent(
+                new CustomEvent('short-publication', {
+                    detail: { removeId: pendingId },
+                }),
+            );
             showFailure(failure, 'Gagal menerbitkan video');
         } finally {
             guard.current = false;
             setBusy(false);
+            setSavingAction(null);
         }
     }
     async function showStatus(video: ShortVideo) {
@@ -771,6 +867,16 @@ export function ShortVideos({
                     title: video.title,
                     thumbnail_url: video.thumbnail_url,
                     duration: video.metadata?.duration,
+                    destinations: video.publications
+                        ?.filter(
+                            (publication) =>
+                                publication.status !== 'not_selected',
+                        )
+                        .map(
+                            (publication) =>
+                                publication.platform as PublishPlatformId,
+                        ),
+                    ready: true,
                     open: true,
                 },
             }),
@@ -857,86 +963,99 @@ export function ShortVideos({
                                 />
                                 {source ? (
                                     <div className="flex min-h-48 flex-col items-center justify-center gap-3 rounded-xl p-4 pt-16 text-center">
-                                        <video
-                                            key={source}
-                                            ref={player}
-                                            src={source}
-                                            controls
-                                            preload="metadata"
-                                            poster={thumbnail || undefined}
-                                            className="aspect-[9/16] h-[min(65dvh,640px)] w-auto max-w-full rounded-lg bg-black object-contain"
-                                            onLoadedMetadata={(event) => {
-                                                const video =
-                                                    event.currentTarget;
-
-                                                if (
-                                                    inspectedSource.current !==
-                                                        source &&
-                                                    (!current ||
-                                                        current.status ===
-                                                            'draft')
-                                                ) {
-                                                    inspectedSource.current =
-                                                        source;
-                                                    const requiresCrop =
-                                                        video.videoWidth > 0 &&
-                                                        video.videoHeight > 0 &&
-                                                        Math.abs(
-                                                            video.videoWidth /
-                                                                video.videoHeight -
-                                                                9 / 16,
-                                                        ) > 0.005;
-                                                    setCropRequired(
-                                                        requiresCrop,
-                                                    );
-
-                                                    if (requiresCrop) {
-                                                        video.pause();
-                                                        setCropOpen(true);
+                                        <div className="relative isolate aspect-[9/16] h-[min(65dvh,640px)] max-w-full overflow-hidden rounded-lg bg-black">
+                                            {localFile && (
+                                                <video
+                                                    ref={fitBackground}
+                                                    src={source}
+                                                    muted
+                                                    playsInline
+                                                    aria-hidden="true"
+                                                    className="pointer-events-none absolute inset-0 h-full w-full scale-110 object-cover blur-xl"
+                                                />
+                                            )}
+                                            <video
+                                                key={source}
+                                                ref={player}
+                                                src={source}
+                                                controls
+                                                preload="metadata"
+                                                poster={thumbnail || undefined}
+                                                className="relative h-full w-full object-contain"
+                                                onPlay={() => {
+                                                    if (
+                                                        fitBackground.current &&
+                                                        player.current
+                                                    ) {
+                                                        fitBackground.current.currentTime =
+                                                            player.current.currentTime;
+                                                        void fitBackground.current
+                                                            .play()
+                                                            .catch(() => {});
                                                     }
+                                                }}
+                                                onPause={() =>
+                                                    fitBackground.current?.pause()
                                                 }
+                                                onSeeking={() => {
+                                                    if (
+                                                        fitBackground.current &&
+                                                        player.current
+                                                    ) {
+                                                        fitBackground.current.currentTime =
+                                                            player.current.currentTime;
+                                                    }
+                                                }}
+                                                onLoadedMetadata={(event) => {
+                                                    if (localFile) {
+                                                        setDuration(
+                                                            event.currentTarget
+                                                                .duration,
+                                                        );
+                                                    }
+                                                }}
+                                                onLoadedData={(event) => {
+                                                    if (
+                                                        !localFile ||
+                                                        coverMode !== 'frame' ||
+                                                        thumbnail
+                                                    ) {
+                                                        return;
+                                                    }
 
-                                                if (localFile) {
-                                                    setDuration(
-                                                        event.currentTarget
-                                                            .duration,
+                                                    const video =
+                                                        event.currentTarget;
+                                                    const canvas =
+                                                        document.createElement(
+                                                            'canvas',
+                                                        );
+                                                    canvas.width =
+                                                        video.videoWidth;
+                                                    canvas.height =
+                                                        video.videoHeight;
+                                                    canvas
+                                                        .getContext('2d')
+                                                        ?.drawImage(
+                                                            video,
+                                                            0,
+                                                            0,
+                                                        );
+                                                    setThumbnail(
+                                                        canvas.toDataURL(
+                                                            'image/jpeg',
+                                                            0.85,
+                                                        ),
                                                     );
-                                                }
-                                            }}
-                                            onLoadedData={(event) => {
-                                                if (
-                                                    !localFile ||
-                                                    coverMode !== 'frame' ||
-                                                    thumbnail
-                                                ) {
-                                                    return;
-                                                }
-
-                                                const video =
-                                                    event.currentTarget;
-                                                const canvas =
-                                                    document.createElement(
-                                                        'canvas',
-                                                    );
-                                                canvas.width = video.videoWidth;
-                                                canvas.height =
-                                                    video.videoHeight;
-                                                canvas
-                                                    .getContext('2d')
-                                                    ?.drawImage(video, 0, 0);
-                                                setThumbnail(
-                                                    canvas.toDataURL(
-                                                        'image/jpeg',
-                                                        0.85,
-                                                    ),
-                                                );
-                                            }}
-                                            onError={() => {
-                                                if (localFile) {
-                                                    setLocalVideoError(true);
-                                                }
-                                            }}
-                                        />
+                                                }}
+                                                onError={() => {
+                                                    if (localFile) {
+                                                        setLocalVideoError(
+                                                            true,
+                                                        );
+                                                    }
+                                                }}
+                                            />
+                                        </div>
                                         <div className="flex w-full flex-wrap justify-center gap-x-4 gap-y-2 border-t border-white/10 pt-3 text-xs text-zinc-300">
                                             <span>
                                                 {Math.floor(duration / 60)}:
@@ -1006,7 +1125,7 @@ export function ShortVideos({
                                                     }}
                                                 >
                                                     <Crop />
-                                                    Edit &amp; Crop Video
+                                                    Sesuaikan / Pangkas Video
                                                 </DropdownMenuItem>
                                                 <DropdownMenuItem
                                                     onSelect={() =>
@@ -1025,25 +1144,6 @@ export function ShortVideos({
                                 Rekomendasi 9:16, maksimal 15 menit. Facebook:
                                 minimal 540x960, durasi 4?60 detik.
                             </p>
-                            {cropRequired && (
-                                <p
-                                    role="status"
-                                    className="text-sm text-emerald-600 dark:text-emerald-400"
-                                >
-                                    Sesuaikan dan simpan crop 9:16 sebelum
-                                    menyimpan draf atau menerbitkan.{' '}
-                                    <button
-                                        type="button"
-                                        className="underline"
-                                        onClick={() => {
-                                            player.current?.pause();
-                                            setCropOpen(true);
-                                        }}
-                                    >
-                                        Edit &amp; Crop Video
-                                    </button>
-                                </p>
-                            )}
                             {progress !== null && (
                                 <div role="status" className="space-y-2">
                                     <progress
@@ -1061,12 +1161,9 @@ export function ShortVideos({
                         </div>
                         <div className="min-w-0 space-y-5 lg:border-l lg:pl-6">
                             <div className="space-y-2">
-                                <Label htmlFor="short-title">
-                                    Judul Video *
-                                </Label>
+                                <Label htmlFor="short-title">Judul Video</Label>
                                 <Input
                                     id="short-title"
-                                    required
                                     aria-invalid={!!titleError}
                                     aria-describedby={
                                         titleError
@@ -1107,11 +1204,10 @@ export function ShortVideos({
                             </div>
                             <div className="space-y-2">
                                 <Label htmlFor="short-description">
-                                    Isi / Deskripsi *
+                                    Isi / Deskripsi
                                 </Label>
                                 <Textarea
                                     id="short-description"
-                                    required
                                     aria-invalid={!!descriptionError}
                                     aria-describedby={
                                         descriptionError
@@ -1246,30 +1342,59 @@ export function ShortVideos({
                                             sampul. Perubahan disimpan saat Anda
                                             menyimpan draf atau menerbitkan.
                                         </p>
-                                        <button
-                                            type="button"
-                                            disabled={busy}
-                                            onClick={() =>
-                                                coverInput.current?.click()
-                                            }
-                                            className="flex min-h-56 w-full flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-emerald-500/50 bg-emerald-500/5 p-6 text-sm focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none"
-                                        >
-                                            {photoUrl ? (
-                                                <img
-                                                    src={photoUrl}
-                                                    alt="Foto sampul terpilih"
-                                                    className="max-h-64 max-w-full rounded-lg object-contain"
-                                                />
-                                            ) : (
-                                                <ImagePlus className="size-10 text-emerald-600" />
+                                        <div className="relative">
+                                            <button
+                                                type="button"
+                                                disabled={busy}
+                                                onClick={() =>
+                                                    coverInput.current?.click()
+                                                }
+                                                className="flex min-h-56 w-full flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-emerald-500/50 bg-emerald-500/5 p-6 text-sm focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none"
+                                            >
+                                                {photoUrl ? (
+                                                    <div className="relative aspect-[9/16] h-64 overflow-hidden rounded-lg bg-black">
+                                                        <CoverPreview
+                                                            source={
+                                                                coverOriginal
+                                                            }
+                                                            crop={coverCrop}
+                                                        />
+                                                    </div>
+                                                ) : (
+                                                    <ImagePlus className="size-10 text-emerald-600" />
+                                                )}
+                                                <span className="font-medium text-emerald-700 dark:text-emerald-400">
+                                                    Pilih Foto dari Galeri
+                                                </span>
+                                                <span className="text-xs text-muted-foreground">
+                                                    JPG/PNG, maksimal 5 MB
+                                                </span>
+                                            </button>
+                                            {photoUrl && (
+                                                <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                        <Button
+                                                            type="button"
+                                                            size="icon"
+                                                            variant="secondary"
+                                                            className="absolute top-2 right-2 z-10"
+                                                            aria-label="Pangkas Sampul"
+                                                            disabled={busy}
+                                                            onClick={() =>
+                                                                setCoverCropOpen(
+                                                                    true,
+                                                                )
+                                                            }
+                                                        >
+                                                            <Crop className="size-4" />
+                                                        </Button>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent>
+                                                        Pangkas Sampul
+                                                    </TooltipContent>
+                                                </Tooltip>
                                             )}
-                                            <span className="font-medium text-emerald-700 dark:text-emerald-400">
-                                                Pilih Foto dari Galeri
-                                            </span>
-                                            <span className="text-xs text-muted-foreground">
-                                                JPG/PNG, maksimal 5 MB
-                                            </span>
-                                        </button>
+                                        </div>
                                         {coverError && (
                                             <p
                                                 role="alert"
@@ -1297,6 +1422,9 @@ export function ShortVideos({
                                     }
                                     onClick={() => void saveDraft()}
                                 >
+                                    {savingAction === 'draft' && (
+                                        <LoaderCircle className="size-4 animate-spin" />
+                                    )}
                                     Simpan Draf
                                 </Button>
                                 <Button
@@ -1309,18 +1437,11 @@ export function ShortVideos({
 
                                         setAttempted(true);
 
-                                        if (cropRequired) {
-                                            player.current?.pause();
-                                            setCropOpen(true);
-
-                                            return;
-                                        }
-
                                         setDialog(true);
                                     }}
                                 >
-                                    {busy && (
-                                        <LoaderCircle className="animate-spin" />
+                                    {savingAction === 'publish' && (
+                                        <LoaderCircle className="size-4 animate-spin" />
                                     )}
                                     Publikasikan
                                 </Button>
@@ -1360,6 +1481,20 @@ export function ShortVideos({
                 onDismiss={() => setFeedback(null)}
                 duration={5000}
             />
+            {coverCropOpen && (
+                <ShortCoverDialog
+                    source={coverOriginal}
+                    initial={coverCrop}
+                    onClose={() => setCoverCropOpen(false)}
+                    onApply={(edit) => {
+                        setCoverCrop(edit);
+
+                        if (!cover && !current?.metadata.cover_original) {
+                            setCoverMode('upload');
+                        }
+                    }}
+                />
+            )}
             {cropOpen && (
                 <VideoCropDialog
                     source={
@@ -1410,7 +1545,10 @@ export function ShortVideos({
                             className="bg-brand-600 text-white hover:bg-brand-700"
                             onClick={() => void saveDraft()}
                         >
-                            {busy ? 'Menyimpan...' : 'Simpan sebagai Draf'}
+                            {savingAction === 'draft' && (
+                                <LoaderCircle className="size-4 animate-spin" />
+                            )}
+                            Simpan sebagai Draf
                         </Button>
                     </div>
                 </DialogContent>

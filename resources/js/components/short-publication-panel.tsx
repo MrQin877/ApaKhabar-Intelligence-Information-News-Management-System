@@ -17,11 +17,13 @@ import {
 } from '@/components/video-publication-indicator';
 import type { PublishResult } from '@/lib/manual-publish';
 import { metaRequest } from '@/lib/meta-auth';
-import { publicationActive } from '@/lib/short-publication';
+import { publicationActive, publicationPolling } from '@/lib/short-publication';
 
 type TrackedVideo = {
     id: number;
     title: string;
+    destinations?: (typeof platformOrder)[number][];
+    ready?: boolean;
     thumbnail_url?: string | null;
     duration?: number;
 };
@@ -34,7 +36,10 @@ const platformName = {
 
 function persistTracked(key: string, next: TrackedVideo[]) {
     try {
-        sessionStorage.setItem(key, JSON.stringify(next));
+        sessionStorage.setItem(
+            key,
+            JSON.stringify(next.filter((item) => item.ready !== false)),
+        );
     } catch {
         /* Keep in memory. */
     }
@@ -102,8 +107,38 @@ export function ShortPublicationPanel() {
                     duration?: number;
                     result?: PublishResult;
                     open?: boolean;
+                    destinations?: (typeof platformOrder)[number][];
+                    ready?: boolean;
+                    replaceId?: number;
+                    removeId?: number;
                 }>
             ).detail;
+
+            if (item.removeId !== undefined) {
+                delete latest.current[item.removeId];
+                setResults((previous) => {
+                    const next = { ...previous };
+                    delete next[item.removeId!];
+                    return next;
+                });
+                setItems((previous) => {
+                    const next = previous.filter(
+                        (video) => video.id !== item.removeId,
+                    );
+                    persistTracked(key, next);
+                    return next;
+                });
+                return;
+            }
+
+            if (item.replaceId !== undefined) {
+                delete latest.current[item.replaceId];
+                setResults((previous) => {
+                    const next = { ...previous };
+                    delete next[item.replaceId!];
+                    return next;
+                });
+            }
 
             if (item.result) {
                 latest.current[item.id] = item.result;
@@ -130,14 +165,29 @@ export function ShortPublicationPanel() {
 
             setItems((previous) => {
                 const prior = previous.find((video) => video.id === item.id);
+                const replaced = previous.find(
+                    (video) => video.id === item.replaceId,
+                );
                 const next = [
-                    ...previous.filter((v) => v.id !== item.id),
+                    ...previous.filter(
+                        (v) => v.id !== item.id && v.id !== item.replaceId,
+                    ),
                     {
                         id: item.id,
                         title: item.title,
+                        destinations:
+                            item.destinations ??
+                            prior?.destinations ??
+                            replaced?.destinations,
+                        ready: item.ready,
                         thumbnail_url:
-                            item.thumbnail_url ?? prior?.thumbnail_url,
-                        duration: item.duration ?? prior?.duration,
+                            item.thumbnail_url ??
+                            prior?.thumbnail_url ??
+                            replaced?.thumbnail_url,
+                        duration:
+                            item.duration ??
+                            prior?.duration ??
+                            replaced?.duration,
                     },
                 ];
                 persistTracked(key, next);
@@ -153,112 +203,121 @@ export function ShortPublicationPanel() {
         let stopped = false;
         const poll = () => {
             if (
-                items.every(
-                    (item) =>
-                        latest.current[item.id] &&
-                        !publicationActive(latest.current[item.id]),
-                )
+                items
+                    .filter((item) => item.ready !== false)
+                    .every(
+                        (item) =>
+                            latest.current[item.id] &&
+                            !publicationPolling(latest.current[item.id]),
+                    )
             ) {
                 window.clearInterval(timer);
 
                 return;
             }
 
-            items.forEach((item) => {
-                if (
-                    inFlight.current.has(item.id) ||
-                    (latest.current[item.id] &&
-                        !publicationActive(latest.current[item.id]))
-                ) {
-                    return;
-                }
+            items
+                .filter((item) => item.ready !== false)
+                .forEach((item) => {
+                    if (
+                        inFlight.current.has(item.id) ||
+                        (latest.current[item.id] &&
+                            !publicationPolling(latest.current[item.id]))
+                    ) {
+                        return;
+                    }
 
-                inFlight.current.add(item.id);
-                void metaRequest<{
-                    result: PublishResult;
-                    video?: {
-                        thumbnail_url?: string | null;
-                        title?: string;
-                        metadata?: { duration?: number };
-                    };
-                }>(`/admin/short-videos/${item.id}/status`)
-                    .then((data) => {
-                        if (!stopped) {
-                            latest.current[item.id] = data.result;
-                            setResults((previous) => ({
-                                ...previous,
-                                [item.id]: data.result,
-                            }));
+                    inFlight.current.add(item.id);
+                    void metaRequest<{
+                        result: PublishResult;
+                        video?: {
+                            thumbnail_url?: string | null;
+                            title?: string;
+                            metadata?: { duration?: number };
+                        };
+                    }>(`/admin/short-videos/${item.id}/status`)
+                        .then((data) => {
+                            if (!stopped) {
+                                latest.current[item.id] = data.result;
+                                setResults((previous) =>
+                                    JSON.stringify(previous[item.id]) ===
+                                    JSON.stringify(data.result)
+                                        ? previous
+                                        : {
+                                              ...previous,
+                                              [item.id]: data.result,
+                                          },
+                                );
 
-                            if (
-                                !publicationActive(data.result) &&
-                                Object.values(data.result.results).some(
-                                    (platform) =>
-                                        ['failed', 'uncertain'].includes(
-                                            platform.status ?? '',
-                                        ),
-                                )
-                            ) {
-                                setMinimized(true);
+                                if (
+                                    !publicationActive(data.result) &&
+                                    Object.values(data.result.results).some(
+                                        (platform) =>
+                                            ['failed', 'uncertain'].includes(
+                                                platform.status ?? '',
+                                            ),
+                                    )
+                                ) {
+                                    setMinimized(true);
+                                }
+
+                                if (data.video) {
+                                    setItems((previous) => {
+                                        const found = previous.find(
+                                            (video) => video.id === item.id,
+                                        );
+
+                                        if (
+                                            !found ||
+                                            (found.thumbnail_url ===
+                                                data.video?.thumbnail_url &&
+                                                found.title ===
+                                                    (data.video?.title ??
+                                                        found.title) &&
+                                                found.duration ===
+                                                    (data.video?.metadata
+                                                        ?.duration ??
+                                                        found.duration))
+                                        ) {
+                                            return previous;
+                                        }
+
+                                        const next = previous.map((video) =>
+                                            video.id === item.id
+                                                ? {
+                                                      ...video,
+                                                      title:
+                                                          data.video?.title ??
+                                                          video.title,
+                                                      thumbnail_url:
+                                                          data.video
+                                                              ?.thumbnail_url ??
+                                                          video.thumbnail_url,
+                                                      duration:
+                                                          data.video?.metadata
+                                                              ?.duration ??
+                                                          video.duration,
+                                                  }
+                                                : video,
+                                        );
+                                        persistTracked(key, next);
+
+                                        return next;
+                                    });
+                                }
+
+                                setError('');
                             }
-
-                            if (data.video) {
-                                setItems((previous) => {
-                                    const found = previous.find(
-                                        (video) => video.id === item.id,
-                                    );
-
-                                    if (
-                                        !found ||
-                                        (found.thumbnail_url ===
-                                            data.video?.thumbnail_url &&
-                                            found.title ===
-                                                (data.video?.title ??
-                                                    found.title) &&
-                                            found.duration ===
-                                                (data.video?.metadata
-                                                    ?.duration ??
-                                                    found.duration))
-                                    ) {
-                                        return previous;
-                                    }
-
-                                    const next = previous.map((video) =>
-                                        video.id === item.id
-                                            ? {
-                                                  ...video,
-                                                  title:
-                                                      data.video?.title ??
-                                                      video.title,
-                                                  thumbnail_url:
-                                                      data.video
-                                                          ?.thumbnail_url ??
-                                                      video.thumbnail_url,
-                                                  duration:
-                                                      data.video?.metadata
-                                                          ?.duration ??
-                                                      video.duration,
-                                              }
-                                            : video,
-                                    );
-                                    persistTracked(key, next);
-
-                                    return next;
-                                });
+                        })
+                        .catch(() => {
+                            if (!stopped) {
+                                setError('Status belum dapat diperbarui.');
                             }
-
-                            setError('');
-                        }
-                    })
-                    .catch(() => {
-                        if (!stopped) {
-                            setError('Status belum dapat diperbarui.');
-                        }
-                    })
-                    .finally(() => inFlight.current.delete(item.id));
-            });
+                        })
+                        .finally(() => inFlight.current.delete(item.id));
+                });
         };
-        const timer = window.setInterval(poll, 5000);
+        const timer = window.setInterval(poll, 2000);
         poll();
 
         return () => {
@@ -477,29 +536,40 @@ export function ShortPublicationPanel() {
                                             )}
                                         </div>
                                     </div>
-                                    {platformOrder.map((platform) => {
+                                    {(
+                                        item.destinations ??
+                                        platformOrder.filter((platform) => {
+                                            const status =
+                                                results[item.id]?.results[
+                                                    platform
+                                                ]?.status;
+                                            return (
+                                                status &&
+                                                status !== 'not_selected'
+                                            );
+                                        })
+                                    ).map((platform) => {
                                         const status =
                                             results[item.id]?.results[platform]
-                                                ?.status;
+                                                ?.status ?? 'queued';
 
                                         return (
-                                            status &&
-                                            status !== 'not_selected' && (
-                                                <div
-                                                    key={platform}
-                                                    className="flex items-center gap-2 text-xs"
-                                                >
+                                            <div
+                                                key={platform}
+                                                className="flex items-center gap-2 text-xs"
+                                            >
+                                                <span className="flex size-6 shrink-0 items-center justify-center [&_img]:size-5 [&_svg]:size-5">
                                                     <PlatformIcon
                                                         platform={platform}
                                                     />
-                                                    <span className="min-w-0 flex-1 truncate">
-                                                        {platformName[platform]}
-                                                    </span>
-                                                    <VideoPublicationIndicator
-                                                        status={status}
-                                                    />
-                                                </div>
-                                            )
+                                                </span>
+                                                <span className="min-w-0 flex-1 truncate">
+                                                    {platformName[platform]}
+                                                </span>
+                                                <VideoPublicationIndicator
+                                                    status={status}
+                                                />
+                                            </div>
                                         );
                                     })}
                                     <div className="flex items-center justify-between gap-2 pt-1">

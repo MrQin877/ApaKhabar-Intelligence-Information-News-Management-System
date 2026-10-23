@@ -40,7 +40,7 @@ test('only published Shorts open and homepage carries a real zero view count wit
     $archived = viewerVideo('archived');
 
     $this->get('/')->assertInertia(fn (Assert $page) => $page->where('shorts.0.id', $published->id)->where('shorts.0.view_count', 0)->has('shorts', 1));
-    $this->get('/shorts/'.$published->id)->assertInertia(fn (Assert $page) => $page->component('short-viewer')->where('short.id', $published->id)->where('short.view_count', 0)->has('short.published_at'));
+    $this->get('/shorts/'.$published->id)->assertInertia(fn (Assert $page) => $page->component('short-viewer')->where('short.id', $published->id)->where('short.video_url', $published->video_url)->where('short.title', $published->title)->where('short.description', $published->description)->where('short.view_count', 0)->where('short.likes_count', 0)->where('commentCount', 0)->has('short.published_at'));
     $this->get('/shorts/'.$draft->id)->assertNotFound();
     $this->get('/shorts/'.$archived->id)->assertNotFound();
     $this->getJson('/shorts/'.$draft->id.'/view-token')->assertNotFound();

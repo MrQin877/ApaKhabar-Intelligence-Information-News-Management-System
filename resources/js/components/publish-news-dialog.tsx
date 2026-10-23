@@ -11,6 +11,7 @@ import {
     platformNames,
 } from '@/components/publication-preview';
 import type { PublicationPreviewData } from '@/components/publication-preview';
+import { ShortPublicationPreview } from '@/components/short-publication-preview';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -140,7 +141,11 @@ export function PublishNewsDialog({
                 platform.publishable !== false,
         )
         .map((platform) => platform.id);
-    const selection = selected;
+    const selection = videoMode
+        ? (['website', 'instagram', 'facebook'] as const).filter(
+              (id) => id === 'website' || selected.includes(id),
+          )
+        : selected;
     const reviewKey = preview?.token
         ? `${preview.token}:${selection.join(',')}`
         : null;
@@ -209,7 +214,7 @@ export function PublishNewsDialog({
         >
             <DialogContent
                 closeDisabled={locked}
-                className={`flex flex-col gap-0 rounded-2xl p-0 ${showPreview ? 'max-h-[90dvh] overflow-y-auto [scrollbar-gutter:stable_both-edges] sm:max-w-[900px]' : 'max-h-[calc(100dvh-2rem)] overflow-hidden sm:max-w-xl'}`}
+                className={`flex flex-col gap-0 rounded-2xl p-0 ${showPreview && videoMode ? 'dark max-h-[calc(100dvh-1.5rem)] overflow-hidden border-white/15 bg-zinc-950 text-white sm:max-h-[94dvh] sm:max-w-[760px]' : showPreview ? 'max-h-[90dvh] overflow-y-auto [scrollbar-gutter:stable_both-edges] sm:max-w-[900px]' : 'max-h-[calc(100dvh-2rem)] overflow-hidden sm:max-w-xl'}`}
                 overlayClassName="bg-black/45 backdrop-blur-sm"
             >
                 <DialogHeader
@@ -225,383 +230,393 @@ export function PublishNewsDialog({
                     <DialogDescription className="leading-6">
                         {showPreview
                             ? videoMode
-                                ? 'Periksa video sebelum diterbitkan.'
+                                ? 'Periksa tampilan video sebelum diterbitkan.'
                                 : 'Periksa tampilan berita sebelum diterbitkan.'
                             : videoMode
                               ? 'Pilih platform tempat video ini akan diterbitkan.'
                               : 'Pilih platform tempat berita ini akan diterbitkan.'}
                     </DialogDescription>
                 </DialogHeader>
-                {showPreview && preview ? (
-                    <>
-                        <div className="shrink-0 space-y-2 border-b px-6 pb-2 sm:px-7">
-                            <p className="text-sm">
-                                Akan diterbitkan ke:{' '}
-                                <strong>
-                                    {selection
-                                        .map((id) => displayNames[id])
-                                        .join(' / ')}
-                                </strong>
-                            </p>
-                            <div
-                                role="tablist"
-                                aria-label="Platform publikasi"
-                                className="flex gap-2 overflow-x-auto"
-                            >
-                                {selection.map((id) => (
-                                    <Button
-                                        key={id}
-                                        type="button"
-                                        role="tab"
-                                        id={`preview-tab-${id}`}
-                                        aria-controls={`preview-panel-${id}`}
-                                        aria-selected={active === id}
-                                        variant={
-                                            active === id
-                                                ? 'default'
-                                                : 'outline'
-                                        }
-                                        className="min-h-11 shrink-0"
-                                        onClick={() => setActive(id)}
-                                    >
-                                        <PlatformIcon platform={id} />
-                                        {displayNames[id]}
-                                    </Button>
-                                ))}
-                            </div>
-                        </div>
-                        <div className="grid min-h-[calc(clamp(100px,20dvh,180px)+180px)] shrink-0 items-start bg-muted/20 px-4 py-3">
-                            {selection.map((id) => (
-                                <div
-                                    key={id}
-                                    role="tabpanel"
-                                    id={`preview-panel-${id}`}
-                                    aria-labelledby={`preview-tab-${id}`}
-                                    className={`col-start-1 row-start-1 min-w-0 ${active !== id ? 'pointer-events-none invisible' : ''}`}
-                                    aria-hidden={active !== id}
-                                    inert={active !== id}
-                                >
-                                    {videoMode && preview.video_url ? (
-                                        <div className="mx-auto max-w-sm space-y-3 rounded-xl border bg-card p-4">
-                                            <video
-                                                controls
-                                                preload="metadata"
-                                                poster={preview.thumbnail_url}
-                                                src={preview.video_url}
-                                                className="max-h-80 w-full rounded-lg"
-                                            />
-                                            <h3 className="font-semibold">
-                                                {preview.title}
-                                            </h3>
-                                            <p className="text-sm whitespace-pre-wrap">
-                                                {preview.caption}
-                                            </p>
-                                            {id === 'facebook' && (
-                                                <p className="text-xs text-muted-foreground">
-                                                    Facebook memilih sampul
-                                                    otomatis; sampul pilihan
-                                                    digunakan di ApaKhabar dan
-                                                    Instagram.
-                                                </p>
-                                            )}
-                                        </div>
-                                    ) : (
-                                        <PublicationPreview
-                                            data={preview}
-                                            platform={id}
-                                            accountName={
-                                                platforms.find(
-                                                    (platform) =>
-                                                        platform.id === id &&
-                                                        platform.status ===
-                                                            'connected',
-                                                )?.account
-                                            }
-                                            onImageLoad={() =>
-                                                setImageStates((states) => ({
-                                                    ...states,
-                                                    [id]: 'ready',
-                                                }))
-                                            }
-                                            onImageError={() =>
-                                                setImageStates((states) => ({
-                                                    ...states,
-                                                    [id]: 'failed',
-                                                }))
-                                            }
-                                        />
-                                    )}
-                                </div>
-                            ))}
-                        </div>
-                        <div
-                            className="shrink-0 bg-background px-6 py-2 text-sm"
-                            aria-live="polite"
-                        >
-                            {issues.length ? (
-                                <ul className="space-y-1 text-destructive">
-                                    {issues.map((issue) => (
-                                        <li key={issue}>{issue}</li>
-                                    ))}
-                                </ul>
+                <div
+                    className={
+                        showPreview && videoMode
+                            ? 'min-h-0 flex-1 overflow-y-auto overscroll-contain'
+                            : 'contents'
+                    }
+                >
+                    {showPreview && preview ? (
+                        <>
+                            {videoMode ? (
+                                <ShortPublicationPreview
+                                    data={preview}
+                                    selected={selection}
+                                    platforms={platforms}
+                                />
                             ) : (
-                                <p className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400">
-                                    <CheckCircle2
-                                        className="size-4"
-                                        aria-hidden="true"
-                                    />
-                                    Siap diterbitkan
-                                </p>
+                                <>
+                                    <div className="shrink-0 space-y-2 border-b px-6 pb-2 sm:px-7">
+                                        <p className="text-sm">
+                                            Akan diterbitkan ke:{' '}
+                                            <strong>
+                                                {selection
+                                                    .map(
+                                                        (id) =>
+                                                            displayNames[id],
+                                                    )
+                                                    .join(' / ')}
+                                            </strong>
+                                        </p>
+                                        <div
+                                            role="tablist"
+                                            aria-label="Platform publikasi"
+                                            className="flex gap-2 overflow-x-auto"
+                                        >
+                                            {selection.map((id) => (
+                                                <Button
+                                                    key={id}
+                                                    type="button"
+                                                    role="tab"
+                                                    id={`preview-tab-${id}`}
+                                                    aria-controls={`preview-panel-${id}`}
+                                                    aria-selected={
+                                                        active === id
+                                                    }
+                                                    variant={
+                                                        active === id
+                                                            ? 'default'
+                                                            : 'outline'
+                                                    }
+                                                    className="min-h-11 shrink-0"
+                                                    onClick={() =>
+                                                        setActive(id)
+                                                    }
+                                                >
+                                                    <PlatformIcon
+                                                        platform={id}
+                                                    />
+                                                    {displayNames[id]}
+                                                </Button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div className="grid min-h-[calc(clamp(100px,20dvh,180px)+180px)] shrink-0 items-start bg-muted/20 px-4 py-3">
+                                        {selection.map((id) => (
+                                            <div
+                                                key={id}
+                                                role="tabpanel"
+                                                id={`preview-panel-${id}`}
+                                                aria-labelledby={`preview-tab-${id}`}
+                                                className={`col-start-1 row-start-1 min-w-0 ${active !== id ? 'pointer-events-none invisible' : ''}`}
+                                                aria-hidden={active !== id}
+                                                inert={active !== id}
+                                            >
+                                                {
+                                                    <PublicationPreview
+                                                        data={preview}
+                                                        platform={id}
+                                                        accountName={
+                                                            platforms.find(
+                                                                (platform) =>
+                                                                    platform.id ===
+                                                                        id &&
+                                                                    platform.status ===
+                                                                        'connected',
+                                                            )?.account
+                                                        }
+                                                        onImageLoad={() =>
+                                                            setImageStates(
+                                                                (states) => ({
+                                                                    ...states,
+                                                                    [id]: 'ready',
+                                                                }),
+                                                            )
+                                                        }
+                                                        onImageError={() =>
+                                                            setImageStates(
+                                                                (states) => ({
+                                                                    ...states,
+                                                                    [id]: 'failed',
+                                                                }),
+                                                            )
+                                                        }
+                                                    />
+                                                }
+                                            </div>
+                                        ))}
+                                    </div>
+                                </>
                             )}
-                            {error && (
-                                <p role="alert" className="text-destructive">
-                                    {error}
-                                </p>
-                            )}
-                        </div>
-                    </>
-                ) : (
-                    <div className="min-h-0 space-y-3 overflow-y-auto px-6 pb-6 sm:px-7">
-                        {previewError && (
-                            <p
-                                role="alert"
-                                className="text-sm text-destructive"
+                            <div
+                                className="shrink-0 bg-background px-6 py-2 text-sm"
+                                aria-live="polite"
                             >
-                                {previewError}
-                            </p>
-                        )}
-                        <div className="mb-4 flex items-center gap-2.5">
-                            <Checkbox
-                                id="publish-all"
-                                checked={
-                                    allSelected
-                                        ? true
-                                        : selection.length
-                                          ? 'indeterminate'
-                                          : false
-                                }
-                                disabled={locked || !available.length}
-                                onCheckedChange={(checked) =>
-                                    onSelectionChange(
-                                        checked === true
-                                            ? available
-                                            : videoMode
-                                              ? ['website']
-                                              : [],
-                                    )
-                                }
-                            />
-                            <Label
-                                htmlFor="publish-all"
-                                className="cursor-pointer"
-                            >
-                                Pilih semua
-                            </Label>
-                            <span className="ml-auto text-xs text-muted-foreground">
-                                {selection.length} dipilih
-                            </span>
-                        </div>
-                        {platforms.map((platform) => {
-                            const connected = platform.status === 'connected';
-                            const expired = platform.status === 'expired';
-                            const checked = selection.includes(platform.id);
-                            const unavailable = preparing || processing;
-                            const selectable =
-                                !unavailable &&
-                                !(videoMode && platform.id === 'website') &&
-                                (checked ||
-                                    (connected &&
-                                        platform.publishable !== false)) &&
-                                !processing;
-                            const toggleSelection = (value: boolean) => {
-                                if (!selectable) {
-                                    return;
-                                }
-
-                                onSelectionChange(
-                                    value
-                                        ? [...selection, platform.id]
-                                        : selection.filter(
-                                              (id) => id !== platform.id,
-                                          ),
-                                );
-                            };
-                            const title = videoMode
-                                ? displayNames[platform.id]
-                                : platform.id === 'website'
-                                  ? 'Aplikasi'
-                                  : platform.name;
-                            const inlineStatus =
-                                platform.id !== 'website' &&
-                                !connected &&
-                                !expired;
-
-                            return (
-                                <section
-                                    key={platform.id}
-                                    aria-label={title}
-                                    className={`rounded-xl border p-4 transition-colors ${selectable ? 'cursor-pointer' : ''} ${checked ? 'border-primary/50 bg-primary/5' : 'border-border bg-card'}`}
-                                    onClick={(event) => {
-                                        if (
-                                            (
-                                                event.target as HTMLElement
-                                            ).closest('button, label, a, input')
-                                        ) {
-                                            return;
-                                        }
-
-                                        toggleSelection(!checked);
-                                    }}
+                                {issues.length ? (
+                                    <ul className="space-y-1 text-destructive">
+                                        {issues.map((issue) => (
+                                            <li key={issue}>{issue}</li>
+                                        ))}
+                                    </ul>
+                                ) : (
+                                    <p className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400">
+                                        <CheckCircle2
+                                            className="size-4"
+                                            aria-hidden="true"
+                                        />
+                                        Siap diterbitkan
+                                    </p>
+                                )}
+                                {error && (
+                                    <p
+                                        role="alert"
+                                        className="text-destructive"
+                                    >
+                                        {error}
+                                    </p>
+                                )}
+                            </div>
+                        </>
+                    ) : (
+                        <div className="min-h-0 space-y-3 overflow-y-auto px-6 pb-6 sm:px-7">
+                            {previewError && (
+                                <p
+                                    role="alert"
+                                    className="text-sm text-destructive"
                                 >
-                                    <div className="flex items-start gap-3">
-                                        <div className="min-w-0 flex-1">
-                                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                                                {platform.id === 'website' && (
-                                                    <AppLogoIcon
-                                                        aria-hidden="true"
-                                                        className="size-7 shrink-0"
-                                                    />
-                                                )}
-                                                {platform.id === 'facebook' && (
-                                                    <img
-                                                        src="/images/integrations/facebook.png"
-                                                        alt=""
-                                                        className="size-5 shrink-0 object-contain"
-                                                    />
-                                                )}
-                                                {platform.id ===
-                                                    'instagram' && (
-                                                    <img
-                                                        src="/images/integrations/instagram.svg"
-                                                        alt=""
-                                                        className="size-5 shrink-0 object-contain"
-                                                    />
-                                                )}
-                                                {connected ? (
-                                                    <Label
-                                                        htmlFor={`publish-${platform.id}`}
-                                                        className={`${selectable ? 'cursor-pointer' : ''} leading-6`}
+                                    {previewError}
+                                </p>
+                            )}
+                            <div className="mb-4 flex items-center gap-2.5">
+                                <Checkbox
+                                    id="publish-all"
+                                    checked={
+                                        allSelected
+                                            ? true
+                                            : selection.length
+                                              ? 'indeterminate'
+                                              : false
+                                    }
+                                    disabled={locked || !available.length}
+                                    onCheckedChange={(checked) =>
+                                        onSelectionChange(
+                                            checked === true
+                                                ? available
+                                                : videoMode
+                                                  ? ['website']
+                                                  : [],
+                                        )
+                                    }
+                                />
+                                <Label
+                                    htmlFor="publish-all"
+                                    className="cursor-pointer"
+                                >
+                                    Pilih semua
+                                </Label>
+                                <span className="ml-auto text-xs text-muted-foreground">
+                                    {selection.length} dipilih
+                                </span>
+                            </div>
+                            {platforms.map((platform) => {
+                                const connected =
+                                    platform.status === 'connected';
+                                const expired = platform.status === 'expired';
+                                const checked = selection.includes(platform.id);
+                                const unavailable = preparing || processing;
+                                const selectable =
+                                    !unavailable &&
+                                    !(videoMode && platform.id === 'website') &&
+                                    (checked ||
+                                        (connected &&
+                                            platform.publishable !== false)) &&
+                                    !processing;
+                                const toggleSelection = (value: boolean) => {
+                                    if (!selectable) {
+                                        return;
+                                    }
+
+                                    onSelectionChange(
+                                        value
+                                            ? [...selection, platform.id]
+                                            : selection.filter(
+                                                  (id) => id !== platform.id,
+                                              ),
+                                    );
+                                };
+                                const title = videoMode
+                                    ? displayNames[platform.id]
+                                    : platform.id === 'website'
+                                      ? 'Aplikasi'
+                                      : platform.name;
+                                const inlineStatus =
+                                    platform.id !== 'website' &&
+                                    !connected &&
+                                    !expired;
+
+                                return (
+                                    <section
+                                        key={platform.id}
+                                        aria-label={title}
+                                        className={`rounded-xl border p-4 transition-colors ${selectable ? 'cursor-pointer' : ''} ${checked ? 'border-primary/50 bg-primary/5' : 'border-border bg-card'}`}
+                                        onClick={(event) => {
+                                            if (
+                                                (
+                                                    event.target as HTMLElement
+                                                ).closest(
+                                                    'button, label, a, input',
+                                                )
+                                            ) {
+                                                return;
+                                            }
+
+                                            toggleSelection(!checked);
+                                        }}
+                                    >
+                                        <div className="flex items-start gap-3">
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                                                    {platform.id ===
+                                                        'website' && (
+                                                        <AppLogoIcon
+                                                            aria-hidden="true"
+                                                            className="size-7 shrink-0"
+                                                        />
+                                                    )}
+                                                    {platform.id ===
+                                                        'facebook' && (
+                                                        <PlatformIcon platform="facebook" />
+                                                    )}
+                                                    {platform.id ===
+                                                        'instagram' && (
+                                                        <PlatformIcon platform="instagram" />
+                                                    )}
+                                                    {connected ? (
+                                                        <Label
+                                                            htmlFor={`publish-${platform.id}`}
+                                                            className={`${selectable ? 'cursor-pointer' : ''} leading-6`}
+                                                        >
+                                                            {title}
+                                                        </Label>
+                                                    ) : (
+                                                        <p className="text-sm leading-6 font-medium">
+                                                            {title}
+                                                        </p>
+                                                    )}
+                                                    {inlineStatus && (
+                                                        <span className="inline-flex items-center gap-1.5 text-xs font-normal text-red-700/80 dark:text-red-300/80">
+                                                            <span
+                                                                aria-hidden="true"
+                                                                className="size-1.5 shrink-0 rounded-full bg-current"
+                                                            />
+                                                            Belum terhubung
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                {platform.id !== 'website' &&
+                                                    platform.account && (
+                                                        <p className="truncate text-xs text-muted-foreground">
+                                                            {platform.account}
+                                                        </p>
+                                                    )}
+                                                {!inlineStatus && (
+                                                    <p
+                                                        className={`mt-1 flex items-center gap-1.5 text-xs ${connected ? 'text-emerald-700 dark:text-emerald-400' : expired ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground'}`}
                                                     >
-                                                        {title}
-                                                    </Label>
-                                                ) : (
-                                                    <p className="text-sm leading-6 font-medium">
-                                                        {title}
-                                                    </p>
-                                                )}
-                                                {inlineStatus && (
-                                                    <span className="inline-flex items-center gap-1.5 text-xs font-normal text-red-700/80 dark:text-red-300/80">
                                                         <span
                                                             aria-hidden="true"
                                                             className="size-1.5 shrink-0 rounded-full bg-current"
                                                         />
-                                                        Belum terhubung
-                                                    </span>
-                                                )}
-                                            </div>
-                                            {platform.id !== 'website' &&
-                                                platform.account && (
-                                                    <p className="truncate text-xs text-muted-foreground">
-                                                        {platform.account}
+                                                        {connected
+                                                            ? platform.id ===
+                                                              'website'
+                                                                ? videoMode
+                                                                    ? 'Periksa tampilan video sebelum diterbitkan.'
+                                                                    : 'Periksa tampilan berita sebelum diterbitkan.'
+                                                                : 'Terhubung'
+                                                            : expired
+                                                              ? 'Koneksi perlu diperbarui'
+                                                              : 'Belum terhubung'}
                                                     </p>
                                                 )}
-                                            {!inlineStatus && (
-                                                <p
-                                                    className={`mt-1 flex items-center gap-1.5 text-xs ${connected ? 'text-emerald-700 dark:text-emerald-400' : expired ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground'}`}
-                                                >
-                                                    <span
-                                                        aria-hidden="true"
-                                                        className="size-1.5 shrink-0 rounded-full bg-current"
-                                                    />
-                                                    {connected
-                                                        ? platform.id ===
-                                                          'website'
-                                                            ? videoMode
-                                                                ? 'Periksa video sebelum diterbitkan.'
-                                                                : 'Periksa tampilan berita sebelum diterbitkan.'
-                                                            : 'Terhubung'
-                                                        : expired
-                                                          ? 'Koneksi perlu diperbarui'
-                                                          : 'Belum terhubung'}
-                                                </p>
+                                            </div>
+                                            {(connected || checked) && (
+                                                <Checkbox
+                                                    id={`publish-${platform.id}`}
+                                                    className="mt-1"
+                                                    checked={checked}
+                                                    disabled={
+                                                        (videoMode &&
+                                                            platform.id ===
+                                                                'website') ||
+                                                        unavailable ||
+                                                        processing ||
+                                                        (!checked &&
+                                                            platform.publishable ===
+                                                                false)
+                                                    }
+                                                    onCheckedChange={(value) =>
+                                                        toggleSelection(
+                                                            value === true,
+                                                        )
+                                                    }
+                                                />
                                             )}
                                         </div>
-                                        {(connected || checked) && (
-                                            <Checkbox
-                                                id={`publish-${platform.id}`}
-                                                className="mt-1"
-                                                checked={checked}
-                                                disabled={
-                                                    (videoMode &&
-                                                        platform.id ===
-                                                            'website') ||
-                                                    unavailable ||
-                                                    processing ||
-                                                    (!checked &&
-                                                        platform.publishable ===
-                                                            false)
-                                                }
-                                                onCheckedChange={(value) =>
-                                                    toggleSelection(
-                                                        value === true,
-                                                    )
-                                                }
-                                            />
-                                        )}
-                                    </div>
-                                    {connected &&
-                                        platform.publishable === false && (
-                                            <p className="mt-2 text-xs text-destructive">
-                                                Konfigurasi media belum
-                                                tersedia. Hubungi administrator.
-                                            </p>
-                                        )}
-                                    {!connected &&
-                                        platform.id !== 'website' && (
-                                            <div className="mt-2.5 sm:ml-14">
-                                                {platform.id === 'facebook' ? (
-                                                    <FacebookLoginControl
-                                                        config={metaAuth}
-                                                        disabled={locked}
-                                                        onConnected={
-                                                            setLivePlatforms
-                                                        }
-                                                    />
-                                                ) : (
-                                                    <InstagramLoginControl
-                                                        config={metaAuth}
-                                                        disabled={locked}
-                                                        onConnected={
-                                                            setLivePlatforms
-                                                        }
-                                                    />
-                                                )}
-                                            </div>
-                                        )}
-                                </section>
-                            );
-                        })}
-                        {error && (
-                            <p
-                                role="alert"
-                                className="text-sm text-destructive"
-                            >
-                                {error}
-                            </p>
-                        )}
-                        {!selection.length && (
-                            <p className="text-xs text-muted-foreground">
-                                Pilih setidaknya satu platform untuk menerbitkan
-                                berita.
-                            </p>
-                        )}
-                        {!contentReady && (
-                            <p className="text-xs text-muted-foreground">
-                                Lengkapi konten berita sebelum menerbitkan.
-                            </p>
-                        )}
-                    </div>
-                )}
+                                        {connected &&
+                                            platform.publishable === false && (
+                                                <p className="mt-2 text-xs text-destructive">
+                                                    Konfigurasi media belum
+                                                    tersedia. Hubungi
+                                                    administrator.
+                                                </p>
+                                            )}
+                                        {!connected &&
+                                            platform.id !== 'website' && (
+                                                <div className="mt-2.5 sm:ml-14">
+                                                    {platform.id ===
+                                                    'facebook' ? (
+                                                        <FacebookLoginControl
+                                                            config={metaAuth}
+                                                            disabled={locked}
+                                                            onConnected={
+                                                                setLivePlatforms
+                                                            }
+                                                        />
+                                                    ) : (
+                                                        <InstagramLoginControl
+                                                            config={metaAuth}
+                                                            disabled={locked}
+                                                            onConnected={
+                                                                setLivePlatforms
+                                                            }
+                                                        />
+                                                    )}
+                                                </div>
+                                            )}
+                                    </section>
+                                );
+                            })}
+                            {error && (
+                                <p
+                                    role="alert"
+                                    className="text-sm text-destructive"
+                                >
+                                    {error}
+                                </p>
+                            )}
+                            {!selection.length && (
+                                <p className="text-xs text-muted-foreground">
+                                    Pilih setidaknya satu platform untuk
+                                    menerbitkan berita.
+                                </p>
+                            )}
+                            {!contentReady && (
+                                <p className="text-xs text-muted-foreground">
+                                    Lengkapi konten berita sebelum menerbitkan.
+                                </p>
+                            )}
+                        </div>
+                    )}
+                </div>
                 <DialogFooter className="sticky bottom-0 z-10 shrink-0 border-t bg-background px-6 py-3 sm:flex-wrap sm:justify-between sm:px-7">
                     {confirmingReview && (
                         <div role="status" className="w-full basis-full">

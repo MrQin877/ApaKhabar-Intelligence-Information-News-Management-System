@@ -32,7 +32,12 @@ export function PublishResultDialog({
     onDismiss?: () => void;
     statusError?: string;
     onRefreshStatus?: () => void;
-    video?: { title: string; thumbnail_url?: string | null; duration?: number };
+    video?: {
+        id?: number;
+        title: string;
+        thumbnail_url?: string | null;
+        duration?: number;
+    };
 }) {
     const { publishResult: sharedResult } = usePage<{
         publishResult?: PublishResult | null;
@@ -149,7 +154,7 @@ export function PublishResultDialog({
                                             'instagram',
                                             'facebook',
                                         ].includes(platform) && (
-                                            <span className="mt-0.5">
+                                            <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center [&_img]:size-5 [&_svg]:size-5">
                                                 <PlatformIcon
                                                     platform={
                                                         platform as
@@ -173,6 +178,7 @@ export function PublishResultDialog({
                                                 platform,
                                                 result.status,
                                                 result.permalink,
+                                                video?.id,
                                             ) && (
                                                 <a
                                                     href={
@@ -180,6 +186,7 @@ export function PublishResultDialog({
                                                             platform,
                                                             result.status,
                                                             result.permalink,
+                                                            video?.id,
                                                         )!
                                                     }
                                                     target={

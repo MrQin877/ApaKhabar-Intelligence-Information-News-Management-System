@@ -38,7 +38,7 @@ export function VideoPublicationIndicator({
         failed: 'Gagal',
         queued: 'Menunggu',
         uploading: 'Mengunggah',
-        processing: 'Diproses',
+        processing: 'Memproses',
         uncertain: 'Memeriksa Status',
         not_selected: 'Tidak Dipilih',
     };

@@ -1,4 +1,5 @@
 export type VideoCrop = {
+    mode?: 'fit' | 'crop';
     x: number;
     y: number;
     zoom: number;
@@ -26,6 +27,18 @@ export function cropChanged(
     crop: VideoCrop,
     previous?: VideoCrop,
 ) {
+    if ((crop.mode ?? 'crop') !== (previous?.mode ?? 'crop') && previous) {
+        return true;
+    }
+
+    if (crop.mode === 'fit') {
+        return (
+            (!previous && width * 16 !== height * 9) ||
+            Math.abs(crop.start - (previous?.start ?? 0)) >= 0.001 ||
+            Math.abs(crop.end - (previous?.end ?? duration)) >= 0.001
+        );
+    }
+
     const rect = cropRectangle(width, height, crop);
 
     if (!previous) {
