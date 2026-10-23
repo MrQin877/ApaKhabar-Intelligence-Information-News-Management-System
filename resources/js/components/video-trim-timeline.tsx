@@ -29,7 +29,7 @@ export function VideoTrimTimeline({
     onEnd: (value: number) => void;
     onSeek: (value: number) => void;
 }) {
-    const images = useVideoFrames(source, duration);
+    const { images } = useVideoFrames(source, duration);
     const track = useRef<HTMLDivElement>(null);
     const dragging = useRef<'start' | 'end' | null>(null);
     const max = Math.max(duration, MIN_LENGTH);

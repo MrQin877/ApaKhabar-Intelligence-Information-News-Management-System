@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\ProcessShortVideo;
 use App\Jobs\PublishShortVideo;
 use App\Models\ShortVideo;
 use App\Models\SocialConnection;
@@ -20,6 +21,12 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia as Assert;
+
+function finishShortDraft(int $id): void
+{
+    $video = ShortVideo::findOrFail($id);
+    (new ProcessShortVideo($id, $video->metadata['processing']['revision']))->handle(app(VideoCropper::class), app(LocalShortMedia::class));
+}
 
 function shortMetadata(): array
 {
@@ -65,12 +72,16 @@ test('landscape upload crop save draft publish sends cropped URL to both platfor
     $id = $uploaded->json('video.id');
     $originalUrl = $uploaded->json('video.metadata.crop_source.url');
     $originalPath = $uploaded->json('video.metadata.crop_source.path');
+    finishShortDraft($id);
+    $readyUrl = ShortVideo::findOrFail($id)->video_url;
     $this->mock(VideoCropper::class)->shouldReceive('export')->once()->with($originalUrl, Mockery::any(), $originalPath)->andReturn([
         'asset' => ['url' => $croppedUrl, 'path' => 'shorts/edits/confirmed-crop.mp4'], 'metadata' => shortMetadata(),
     ]);
     Storage::disk('public')->put('shorts/edits/confirmed-crop.mp4', 'edited bytes');
-    $this->postJson('/admin/short-videos/'.$id.'/crop', ['expected_url' => $uploaded->json('video.video_url'), 'x' => 0.75, 'y' => 0.5, 'zoom' => 1, 'start' => 0, 'end' => 20])
-        ->assertOk()->assertJsonPath('video.video_url', $croppedUrl)->assertJsonPath('video.metadata.crop_source.url', $originalUrl);
+    $this->postJson('/admin/short-videos/'.$id.'/crop', ['expected_url' => $readyUrl, 'x' => 0.75, 'y' => 0.5, 'zoom' => 1, 'start' => 0, 'end' => 20])
+        ->assertOk()->assertJsonPath('video.metadata.processing.status', 'queued')->assertJsonPath('video.metadata.crop_source.url', $originalUrl);
+    finishShortDraft($id);
+    expect(ShortVideo::findOrFail($id)->video_url)->toBe($croppedUrl);
     Storage::disk('public')->assertExists($originalPath);
     $this->postJson('/admin/short-videos/'.$id, ['title' => 'Confirmed crop', 'description' => 'Preserved caption', 'frame_offset' => 0, 'cover_mode' => 'keep'])->assertOk();
     $video = ShortVideo::findOrFail($id);
@@ -755,6 +766,32 @@ test('shorts list and publication routes preserve roles ownership and draft deep
     $this->actingAs(shortUser('villager'))->get('/admin/short-videos/create')->assertRedirect('/');
 });
 
+test('stale editor links redirect published videos to their detail and other states to the list', function () {
+    $owner = shortUser();
+    $published = shortDraft($owner);
+    $published->update(['status' => 'published', 'published_at' => now()]);
+    $archived = shortDraft($owner);
+    $archived->update(['status' => 'archived']);
+    $processing = shortDraft($owner);
+    $processing->update(['status' => 'processing']);
+    $failed = shortDraft($owner);
+    $failed->update(['status' => 'failed']);
+    $other = shortDraft(shortUser());
+    $other->update(['status' => 'published', 'published_at' => now()]);
+
+    $this->actingAs($owner);
+    $this->get('/admin/short-videos/create?draft='.$published->id)->assertRedirect('/shorts/'.$published->id);
+    $this->get('/admin/short-videos/create?draft='.$archived->id)
+        ->assertRedirect('/admin/short-videos')
+        ->assertSessionHas('shortNotice');
+    foreach ([$processing, $failed] as $video) {
+        $this->get('/admin/short-videos/create?draft='.$video->id)
+            ->assertRedirect('/admin/short-videos')
+            ->assertSessionHas('shortNotice');
+    }
+    $this->get('/admin/short-videos/create?draft='.$other->id)->assertForbidden();
+});
+
 test('video management searches filters and paginates only owned records with publication statuses', function () {
     $user = shortUser();
     $this->actingAs($user);
@@ -823,7 +860,9 @@ test('confirmed initial crop exports once and preserves original with adjusted c
     $this->mock(VideoCropper::class)->shouldReceive('export')->once()->with(Mockery::any(), Mockery::on(fn ($e) => $e['mode'] === 'crop' && $e['start'] == 5), Mockery::any())->andReturn([
         'asset' => ['url' => '/storage/shorts/edits/initial.mp4', 'path' => 'shorts/edits/initial.mp4'], 'metadata' => [...shortMetadata(), 'duration' => 5],
     ]);
-    $this->postJson('/admin/short-videos/upload', ['video' => UploadedFile::fake()->create('source.mp4', 100, 'video/mp4'), 'frame_offset' => 9,
+    $response = $this->postJson('/admin/short-videos/upload', ['video' => UploadedFile::fake()->create('source.mp4', 100, 'video/mp4'), 'frame_offset' => 9,
         'edit' => ['mode' => 'crop', 'x' => '0.5', 'y' => '0.5', 'zoom' => '2', 'start' => '5', 'end' => '10']])
         ->assertCreated()->assertJsonPath('video.frame_offset', 4)->assertJsonPath('video.metadata.video_crop.start', 5)->assertJsonPath('video.metadata.crop_source.metadata.duration', 20);
+    finishShortDraft($response->json('video.id'));
+    expect(ShortVideo::findOrFail($response->json('video.id'))->metadata['processing']['status'])->toBe('ready');
 });

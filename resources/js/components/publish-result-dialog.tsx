@@ -52,7 +52,6 @@ export function PublishResultDialog({
     const entries = Object.entries(publishResult.results).filter(
         ([, value]) => !videoMode || value.status !== 'not_selected',
     );
-    const anySuccess = entries.some(([, result]) => result.success);
     const names: Record<string, string> = {
         application: 'Aplikasi',
         website: 'ApaKhabar',
@@ -88,11 +87,7 @@ export function PublishResultDialog({
                     <DialogTitle>
                         {videoMode
                             ? 'Status Publikasi Video'
-                            : publishResult.success
-                              ? 'Publikasi Berhasil'
-                              : anySuccess
-                                ? 'Publikasi Sebagian Berhasil'
-                                : 'Publikasi Gagal'}
+                            : 'Status Publikasi Berita'}
                     </DialogTitle>
                     <DialogDescription>
                         {videoMode
@@ -311,14 +306,12 @@ export function PublishResultDialog({
 
                             if (videoMode) {
                                 router.visit('/admin/short-videos');
+                            } else if (!publishResult.completion_url) {
+                                router.visit('/admin/news');
                             }
                         }}
                     >
-                        {videoMode
-                            ? 'Lihat Daftar Video'
-                            : publishResult.completion_url
-                              ? 'Daftar Berita'
-                              : 'Selesai'}
+                        {videoMode ? 'Daftar Video' : 'Daftar Berita'}
                     </Button>
                 </DialogFooter>
             </DialogContent>

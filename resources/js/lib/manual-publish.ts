@@ -75,6 +75,7 @@ export async function publishManual(
                       }
                     : {
                           success: false,
+                          status: 'uncertain',
                           message:
                               'Hasil penerbitan tidak diterima. Periksa Daftar Berita sebelum mencoba kembali.',
                       };
@@ -99,6 +100,7 @@ export async function publishManual(
                     platform === 'website' ? 'application' : platform,
                     {
                         success: false,
+                        status: 'uncertain',
                         message: controller.signal.aborted
                             ? 'Waktu tunggu hasil penerbitan habis. Proses server mungkin masih berjalan. Periksa Daftar Berita sebelum mencoba kembali.'
                             : 'Hasil penerbitan tidak dapat diterima. Periksa Daftar Berita sebelum mencoba kembali; sebagian platform mungkin sudah berhasil.',

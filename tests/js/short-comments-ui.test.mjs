@@ -145,3 +145,13 @@ for (const canFlag of [false, true]) {
         assert.equal(view.posts[0].data.category, canFlag ? 'spam' : 'Spam');
     });
 }
+
+test('desktop comments fill the video-height slot and scroll only the list', () => {
+    const current = mount(false).render();
+    const panel = current.find((node) => node.type === 'section' && node.props?.['aria-label'] === 'Komentar video pendek');
+    assert.ok(panel.props.className.includes('h-full min-h-0'));
+    assert.equal(panel.props.style, undefined);
+    assert.ok(current.find((node) => node.type === 'header').props.className.includes('shrink-0'));
+    assert.ok(current.find((node) => node.props?.['aria-busy'] !== undefined).props.className.includes('flex-1 space-y-3 overflow-y-auto'));
+    assert.ok(current.find((node) => node.type === 'form').props.className.includes('shrink-0'));
+});

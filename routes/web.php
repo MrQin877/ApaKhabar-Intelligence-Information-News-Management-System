@@ -124,6 +124,8 @@ Route::prefix('admin')
         Route::get('/short-videos/create', [ShortVideoController::class, 'create'])->name('short-videos.create');
         Route::post('/short-videos/upload', [ShortVideoController::class, 'upload'])->middleware('throttle:10,1');
         Route::post('/short-videos/{shortVideo}', [ShortVideoController::class, 'update']);
+        Route::get('/short-videos/{shortVideo}/processing', [ShortVideoController::class, 'processing']);
+        Route::post('/short-videos/{shortVideo}/processing/retry', [ShortVideoController::class, 'retryProcessing'])->middleware('throttle:10,1');
         Route::post('/short-videos/{shortVideo}/preview', [ShortVideoController::class, 'preview']);
         Route::post('/short-videos/{shortVideo}/crop', [ShortVideoController::class, 'crop'])->middleware('throttle:5,1');
         Route::post('/short-videos/{shortVideo}/publish', [ShortVideoController::class, 'publish'])->middleware('throttle:10,1');

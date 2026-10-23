@@ -22,7 +22,6 @@ import type {
     PublishPlatform,
     PublishPlatformId,
 } from '@/components/publish-news-dialog';
-import { PublishResultDialog } from '@/components/publish-result-dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -51,7 +50,6 @@ import { defaultCrops, initializeCrops } from '@/lib/image-crops';
 import type { ImageCrops } from '@/lib/image-crops';
 import { hasManualContent, saveManualDraft } from '@/lib/manual-draft';
 import { publishManual } from '@/lib/manual-publish';
-import type { PublishResult } from '@/lib/manual-publish';
 import type { MetaAuthConfig } from '@/lib/meta-auth';
 import type { BreadcrumbItem } from '@/types';
 
@@ -102,7 +100,6 @@ export default function ManualEditor({
     const [saveError, setSaveError] = useState('');
     const savingStarted = useRef(false);
     const [draftId, setDraftId] = useState(draft?.id);
-    const [publishResult, setPublishResult] = useState<PublishResult>();
     const publishStarted = useRef(false);
     const [dragging, setDragging] = useState(false);
     const [preview, setPreview] = useState('');
@@ -144,8 +141,7 @@ export default function ManualEditor({
         }
     }, [selectedCategoryExists, setFormData, setFormDefaults]);
 
-    const busy =
-        savingDraft || form.processing || publishing || Boolean(publishResult);
+    const busy = savingDraft || form.processing || publishing;
     const snapshot = manualSnapshot({
         ...form.data,
         category_id: selectedCategoryExists ? form.data.category_id : '',
@@ -263,6 +259,18 @@ export default function ManualEditor({
                 body.append('_method', 'put');
             }
 
+            const workloadId = `manual-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+            const workload = {
+                id: workloadId,
+                title: form.data.headline,
+                thumbnail_url: form.data.image || preview || undefined,
+                destinations: [...form.data.platforms],
+            };
+            window.dispatchEvent(
+                new CustomEvent('news-publication', {
+                    detail: { ...workload, ready: false },
+                }),
+            );
             void publishManual(
                 draftId
                     ? `/admin/news/manual/${draftId}`
@@ -282,7 +290,16 @@ export default function ManualEditor({
                     }
 
                     setConfirmPublish(false);
-                    setPublishResult(result);
+                    window.dispatchEvent(
+                        new CustomEvent('news-publication', {
+                            detail: {
+                                ...workload,
+                                ready: true,
+                                result,
+                                open: true,
+                            },
+                        }),
+                    );
                 })
                 .finally(() => setPublishing(false));
 
@@ -860,7 +877,6 @@ export default function ManualEditor({
                 onPreparePreview={preparePreview}
                 onPublish={(token) => save('publish', token)}
             />
-            {publishResult && <PublishResultDialog result={publishResult} />}
             <Dialog
                 open={unsaved.open}
                 onOpenChange={(open) => {

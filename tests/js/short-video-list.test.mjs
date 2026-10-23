@@ -61,6 +61,19 @@ test('published ApaKhabar destination opens the selected video detail', () => {
     const view = mount([video]).render();
     const link = view.nodes.find(n => n.type === 'a' && n.props.href === '/shorts/1');
     assert.ok(link);
+    assert.equal(view.nodes.find(n => n.type === 'Link' && n.props.children === 'Lihat Video').props.href, '/shorts/1');
+    assert.equal(view.nodes.some(n => n.type === 'Link' && String(n.props.href).includes('create?draft=')), false);
+});
+
+test('processing and failed videos open progress or details without an editor link', () => {
+    const app = mount([{ ...video, status: 'processing' }, { ...video, id: 2, status: 'failed' }]);
+    let view = app.render();
+    view.nodes.find(n => n.type === 'Button' && n.props.children === 'Lihat Progres').props.onClick();
+    assert.equal(app.actions[0].id, 1);
+    view.nodes.find(n => n.type === 'Button' && n.props.children === 'Lihat Status').props.onClick();
+    view = app.render();
+    assert.match(view.text, /Detail Video/);
+    assert.equal(view.nodes.some(n => n.type === 'Link' && String(n.props.href).includes('create?draft=')), false);
 });
 test('every platform status has an accessible label and processing animates', () => {
     const { VideoPlatformStatus } = mount().exports;

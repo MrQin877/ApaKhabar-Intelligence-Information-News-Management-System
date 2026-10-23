@@ -55,7 +55,10 @@ type ShortViewerProps = {
 
 let pendingTransition: { id: number; panel: 'comments' | 'details' | null } | null = null;
 let wheelCooldownUntil = 0;
-const playerWidth = 'min(460px, max(180px, calc(56.25dvh - 8.75rem)), calc(100vw - 5.5rem))';
+let preferredMuted = false;
+const playerWidth = 'min(460px, max(180px, calc(56.25dvh - 8.75rem)), calc(100vw - 44rem))';
+const mobilePlayerWidth = 'min(460px, max(180px, calc(56.25dvh - 8.75rem)), calc(100vw - 5.5rem))';
+const detailsAnimation = 'motion-safe:duration-500 motion-safe:ease-in-out';
 
 export default function ShortViewer(props: ShortViewerProps) {
     return <ShortViewerContent key={props.short.id} {...props} />;
@@ -81,6 +84,7 @@ function ShortViewerContent({
     const resumeAfterComments = useRef(false);
     const swipeStart = useRef<{ x: number; y: number } | null>(null);
     const transitionTimer = useRef<number | null>(null);
+    const commentCloseTimer = useRef<number | null>(null);
     const transitionLocked = useRef(false);
     const autoplayNext = useRef(pendingTransition?.id === short.id);
     const token = useRef<string | null>(null);
@@ -95,6 +99,7 @@ function ShortViewerContent({
     const [panel, setPanel] = useState<'comments' | 'details' | null>(
         () => pendingTransition?.id === short.id ? pendingTransition.panel : null,
     );
+    const [closingComments, setClosingComments] = useState(false);
     const commentsOpen = panel === 'comments';
     const detailsOpen = panel === 'details';
     const panelOpen = panel !== null;
@@ -113,7 +118,7 @@ function ShortViewerContent({
     const [likeAnimation, setLikeAnimation] = useState(0);
     const [shareMessage, setShareMessage] = useState('');
     const [engagementError, setEngagementError] = useState('');
-    const [muted, setMuted] = useState(false);
+    const [muted, setMuted] = useState(preferredMuted);
     const [playing, setPlaying] = useState(false);
     const [progress, setProgress] = useState(0);
     const [duration, setDuration] = useState(0);
@@ -159,9 +164,33 @@ function ShortViewerContent({
         return () => window.clearTimeout(timer);
     }, [panelOpen, wide]);
 
+    useEffect(() => {
+        if (autoplayNext.current || (panelOpen && !wide)) {
+            return;
+        }
+
+        const video = player.current;
+        if (!video) {
+            return;
+        }
+
+        void video.play().catch((error: DOMException) => {
+            if (error.name === 'NotAllowedError' && !video.muted) {
+                video.muted = true;
+                setMuted(true);
+                void video.play().catch(() => {});
+            }
+        });
+
+        return () => video.pause();
+    }, [short.id]);
+
     useEffect(() => () => {
         if (transitionTimer.current !== null) {
             window.clearTimeout(transitionTimer.current);
+        }
+        if (commentCloseTimer.current !== null) {
+            window.clearTimeout(commentCloseTimer.current);
         }
     }, []);
 
@@ -295,7 +324,25 @@ function ShortViewerContent({
 
     function closeComments() {
         restoreCommentFocus.current = true;
+        if (!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+            setClosingComments(true);
+            commentCloseTimer.current = window.setTimeout(() => {
+                setClosingComments(false);
+                commentCloseTimer.current = null;
+            }, 500);
+        } else {
+            setClosingComments(false);
+        }
         setPanel(null);
+    }
+
+    function openComments() {
+        if (commentCloseTimer.current !== null) {
+            window.clearTimeout(commentCloseTimer.current);
+            commentCloseTimer.current = null;
+        }
+        setClosingComments(false);
+        setPanel('comments');
     }
 
     function togglePlayback() {
@@ -317,7 +364,8 @@ function ShortViewerContent({
 
         if (video) {
             video.muted = !video.muted;
-            setMuted(video.muted);
+            preferredMuted = video.muted;
+            setMuted(preferredMuted);
         }
     }
 
@@ -484,7 +532,7 @@ function ShortViewerContent({
 
     const engagement = (
         <div
-            className="flex flex-col items-center justify-center gap-5"
+            className="flex flex-col items-center justify-end gap-5"
             aria-label="Interaksi video pendek"
         >
             <div className="flex flex-col items-center gap-1">
@@ -511,7 +559,7 @@ function ShortViewerContent({
                 className={`size-12 rounded-full border border-white/10 bg-white/5 text-foreground backdrop-blur-sm transition-colors hover:bg-white/15 ${commentsOpen ? 'border-primary/60 bg-primary/15 text-primary' : ''}`}
                 aria-label={`Buka komentar: ${comments} komentar`}
                 aria-expanded={commentsOpen}
-                onClick={() => commentsOpen ? closeComments() : setPanel('comments')}
+                onClick={() => commentsOpen ? closeComments() : openComments()}
             >
                 <MessageCircle className="size-5" />
             </Button>
@@ -556,7 +604,7 @@ function ShortViewerContent({
                     onWheel={onViewerWheel}
                     className={`mx-auto flex max-w-7xl flex-col px-3 pt-3 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:px-6 ${wide ? 'h-[calc(100dvh-65px)] overflow-x-hidden overflow-y-auto' : 'min-h-[calc(100dvh-65px)]'}`}
                 >
-                    <div className="mx-auto flex w-fit max-w-full flex-1 flex-col justify-center">
+                    <div className="mx-auto flex w-full max-w-full flex-1 flex-col justify-center">
                     <Link
                         href="/#shorts"
                         className={`mb-3 inline-flex min-h-11 w-fit shrink-0 items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-primary ${commentsOpen && !wide ? 'invisible' : ''}`}
@@ -565,12 +613,23 @@ function ShortViewerContent({
                         Kembali ke Shorts
                     </Link>
                     <div
-                        className={`${panelOpen && !wide ? 'block' : 'grid items-start justify-center gap-3 sm:gap-5'}`}
-                        style={wide ? { gridTemplateColumns: panelOpen
-                            ? `${playerWidth} 3.25rem minmax(0, 380px) 3rem`
-                            : `${playerWidth} 3.25rem 3rem` } : panelOpen ? undefined : { gridTemplateColumns: `${playerWidth} 3.25rem` }}
+                        className={`${panelOpen && !wide ? 'block' : 'grid items-end justify-center gap-3 sm:gap-5'}`}
+                        style={wide ? { gridTemplateColumns: `3.25rem minmax(0, 1fr) ${playerWidth} 3.25rem minmax(0, 1fr)` } : panelOpen ? undefined : { gridTemplateColumns: `${mobilePlayerWidth} 3.25rem` }}
                     >
-                        <div className={`min-w-0 ${panelOpen && !wide ? 'hidden' : ''} ${!wide ? 'row-span-2' : ''}`}>
+                        <div className={`min-w-0 max-w-[400px] motion-safe:animate-in motion-safe:fade-in ${detailsAnimation} ${wide ? `col-start-2 row-start-1 self-end border-l-2 border-primary pl-4 ${nextShortPreview ? 'mb-8' : ''}` : 'col-start-1 row-start-2 pt-2'} ${panelOpen && !wide ? 'hidden' : ''}`}>
+                            <h1 className="min-w-0">
+                                <button type="button" title={short.title} onClick={() => setPanel('details')} className="block max-w-full break-words text-left text-xl leading-tight font-bold text-foreground transition-colors hover:text-primary focus-visible:outline-2 focus-visible:outline-ring sm:text-2xl lg:text-3xl">
+                                    {short.title}
+                                </button>
+                            </h1>
+                            {short.description && <button type="button" onClick={() => setPanel('details')} className="mt-2 line-clamp-3 max-w-full break-words text-left text-sm leading-relaxed text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">{short.description}</button>}
+                            {short.description && (
+                                <button type="button" onClick={() => setPanel('details')} className="mt-1 text-left text-xs font-medium text-primary hover:underline focus-visible:outline-2 focus-visible:outline-ring">
+                                    Lihat selengkapnya
+                                </button>
+                            )}
+                        </div>
+                        <div className={`min-w-0 ${panelOpen && !wide ? 'hidden' : ''} ${wide ? 'col-start-3 row-start-1' : 'col-start-1 row-start-1'}`}>
                         <div
                             className={`relative aspect-[9/16] min-w-0 overflow-hidden rounded-xl bg-black transition-[transform,opacity] duration-[400ms] ease-out motion-reduce:transition-none ${transitionPhase === 'exiting' ? '-translate-y-[8%] opacity-0' : transitionPhase === 'entering' ? 'translate-y-[8%] opacity-0' : 'translate-y-0 opacity-100'} ${!wide ? 'touch-pan-x' : ''}`}
                             style={{ width: '100%' }}
@@ -590,6 +649,7 @@ function ShortViewerContent({
                                 src={short.video_url}
                                 poster={short.thumbnail_url}
                                 playsInline
+                                muted={muted}
                                 preload="metadata"
                                 onPlay={() => {
                                     startView();
@@ -628,23 +688,13 @@ function ShortViewerContent({
                                 }} />
                             </div>
                         </div>
-                        <h1 className="mt-3 min-w-0">
-                            <button type="button" title={short.title} onClick={() => setPanel('details')} className="block max-w-full truncate text-left text-sm font-semibold text-foreground transition-colors hover:text-primary focus-visible:outline-2 focus-visible:outline-ring">
-                                {short.title}
-                            </button>
-                        </h1>
-                        {short.description && (
-                            <button type="button" onClick={() => setPanel('details')} className="mt-1 line-clamp-2 max-w-full text-left text-xs text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">
-                                {short.description}
-                            </button>
-                        )}
                         {nextShortPreview && (
                             <div className="mt-3 h-5 overflow-hidden rounded-t-lg opacity-65" aria-hidden="true">
                                 <img src={nextShortPreview.thumbnail_url} alt="" className="h-40 w-full object-cover object-top" loading="lazy" />
                             </div>
                         )}
                         </div>
-                        <div className={`min-w-0 self-end justify-self-center pb-12 ${panelOpen && !wide ? 'hidden' : ''}`}>
+                        <div className={`min-w-0 self-end justify-self-center ${nextShortPreview ? 'mb-8' : ''} ${panelOpen && !wide ? 'hidden' : ''} ${wide ? 'col-start-4 row-start-1' : 'col-start-2 row-start-1'}`}>
                             {engagement}
                             {engagementError && !(commentsOpen && !wide) && (
                                 <p
@@ -663,17 +713,17 @@ function ShortViewerContent({
                                 </p>
                             )}
                         </div>
-                        {commentsOpen && (
+                        {(wide || commentsOpen || closingComments) && (
                             <div
                                 ref={commentPanel}
-                                className={wide ? 'min-w-0 animate-in slide-in-from-right-4 duration-300 motion-reduce:animate-none' : 'fixed inset-x-0 z-50 min-w-0 bg-background animate-in slide-in-from-right duration-300 motion-reduce:animate-none'}
+                                className={`${wide ? `col-start-5 row-start-1 min-h-0 min-w-0 w-[calc(100%+1rem)] max-w-[400px] self-stretch overflow-hidden rounded-xl bg-card ${nextShortPreview ? 'mb-8' : ''}` : 'fixed inset-x-0 z-50 min-w-0 bg-background'} ${commentsOpen ? `pointer-events-auto opacity-100 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-4 ${detailsAnimation}` : closingComments ? `pointer-events-none opacity-0 motion-safe:animate-out motion-safe:fade-out motion-safe:slide-out-to-right-4 ${detailsAnimation}` : 'pointer-events-none opacity-0'}`}
                                 data-short-panel
                                 style={!wide ? {
                                     top: visibleViewport?.top ?? 0,
                                     height: visibleViewport ? `${visibleViewport.height}px` : '100dvh',
                                 } : undefined}
                             >
-                                <ShortComments
+                                {(commentsOpen || closingComments) && <ShortComments
                                     shortId={short.id}
                                     authenticated={authenticated}
                                     canFlag={canFlagComments}
@@ -682,11 +732,11 @@ function ShortViewerContent({
                                     onClose={closeComments}
                                     onLogin={() => setLoginPrompt(true)}
                                     fullScreen={!wide}
-                                />
+                                />}
                             </div>
                         )}
                         {detailsOpen && wide && (
-                            <section aria-label="Detail video" data-short-panel className="flex h-[min(820px,calc(100dvh-11rem))] min-w-0 flex-col overflow-hidden rounded-xl border bg-card animate-in slide-in-from-right-4 duration-300 motion-reduce:animate-none">
+                            <section aria-label="Detail video" data-short-panel className={`col-start-5 row-start-1 flex min-h-0 min-w-0 w-full max-w-[400px] flex-col self-stretch overflow-hidden rounded-xl border bg-card animate-in fade-in slide-in-from-right-4 duration-500 ease-in-out motion-reduce:animate-none ${nextShortPreview ? 'mb-8' : ''}`}>
                                 <div className="flex items-center justify-between border-b px-5 py-3">
                                     <h2 className="font-semibold">Detail Video</h2>
                                     <Button type="button" size="icon" variant="ghost" className="size-11" aria-label="Tutup detail video" onClick={() => setPanel(null)}>×</Button>
@@ -695,7 +745,7 @@ function ShortViewerContent({
                             </section>
                         )}
                         <div
-                            className={`self-center justify-self-center -translate-y-8 ${panelOpen && !wide ? 'hidden' : ''} ${wide ? panelOpen ? 'col-start-4' : 'col-start-3' : 'col-start-2'}`}
+                            className={`self-center justify-self-center ${panelOpen && !wide ? 'hidden' : ''} ${wide ? 'col-start-4 row-start-1 -translate-y-28' : 'col-start-2 row-start-2 -translate-y-8'}`}
                         >
                             {nextShortId && (
                                 <TooltipProvider>

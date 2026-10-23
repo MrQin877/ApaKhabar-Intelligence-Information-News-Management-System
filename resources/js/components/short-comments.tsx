@@ -554,12 +554,7 @@ export function ShortComments({
     return (
         <section
             aria-label="Komentar video pendek"
-            className={`flex min-h-0 flex-col overflow-hidden bg-card ${fullScreen ? 'h-full w-full' : 'rounded-xl border'}`}
-            style={
-                !fullScreen
-                    ? { height: 'min(820px, max(320px, calc(100dvh - 11rem)))' }
-                    : undefined
-            }
+            className={`flex h-full min-h-0 flex-col overflow-hidden bg-card ${fullScreen ? 'w-full' : 'rounded-xl border'}`}
         >
             <header
                 className={`flex shrink-0 items-center justify-between border-b px-4 py-3 ${fullScreen ? 'pt-[calc(0.75rem+env(safe-area-inset-top))]' : ''}`}

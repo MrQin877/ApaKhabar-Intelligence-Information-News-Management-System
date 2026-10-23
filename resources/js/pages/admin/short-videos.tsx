@@ -48,7 +48,10 @@ import {
     TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { VideoCropDialog } from '@/components/video-crop-dialog';
-import { VideoFrameTimeline } from '@/components/video-frame-timeline';
+import {
+    VideoFrameTimeline,
+    formatFrameTime,
+} from '@/components/video-frame-timeline';
 import { useUnsavedNews } from '@/hooks/use-unsaved-news';
 import AppLayout from '@/layouts/app-layout';
 import { editorSnapshot } from '@/lib/editor-snapshot';
@@ -67,6 +70,11 @@ type ShortVideo = {
     status: string;
     metadata: {
         duration: number;
+        processing?: {
+            revision: string;
+            status: 'queued' | 'processing' | 'ready' | 'failed';
+            error?: string | null;
+        };
         bytes?: number;
         cover_source?: 'frame' | 'photo';
         cover_original?: string;
@@ -86,6 +94,39 @@ type ShortVideo = {
         error_summary?: string | null;
     }[];
 };
+
+function SelectedCover({
+    image,
+    detail,
+    description,
+}: {
+    image: string;
+    detail: string;
+    description: string;
+}) {
+    return (
+        <div className="flex items-center gap-4 rounded-lg border bg-zinc-950/50 p-3">
+            <div className="flex aspect-[9/16] w-16 shrink-0 items-center justify-center overflow-hidden rounded-md bg-zinc-900 sm:w-20">
+                {image ? (
+                    <img
+                        src={image}
+                        alt="Sampul terpilih"
+                        className="h-full w-full object-contain"
+                    />
+                ) : (
+                    <Film className="size-5 text-muted-foreground" />
+                )}
+            </div>
+            <div className="min-w-0 space-y-1">
+                <p className="text-sm text-muted-foreground">Sampul Terpilih</p>
+                <p className="truncate font-medium tabular-nums" title={detail}>
+                    {detail}
+                </p>
+                <p className="text-xs text-muted-foreground">{description}</p>
+            </div>
+        </div>
+    );
+}
 function hasFrameCover(video: ShortVideo | null) {
     return (
         video?.metadata.cover_source === 'frame' ||
@@ -192,6 +233,7 @@ function upload(
 export function ShortVideos({
     mode = 'editor',
     draft = null,
+    notice = null,
     videos,
     publishPlatforms,
     metaAuth,
@@ -200,6 +242,7 @@ export function ShortVideos({
     filters?: { search: string; status: string };
     mode?: 'editor' | 'list';
     draft?: ShortVideo | null;
+    notice?: string | null;
     videos: { data: ShortVideo[]; current_page: number; last_page: number };
     publishPlatforms: PublishPlatform[];
     metaAuth: MetaAuthConfig;
@@ -247,6 +290,7 @@ export function ShortVideos({
             ? draft.thumbnail_url
             : '',
     );
+    const [photoFilename, setPhotoFilename] = useState('');
     const [frameThumbnail, setFrameThumbnail] = useState(
         hasFrameCover(draft) ? (draft?.thumbnail_url ?? '') : '',
     );
@@ -260,6 +304,8 @@ export function ShortVideos({
         : (current?.metadata.cover_original ?? photoUrl);
     const [cropOpen, setCropOpen] = useState(false);
     const coverInput = useRef<HTMLInputElement>(null);
+    const [playbackTime, setPlaybackTime] = useState(0);
+    const requestedFrame = useRef<number | null>(null);
     const framePlayer = useRef<HTMLVideoElement>(null);
     const player = useRef<HTMLVideoElement>(null);
     const fitBackground = useRef<HTMLVideoElement>(null);
@@ -302,23 +348,42 @@ export function ShortVideos({
                   ? 'Deskripsi maksimal 10000 karakter.'
                   : fieldErrors.description
             : undefined;
-    const publishHint = busy
-        ? 'Tunggu proses video selesai.'
-        : !localFile && !current
-          ? 'Pilih video terlebih dahulu.'
-          : localVideoError
-            ? 'Video lokal tidak dapat diputar. Pilih video MP4 yang valid.'
-            : localFile && !duration
-              ? 'Menunggu pratinjau video lokal.'
-              : localFile && (!Number.isFinite(duration) || duration > 900)
-                ? 'Durasi video harus maksimal 15 menit.'
-                : current && current.status !== 'draft'
-                  ? 'Video ini tidak tersedia sebagai draf.'
-                  : !title.trim() || !description.trim()
-                    ? 'Lengkapi judul dan deskripsi video.'
-                    : !localFile && !current?.thumbnail_url
-                      ? 'Sampul video belum tersedia.'
-                      : '';
+    const selectedFramePreview =
+        frameThumbnail ||
+        (hasFrameCover(current) &&
+        Math.abs((current?.frame_offset ?? 0) - offset) < 0.001
+            ? current?.thumbnail_url
+            : '') ||
+        '';
+    const processingStatus = current?.metadata.processing?.status ?? 'ready';
+    const pendingFrame =
+        current?.metadata.local_path &&
+        coverMode === 'frame' &&
+        (!hasFrameCover(current) ||
+            Math.abs(current.frame_offset - offset) >= 0.001);
+    const publishHint =
+        localFile || pendingFrame
+            ? 'Simpan draf terlebih dahulu dan tunggu sampai video siap.'
+            : processingStatus !== 'ready'
+              ? 'Tunggu sampai video siap sebelum menerbitkan.'
+              : busy
+                ? 'Tunggu proses video selesai.'
+                : !localFile && !current
+                  ? 'Pilih video terlebih dahulu.'
+                  : localVideoError
+                    ? 'Video lokal tidak dapat diputar. Pilih video MP4 yang valid.'
+                    : localFile && !duration
+                      ? 'Menunggu pratinjau video lokal.'
+                      : localFile &&
+                          (!Number.isFinite(duration) || duration > 900)
+                        ? 'Durasi video harus maksimal 15 menit.'
+                        : current && current.status !== 'draft'
+                          ? 'Video ini tidak tersedia sebagai draf.'
+                          : !title.trim() || !description.trim()
+                            ? 'Lengkapi judul dan deskripsi video.'
+                            : !localFile && !current?.thumbnail_url
+                              ? 'Sampul video belum tersedia.'
+                              : '';
     const canPublish = !publishHint;
     function showFailure(failure: unknown, fallback: string) {
         const message = failure instanceof Error ? failure.message : fallback;
@@ -376,7 +441,78 @@ export function ShortVideos({
             active = false;
         };
     }, [coverOriginal, coverCrop, coverTab]);
-    const refresh = () => router.reload({ only: ['videos'] });
+    const refresh = () => {
+        if (mode === 'list') {
+            router.reload({ only: ['videos'] });
+        }
+    };
+
+    useEffect(() => {
+        if (
+            mode !== 'editor' ||
+            !current ||
+            !['queued', 'processing'].includes(processingStatus)
+        ) {
+            return;
+        }
+
+        let active = true;
+        let timer: ReturnType<typeof setTimeout>;
+        const poll = async () => {
+            try {
+                const response = await fetch(
+                    `/admin/short-videos/${current.id}/processing`,
+                    { headers: { Accept: 'application/json' } },
+                );
+
+                if (!response.ok) {
+                    return;
+                }
+
+                const data: { video: ShortVideo } = await response.json();
+
+                if (!active || guard.current) {
+                    return;
+                }
+
+                // Merge server media only; never overwrite unsaved text or cover controls.
+                setCurrent((previous) =>
+                    previous?.id === data.video.id ? data.video : previous,
+                );
+
+                if (data.video.metadata.processing?.status === 'ready') {
+                    setSource((previous) =>
+                        previous === current.video_url
+                            ? data.video.video_url
+                            : previous,
+                    );
+                    setDuration(data.video.metadata.duration);
+
+                    if (snapshot === savedSnapshot) {
+                        requestedFrame.current = data.video.frame_offset;
+                        setOffset(data.video.frame_offset);
+                        setThumbnail(data.video.thumbnail_url);
+                        setFrameThumbnail(data.video.thumbnail_url);
+                        setSavedSnapshot(
+                            editorSnapshot(savedVideoState(data.video)),
+                        );
+                    }
+                }
+            } catch {
+                // A temporary network failure must not discard the saved draft.
+            } finally {
+                if (active) {
+                    timer = setTimeout(poll, 2500);
+                }
+            }
+        };
+        timer = setTimeout(poll, 1500);
+
+        return () => {
+            active = false;
+            clearTimeout(timer);
+        };
+    }, [mode, current, processingStatus, snapshot, savedSnapshot]);
     function selectVideo(file?: File) {
         if (!file || guard.current) {
             return;
@@ -399,12 +535,15 @@ export function ShortVideos({
 
         setError('');
         setFeedback(null);
+        requestedFrame.current = 0;
+        setPlaybackTime(0);
         setLocalFile(file);
         setLocalVideoError(false);
         setDuration(0);
         setCropOpen(false);
         setCoverTab('video');
         setPhotoUrl('');
+        setPhotoFilename('');
         setFrameThumbnail('');
         setMessage('');
         setCover(null);
@@ -424,6 +563,8 @@ export function ShortVideos({
 
         const body = new FormData();
         body.append('video', localFile);
+        body.append('title', title);
+        body.append('description', description);
 
         if (edit) {
             body.append('frame_offset', String(offset));
@@ -448,15 +589,9 @@ export function ShortVideos({
                 setProgress,
             );
             setCurrent(data.video);
-            setSavedSnapshot(editorSnapshot(savedVideoState(data.video)));
             setLocalFile(null);
             setSource(data.video.video_url);
             setDuration(data.video.metadata.duration);
-            setFeedback({
-                variant: 'success',
-                title: 'Video berhasil diunggah',
-                message: 'Video telah disimpan secara lokal.',
-            });
             refresh();
 
             return data.video;
@@ -493,17 +628,19 @@ export function ShortVideos({
             setCurrent(data.video);
             setSource(data.video.video_url);
             setDuration(data.video.metadata.duration);
-            setSavedSnapshot(editorSnapshot(savedVideoState(data.video)));
 
             // Keep an unsaved custom cover; regenerate selected video frames from the new asset.
             if (coverMode === 'frame') {
+                requestedFrame.current = data.video.frame_offset;
                 setOffset(data.video.frame_offset);
                 setThumbnail(data.video.thumbnail_url);
                 setFrameThumbnail(data.video.thumbnail_url);
             } else if (coverMode !== 'upload') {
+                requestedFrame.current = data.video.frame_offset;
                 setOffset(data.video.frame_offset);
                 setThumbnail(data.video.thumbnail_url);
             } else {
+                requestedFrame.current = data.video.frame_offset;
                 setOffset(data.video.frame_offset);
             }
 
@@ -511,7 +648,7 @@ export function ShortVideos({
                 variant: 'success',
                 title: 'Perubahan berhasil disimpan',
                 message:
-                    'Hasil crop tersimpan. Video asli tetap tersedia untuk pengeditan berikutnya.',
+                    'Pengaturan tersimpan. Video diproses di latar belakang.',
             });
             refresh();
         } finally {
@@ -526,7 +663,12 @@ export function ShortVideos({
         if (
             !video ||
             coverTab !== 'video' ||
-            (!force && coverMode !== 'frame')
+            (!force && coverMode !== 'frame') ||
+            video.seeking ||
+            !video.videoWidth ||
+            !video.videoHeight ||
+            Math.abs(video.currentTime - (requestedFrame.current ?? offset)) >
+                0.001
         ) {
             return;
         }
@@ -542,18 +684,36 @@ export function ShortVideos({
         } catch {
             // Cloudinary frame delivery remains available when canvas CORS is restricted.
             if (current && !localFile && !current.metadata.local_path) {
-                setThumbnail(
-                    current.video_url
-                        .replace(
-                            '/upload/',
-                            `/upload/so_${video.currentTime.toFixed(3)},f_jpg/`,
-                        )
-                        .replace(/\.mp4(?:\?.*)?$/, '.jpg'),
-                );
+                const image = current.video_url
+                    .replace(
+                        '/upload/',
+                        `/upload/so_${video.currentTime.toFixed(3)},f_jpg/`,
+                    )
+                    .replace(/\.mp4(?:\?.*)?$/, '.jpg');
+                setThumbnail(image);
+                setFrameThumbnail(image);
             }
         }
     }
     function chooseFrame(value: number) {
+        if (busy) {
+            return;
+        }
+
+        requestedFrame.current = value;
+        setFrameThumbnail('');
+        player.current?.pause();
+        fitBackground.current?.pause();
+
+        if (player.current) {
+            player.current.currentTime = value;
+        }
+
+        if (fitBackground.current) {
+            fitBackground.current.currentTime = value;
+        }
+
+        setPlaybackTime(value);
         setOffset(value);
         setCoverMode('frame');
 
@@ -582,6 +742,7 @@ export function ShortVideos({
         setError('');
         setCoverError('');
         setCover(file);
+        setPhotoFilename(file.name);
         setCoverCrop(defaultCoverCrop);
         const url = URL.createObjectURL(file);
         setPhotoUrl(url);
@@ -678,9 +839,15 @@ export function ShortVideos({
 
         const data = await upload(`/admin/short-videos/${video.id}`, body);
         setCurrent(data.video);
+        router.replace({
+            url: `/admin/short-videos/create?draft=${data.video.id}`,
+            preserveState: true,
+            preserveScroll: true,
+        });
         setTitle(data.video.title);
         setDescription(data.video.description ?? '');
         setFieldErrors({});
+        requestedFrame.current = data.video.frame_offset;
         setOffset(data.video.frame_offset);
         setSavedSnapshot(editorSnapshot(savedVideoState(data.video)));
         setThumbnail(data.video.thumbnail_url);
@@ -712,7 +879,10 @@ export function ShortVideos({
         setError('');
 
         try {
-            await save();
+            if (localFile || snapshot !== savedSnapshot) {
+                await save();
+            }
+
             setFeedback({
                 variant: 'success',
                 message: 'Draf berhasil disimpan',
@@ -845,7 +1015,7 @@ export function ShortVideos({
                 }),
             );
             unsaved.allowLeave();
-            router.visit('/admin/short-videos');
+            router.visit('/admin/short-videos', { replace: true });
         } catch (failure) {
             window.dispatchEvent(
                 new CustomEvent('short-publication', {
@@ -913,6 +1083,82 @@ export function ShortVideos({
                         </Button>
                     )}
                 </div>
+                {mode === 'editor' && (busy || current) && (
+                    <div
+                        role="status"
+                        aria-live="polite"
+                        className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-sm text-muted-foreground"
+                    >
+                        {(busy ||
+                            ['queued', 'processing'].includes(
+                                processingStatus,
+                            )) && (
+                            <LoaderCircle className="size-4 animate-spin" />
+                        )}
+                        <span>
+                            {busy
+                                ? progress !== null && progress < 100
+                                    ? `Mengunggah video... ${progress}%`
+                                    : 'Menyimpan draf...'
+                                : processingStatus === 'failed'
+                                  ? 'Gagal memproses'
+                                  : processingStatus === 'ready'
+                                    ? 'Video siap'
+                                    : 'Memproses video...'}
+                        </span>
+                        {!busy && processingStatus === 'failed' && (
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={async () => {
+                                    if (!current || guard.current) {
+                                        return;
+                                    }
+
+                                    guard.current = true;
+                                    setBusy(true);
+
+                                    try {
+                                        const data = await upload(
+                                            `/admin/short-videos/${current.id}/processing/retry`,
+                                            new FormData(),
+                                        );
+                                        setCurrent(data.video);
+                                    } catch (failure) {
+                                        showFailure(
+                                            failure,
+                                            'Gagal mencoba kembali',
+                                        );
+                                    } finally {
+                                        guard.current = false;
+                                        setBusy(false);
+                                    }
+                                }}
+                            >
+                                Coba lagi
+                            </Button>
+                        )}
+                        {!busy && processingStatus === 'failed' && (
+                            <span className="text-xs">
+                                Video asli dan pengaturan tetap tersimpan.
+                            </span>
+                        )}
+                    </div>
+                )}
+                <FeedbackToast
+                    feedback={feedback}
+                    onDismiss={() => setFeedback(null)}
+                    duration={5000}
+                    inline
+                />
+                {notice && mode === 'list' && (
+                    <p
+                        role="status"
+                        className="rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm"
+                    >
+                        {notice}
+                    </p>
+                )}
                 {error && (
                     <p
                         role="alert"
@@ -982,7 +1228,18 @@ export function ShortVideos({
                                                 preload="metadata"
                                                 poster={thumbnail || undefined}
                                                 className="relative h-full w-full object-contain"
-                                                onPlay={() => {
+                                                onTimeUpdate={(event) =>
+                                                    setPlaybackTime(
+                                                        event.currentTarget
+                                                            .currentTime,
+                                                    )
+                                                }
+                                                onPlay={(event) => {
+                                                    setPlaybackTime(
+                                                        event.currentTarget
+                                                            .currentTime,
+                                                    );
+
                                                     if (
                                                         fitBackground.current &&
                                                         player.current
@@ -994,10 +1251,19 @@ export function ShortVideos({
                                                             .catch(() => {});
                                                     }
                                                 }}
-                                                onPause={() =>
-                                                    fitBackground.current?.pause()
-                                                }
-                                                onSeeking={() => {
+                                                onPause={(event) => {
+                                                    setPlaybackTime(
+                                                        event.currentTarget
+                                                            .currentTime,
+                                                    );
+                                                    fitBackground.current?.pause();
+                                                }}
+                                                onSeeking={(event) => {
+                                                    setPlaybackTime(
+                                                        event.currentTarget
+                                                            .currentTime,
+                                                    );
+
                                                     if (
                                                         fitBackground.current &&
                                                         player.current
@@ -1007,6 +1273,11 @@ export function ShortVideos({
                                                     }
                                                 }}
                                                 onLoadedMetadata={(event) => {
+                                                    setPlaybackTime(
+                                                        event.currentTarget
+                                                            .currentTime || 0,
+                                                    );
+
                                                     if (localFile) {
                                                         setDuration(
                                                             event.currentTarget
@@ -1040,11 +1311,14 @@ export function ShortVideos({
                                                             0,
                                                             0,
                                                         );
-                                                    setThumbnail(
+                                                    const initialFrame =
                                                         canvas.toDataURL(
                                                             'image/jpeg',
                                                             0.85,
-                                                        ),
+                                                        );
+                                                    setThumbnail(initialFrame);
+                                                    setFrameThumbnail(
+                                                        initialFrame,
                                                     );
                                                 }}
                                                 onError={() => {
@@ -1153,8 +1427,8 @@ export function ShortVideos({
                                     />
                                     <p className="text-xs">
                                         {progress < 100
-                                            ? `Mengunggah ke server ${progress}%`
-                                            : 'Memeriksa video dan menyimpan secara lokal...'}
+                                            ? `Mengunggah video... ${progress}%`
+                                            : 'Menyimpan draf...'}
                                     </p>
                                 </div>
                             )}
@@ -1294,31 +1568,55 @@ export function ShortVideos({
                                             className="hidden"
                                             onLoadedData={() => {
                                                 if (framePlayer.current) {
-                                                    framePlayer.current.currentTime =
+                                                    requestedFrame.current =
                                                         offset;
-                                                    frame(true);
+
+                                                    if (
+                                                        Math.abs(
+                                                            framePlayer.current
+                                                                .currentTime -
+                                                                offset,
+                                                        ) < 0.001
+                                                    ) {
+                                                        frame(true);
+                                                    } else {
+                                                        framePlayer.current.currentTime =
+                                                            offset;
+                                                    }
                                                 }
                                             }}
                                             onSeeked={() => frame(true)}
+                                        />
+                                        <SelectedCover
+                                            image={selectedFramePreview}
+                                            detail={formatFrameTime(offset)}
+                                            description="Posisi sampul pada video"
                                         />
                                         <VideoFrameTimeline
                                             source={source}
                                             duration={duration}
                                             offset={offset}
+                                            playbackTime={playbackTime}
                                             disabled={
                                                 busy || !source || duration <= 0
                                             }
                                             onSelect={chooseFrame}
                                         />
-                                        <p className="text-sm font-medium">
-                                            Bingkai video: {offset.toFixed(1)} /{' '}
-                                            {duration.toFixed(1)} detik
-                                        </p>
                                     </TabsContent>
                                     <TabsContent
                                         value="photo"
                                         className="space-y-4"
                                     >
+                                        {photoUrl && (
+                                            <SelectedCover
+                                                image={thumbnail || photoUrl}
+                                                detail={
+                                                    photoFilename ||
+                                                    'Foto tersimpan'
+                                                }
+                                                description="Foto yang dipilih"
+                                            />
+                                        )}
                                         <input
                                             ref={coverInput}
                                             aria-label="Unggah sampul"
@@ -1476,11 +1774,6 @@ export function ShortVideos({
                     />
                 )}
             </div>
-            <FeedbackToast
-                feedback={feedback}
-                onDismiss={() => setFeedback(null)}
-                duration={5000}
-            />
             {coverCropOpen && (
                 <ShortCoverDialog
                     source={coverOriginal}

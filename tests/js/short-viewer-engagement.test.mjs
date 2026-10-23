@@ -208,6 +208,7 @@ function mount({ authenticated = true, likedByUser = false, width = 1280, reduce
 
     return {
         render, resize, advance, switchShort, requests, copied, visits,
+        runAutoplay: () => effects.find((effect) => effect.toString().includes('NotAllowedError'))?.(),
         get visitOptions() {
             return visitOptions;
         },
@@ -228,7 +229,7 @@ test('resizing while comments are open switches between full view and side panel
     view.resize(1100);
     current = view.render();
     assert.equal(current.find((node) => node.type === 'ShortComments').props.fullScreen, false);
-    assert.ok(current.some((node) => node.props?.style?.gridTemplateColumns?.includes('minmax(0, 380px)')));
+    assert.ok(current.some((node) => node.props?.style?.gridTemplateColumns?.includes('3.25rem minmax(0, 1fr)')));
 
     view.resize(800);
     current = view.render();
@@ -277,12 +278,18 @@ test('comment button and panel X both close the panel without replacing the vide
     assert.ok(current.find((node) => node.props?.['aria-label'] === 'Buka komentar: 2 komentar').props.className.includes('border-primary/60'));
     current.find((node) => node.props?.['aria-label'] === 'Buka komentar: 2 komentar').props.onClick();
     current = view.render();
+    assert.ok(current.some((node) => node.props?.className?.includes('motion-safe:animate-out motion-safe:fade-out motion-safe:slide-out-to-right-4')));
+    view.advance();
+    current = view.render();
     assert.equal(current.filter((node) => node.type === 'ShortComments').length, 0);
     assert.equal(current.find((node) => node.type === 'video').props.ref, videoRef);
 
     current.find((node) => node.props?.['aria-label'] === 'Buka komentar: 2 komentar').props.onClick();
     current = view.render();
     current.find((node) => node.type === 'ShortComments').props.onClose();
+    current = view.render();
+    assert.ok(current.some((node) => node.props?.className?.includes('motion-safe:animate-out motion-safe:fade-out motion-safe:slide-out-to-right-4')));
+    view.advance();
     current = view.render();
     assert.equal(current.filter((node) => node.type === 'ShortComments').length, 0);
     assert.equal(current.find((node) => node.type === 'video').props.ref, videoRef);
@@ -293,6 +300,15 @@ test('reduced motion navigates immediately without an outgoing slide', () => {
     const current = view.render();
     current.find((node) => node.props?.['aria-label'] === 'Video berikutnya').props.onClick();
     assert.deepEqual(view.visits, ['/shorts/8']);
+});
+
+test('reduced motion closes comments without the fade-out delay', () => {
+    const view = mount({ reducedMotion: true });
+    let current = view.render();
+    current.find((node) => node.props?.['aria-label'] === 'Buka komentar: 2 komentar').props.onClick();
+    current = view.render();
+    current.find((node) => node.type === 'ShortComments').props.onClose();
+    assert.equal(view.render().filter((node) => node.type === 'ShortComments').length, 0);
 });
 
 test('failed next-video navigation unlocks the control and restores playback', () => {
@@ -321,7 +337,7 @@ test('title opens details with real statistics and comments remain mutually excl
     let current = view.render();
     const videoRef = current.find((node) => node.type === 'video').props.ref;
     const title = current.find((node) => node.type === 'button' && node.props.title === 'Video warga');
-    assert.ok(title.props.className.includes('truncate'));
+    assert.ok(title.props.className.includes('break-words'));
     title.props.onClick();
     current = view.render();
     assert.ok(current.some((node) => node.props?.['aria-label'] === 'Detail video'));
@@ -357,6 +373,45 @@ test('top player controls, external engagement counts and muted state use the sa
     assert.ok(current.some((node) => node.type === 'span' && node.props.children === 3));
 });
 
+test('mute preference applies before the next Short plays and follows later unmute', () => {
+    const view = mount();
+    let current = view.render();
+    current.find((node) => node.type === 'video').props.ref.current = { muted: false };
+    current.find((node) => node.props?.['aria-label'] === 'Bisukan video').props.onClick();
+    view.switchShort(8);
+    current = view.render();
+    assert.equal(current.find((node) => node.type === 'video').props.muted, true);
+    current.find((node) => node.type === 'video').props.ref.current = { muted: true };
+    current.find((node) => node.props?.['aria-label'] === 'Bunyikan video').props.onClick();
+    view.switchShort(9);
+    current = view.render();
+    assert.equal(current.find((node) => node.type === 'video').props.muted, false);
+});
+
+test('direct detail entry attempts playback and retries muted when autoplay is blocked', async () => {
+    const view = mount();
+    let current = view.render();
+    const video = current.find((node) => node.type === 'video').props.ref;
+    let plays = 0;
+    let pauses = 0;
+    video.current = {
+        muted: false,
+        play() {
+            plays++;
+            return plays === 1 ? Promise.reject({ name: 'NotAllowedError' }) : Promise.resolve();
+        },
+        pause() { pauses++; },
+    };
+    const cleanup = view.runAutoplay();
+    await Promise.resolve();
+    assert.equal(plays, 2);
+    assert.equal(video.current.muted, true);
+    current = view.render();
+    assert.ok(current.some((node) => node.props?.['aria-label'] === 'Bunyikan video'));
+    cleanup();
+    assert.equal(pauses, 1);
+});
+
 test('narrow details use a Sheet and replace the player without losing its ref', () => {
     const view = mount({ width: 800 });
     let current = view.render();
@@ -364,7 +419,7 @@ test('narrow details use a Sheet and replace the player without losing its ref',
     current.find((node) => node.type === 'button' && node.props.title === 'Video warga').props.onClick();
     current = view.render();
     assert.equal(current.find((node) => node.type === 'Sheet').props.open, true);
-    assert.ok(current.some((node) => node.props?.className?.includes('row-span-2') && node.props.className.split(' ').includes('hidden')));
+    assert.ok(current.some((node) => node.props?.className?.includes('row-start-2') && node.props.className.split(' ').includes('hidden')));
     current.find((node) => node.type === 'Sheet').props.onOpenChange(false);
     current = view.render();
     assert.equal(current.find((node) => node.type === 'Sheet').props.open, false);
@@ -418,7 +473,14 @@ test('viewer centers the selected Short with one next-video control and an indep
     assert.equal(current.find((node) => node.props?.className?.includes('aspect-[9/16]')).props.style.width, '100%');
     const player = current.find((node) => node.props?.className?.includes('aspect-[9/16]'));
     assert.equal(nodes(player).filter((node) => node.type === 'button' && node.props.title === 'Video warga').length, 0);
-    assert.ok(current.some((node) => node.type === 'button' && node.props.title === 'Video warga'));
+    const heading = current.find((node) => node.type === 'button' && node.props.title === 'Video warga');
+    assert.ok(heading.props.className.includes('break-words'));
+    assert.ok(heading.props.className.includes('font-bold'));
+    assert.ok(current.some((node) => node.props?.className?.includes('col-start-2 row-start-1') && node.props.className.includes('mb-8')));
+    assert.ok(current.some((node) => node.props?.className?.includes('col-start-4 row-start-1') && node.props.className.includes('mb-8')));
+    const shareGroup = current.find((node) => node.type === 'div' && Array.isArray(node.props?.children) && node.props.children.some((child) => child?.props?.['aria-label'] === 'Bagikan video'));
+    assert.equal(shareGroup.props.className, 'flex flex-col items-center gap-1');
+    assert.equal(shareGroup.props.children.find((child) => child?.type === 'span').props.className, 'text-xs');
     assert.ok(current.some((node) => node.type === 'img' && node.props.src === '/next.jpg'));
     assert.ok(current.some((node) => node.props?.['aria-label'] === 'Posisi video' && node.props?.className?.includes('accent-primary')));
     assert.ok(
@@ -431,11 +493,9 @@ test('viewer centers the selected Short with one next-video control and an indep
         current.filter((node) => node.type === 'ShortComments').length,
         0,
     );
-    assert.ok(
-        current.some((node) =>
-            node.props?.style?.gridTemplateColumns?.endsWith('3.25rem 3rem'),
-        ),
-    );
+    const columns = current.find((node) => node.props?.style?.gridTemplateColumns).props.style.gridTemplateColumns;
+    assert.ok(columns.startsWith('3.25rem minmax(0, 1fr)'));
+    assert.ok(columns.endsWith('3.25rem minmax(0, 1fr)'));
     assert.equal(
         current.filter(
             (node) => node.props?.['aria-label'] === 'Video berikutnya',
@@ -468,11 +528,12 @@ test('viewer centers the selected Short with one next-video control and an indep
         )
         .props.onClick();
     current = view.render();
-    assert.ok(
-        current.some((node) =>
-            node.props?.style?.gridTemplateColumns?.includes('minmax(0, 380px)'),
-        ),
-    );
+    assert.equal(current.find((node) => node.props?.style?.gridTemplateColumns).props.style.gridTemplateColumns, columns);
+    const panel = current.find((node) => node.props?.className?.includes('col-start-5 row-start-1') && node.props.className.includes('self-stretch'));
+    const title = current.find((node) => node.props?.className?.includes('max-w-[400px] motion-safe:animate-in'));
+    assert.ok(panel.props.className.includes('motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-4'));
+    assert.ok(panel.props.className.includes('motion-safe:duration-500 motion-safe:ease-in-out'));
+    assert.ok(title.props.className.includes('motion-safe:duration-500 motion-safe:ease-in-out'));
     assert.ok(
         current.some(
             (node) =>
@@ -497,15 +558,37 @@ test('viewer centers the selected Short with one next-video control and an indep
     );
     current.find((node) => node.type === 'ShortComments').props.onClose();
     current = view.render();
+    view.advance();
+    current = view.render();
     assert.equal(
         current.filter((node) => node.type === 'ShortComments').length,
         0,
     );
-    assert.ok(
-        current.some((node) =>
-            node.props?.style?.gridTemplateColumns?.endsWith('3.25rem 3rem'),
-        ),
-    );
+    assert.equal(current.find((node) => node.props?.style?.gridTemplateColumns).props.style.gridTemplateColumns, columns);
+});
+
+test('desktop grid balances the action rail at common widths and zoomed viewports', () => {
+    const view = mount();
+    const current = view.render();
+    const columns = current.find((node) => node.props?.style?.gridTemplateColumns).props.style.gridTemplateColumns;
+    assert.match(columns, /^3\.25rem minmax\(0, 1fr\) min\(.+\) 3\.25rem minmax\(0, 1fr\)$/);
+    assert.ok(current.find((node) => node.type === 'main').props.className.includes('mx-auto'));
+    assert.ok(current.find((node) => node.type === 'main').props.className.includes('max-w-7xl'));
+    assert.equal(-(52 + 20) / 2, -36);
+    for (const viewport of [1080, 1366, 1920, 2005, 1604, 1337]) {
+        const content = Math.min(viewport, 1280) - 48;
+        const video = Math.min(460, Math.max(180, 0.5625 * 768 - 140), viewport - 704);
+        const side = (content - video - 2 * 52 - 4 * 20) / 2;
+        const center = (viewport - content) / 2 + 52 + 20 + side + 20 + video / 2;
+        assert.equal(center, viewport / 2);
+    }
+});
+
+test('mobile places readable text below the video and actions beside it', () => {
+    const current = mount({ width: 390 }).render();
+    assert.ok(current.some((node) => node.props?.className?.includes('col-start-1 row-start-2 pt-2')));
+    assert.ok(current.some((node) => node.props?.className?.includes('col-start-2 row-start-1')));
+    assert.equal(current.filter((node) => node.props?.['aria-label'] === 'Video berikutnya').length, 1);
 });
 
 for (const width of [800, 390]) {
@@ -522,10 +605,13 @@ for (const width of [800, 390]) {
         assert.ok(current.some((node) => node.props?.className?.includes('fixed inset-x-0 z-50')));
         assert.ok(current.some((node) => node.type === 'video' && node.props.src.endsWith('/7.mp4')));
         assert.equal(current.find((node) => node.type === 'video').props.ref, videoRef);
-        assert.ok(current.some((node) => node.props?.className?.includes('row-span-2') && node.props.className.split(' ').includes('hidden')));
+        assert.ok(current.some((node) => node.props?.className?.includes('row-start-1') && node.props.className.split(' ').includes('hidden')));
         assert.ok(current.some((node) => node.props?.className?.includes('self-center justify-self-center') && node.props.className.includes('hidden')));
 
         current.find((node) => node.type === 'ShortComments').props.onClose();
+        current = view.render();
+        assert.ok(current.some((node) => node.props?.className?.includes('motion-safe:animate-out motion-safe:fade-out motion-safe:slide-out-to-right-4')));
+        view.advance();
         current = view.render();
         assert.equal(current.filter((node) => node.type === 'ShortComments').length, 0);
         assert.ok(current.some((node) => node.props?.['aria-label'] === 'Video berikutnya'));

@@ -127,14 +127,14 @@ export function AppSidebar() {
             icon: Video,
             items: [
                 {
-                    title: 'Publikasi Video',
-                    href: '/admin/short-videos/create',
-                    icon: Video,
-                },
-                {
                     title: 'Daftar Video',
                     href: '/admin/short-videos',
                     icon: Newspaper,
+                },
+                {
+                    title: 'Publikasi Video',
+                    href: '/admin/short-videos/create',
+                    icon: Video,
                 },
             ],
         },

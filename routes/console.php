@@ -1,9 +1,11 @@
 <?php
 
 use App\Jobs\ProcessIntelligenceDocument;
+use App\Jobs\ProcessShortVideo;
 use App\Jobs\PublishShortVideo;
 use App\Models\IntelligenceDocument;
 use App\Models\IntelligenceInformation;
+use App\Models\ShortVideo;
 use App\Models\ShortVideoPublication;
 use App\Services\PublicationPreviewFiles;
 use App\Services\Shorts\PublicationPermalink;
@@ -173,3 +175,26 @@ Schedule::call(function (): void {
             }
         });
 })->everyMinute()->name('recover-short-publications')->withoutOverlapping();
+
+// A killed local worker may not invoke failed(); expose a retry without losing edits.
+Schedule::call(function (): void {
+    // Recover the narrow gap between saving a revision and inserting its queue job.
+    ShortVideo::where('status', 'draft')->where('metadata->processing->status', 'queued')
+        ->where('updated_at', '<', now()->subMinutes(3))
+        ->each(function ($video) {
+            $claimed = ShortVideo::whereKey($video->id)
+                ->where('metadata->processing->revision', $video->metadata['processing']['revision'])
+                ->where('metadata->processing->status', 'queued')
+                ->update(['updated_at' => now()]);
+            if ($claimed) {
+                ProcessShortVideo::enqueue($video);
+            }
+        });
+
+    ShortVideo::where('status', 'draft')
+        ->where('metadata->processing->status', 'processing')
+        ->where('metadata->processing->started_at', '<', now()->subMinutes(10)->toIso8601String())
+        ->each(function ($video) {
+            (new ProcessShortVideo($video->id, $video->metadata['processing']['revision']))->failed(null);
+        });
+})->everyMinute()->name('recover-short-processing')->withoutOverlapping();

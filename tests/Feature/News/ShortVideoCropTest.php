@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\ProcessShortVideo;
 use App\Models\ShortVideo;
 use App\Models\User;
 use App\Models\UserRole;
@@ -9,9 +10,16 @@ use App\Services\Shorts\VideoInspector;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\Process\Process;
+
+function finishCropDraft(ShortVideo $video): void
+{
+    $v = $video->fresh();
+    (new ProcessShortVideo($v->id, $v->metadata['processing']['revision']))->handle(app(VideoCropper::class), app(LocalShortMedia::class));
+}
 
 function cropDraft(): ShortVideo
 {
@@ -31,6 +39,7 @@ function cropPayload(ShortVideo $video, array $changes = []): array
 
 beforeEach(function () {
     Storage::fake('public');
+    Queue::fake();
     $local = Mockery::mock(LocalShortMedia::class)->makePartial();
     $local->shouldReceive('frame')->andReturn('http://localhost/storage/shorts/covers/cropped.jpg');
     $this->app->instance(LocalShortMedia::class, $local);
@@ -46,10 +55,11 @@ test('unchanged crop does not export or upload', function () {
 test('crop keeps original and draft text, refreshes frame cover, and repeated saves are no-ops', function () {
     $video = cropDraft();
     $original = $video->video_url;
-    $this->mock(VideoCropper::class)->shouldReceive('export')->once()->with($original, Mockery::on(fn ($edit) => $edit['zoom'] === 2.0))
+    $this->mock(VideoCropper::class)->shouldReceive('export')->once()->with($original, Mockery::on(fn ($edit) => (float) $edit['zoom'] === 2.0))
         ->andReturn(['asset' => ['url' => 'http://localhost/storage/shorts/edits/cropped.mp4', 'path' => 'shorts/edits/cropped.mp4'], 'metadata' => ['width' => 1080, 'height' => 1920, 'duration' => 10, 'rotation' => 0]]);
     $this->postJson('/admin/short-videos/'.$video->id.'/crop', cropPayload($video, ['zoom' => 2, 'start' => 1, 'end' => 11]))
         ->assertOk()->assertJsonPath('video.metadata.crop_source.url', $original)->assertJsonPath('video.title', 'Original')->assertJsonPath('video.frame_offset', 1);
+    finishCropDraft($video);
     $video->refresh();
     expect($video->video_url)->toContain('/storage/shorts/edits/cropped.mp4');
     expect($video->thumbnail_url)->toContain('cropped.jpg');
@@ -68,6 +78,8 @@ test('subsequent crop uses the preserved original and keeps custom cover', funct
         'metadata' => ['width' => 1080, 'height' => 1920, 'duration' => 12],
     ]);
     $this->postJson('/admin/short-videos/'.$video->id.'/crop', cropPayload($video, ['zoom' => 3]))->assertOk()->assertJsonPath('video.thumbnail_url', $video->thumbnail_url);
+    finishCropDraft($video);
+    expect($video->fresh()->thumbnail_url)->toBe($video->thumbnail_url);
 });
 
 test('invalid, stale, foreign and published crop requests cannot export', function () {
@@ -85,12 +97,14 @@ test('invalid, stale, foreign and published crop requests cannot export', functi
     $this->actingAs($other)->postJson('/admin/short-videos/'.$video->id.'/crop', cropPayload($video))->assertForbidden();
 });
 
-test('export failure leaves the previous asset and metadata intact', function () {
+test('export failure preserves the previous asset and saved editing settings', function () {
     $video = cropDraft();
     $this->mock(VideoCropper::class)->shouldReceive('export')->once()->andThrow(ValidationException::withMessages(['video' => 'Export failed']));
-    $this->postJson('/admin/short-videos/'.$video->id.'/crop', cropPayload($video, ['zoom' => 2]))->assertUnprocessable();
+    $this->postJson('/admin/short-videos/'.$video->id.'/crop', cropPayload($video, ['zoom' => 2]))->assertOk();
+    expect(fn () => finishCropDraft($video))->toThrow(ValidationException::class);
     expect($video->fresh()->video_url)->toBe($video->video_url);
-    expect($video->fresh()->metadata)->toBe($video->metadata);
+    expect($video->fresh()->metadata['processing']['status'])->toBe('failed');
+    expect($video->fresh()->metadata['video_crop']['zoom'])->toBe(2);
 });
 
 test('a draft published during export cannot have its media replaced', function () {
@@ -101,7 +115,8 @@ test('a draft published during export cannot have its media replaced', function 
 
         return ['asset' => ['url' => 'http://localhost/storage/shorts/edits/new.mp4', 'path' => 'shorts/edits/new.mp4'], 'metadata' => ['width' => 1080, 'height' => 1920, 'duration' => 12]];
     });
-    $this->postJson('/admin/short-videos/'.$video->id.'/crop', cropPayload($video, ['zoom' => 2]))->assertStatus(409);
+    $this->postJson('/admin/short-videos/'.$video->id.'/crop', cropPayload($video, ['zoom' => 2]))->assertOk();
+    finishCropDraft($video);
     expect($video->fresh()->video_public_id)->toBe('original');
     Storage::disk('public')->assertMissing('shorts/edits/new.mp4');
 });

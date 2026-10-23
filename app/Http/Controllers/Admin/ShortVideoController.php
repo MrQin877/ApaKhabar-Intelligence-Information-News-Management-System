@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\ProcessShortVideo;
 use App\Jobs\PublishShortVideo;
 use App\Models\ShortVideo;
 use App\Models\SocialConnection;
@@ -36,7 +37,7 @@ class ShortVideoController extends Controller
             $query->where('status', $filters['status']);
         }
 
-        return Inertia::render('admin/short-videos', ['mode' => 'list', 'filters' => ['search' => $search, 'status' => $filters['status'] ?? 'all'], 'videos' => $query->latest()->paginate(12)->withQueryString(), 'publishPlatforms' => $meta->platforms($r->user()->getKey()), 'metaAuth' => $meta->publicConfig()]);
+        return Inertia::render('admin/short-videos', ['mode' => 'list', 'notice' => $r->session()->get('shortNotice'), 'filters' => ['search' => $search, 'status' => $filters['status'] ?? 'all'], 'videos' => $query->latest()->paginate(12)->withQueryString(), 'publishPlatforms' => $meta->platforms($r->user()->getKey()), 'metaAuth' => $meta->publicConfig()]);
     }
 
     public function create(Request $r, MetaConnections $meta)
@@ -46,7 +47,13 @@ class ShortVideoController extends Controller
             $r->validate(['draft' => 'integer']);
             $draft = ShortVideo::findOrFail($r->integer('draft'));
             $this->own($r, $draft);
-            abort_unless($draft->status === 'draft', 422, 'Hanya draf dapat diedit.');
+            if ($draft->status !== 'draft') {
+                if ($draft->status === 'published' && $draft->published_at) {
+                    return redirect()->route('shorts.show', $draft->id);
+                }
+
+                return redirect()->route('admin.short-videos.index')->with('shortNotice', 'Video ini bukan draf dan tidak dapat diedit. Lihat statusnya di Daftar Video.');
+            }
         }
 
         return Inertia::render('admin/short-videos', ['mode' => 'editor', 'draft' => $draft, 'videos' => ['data' => [], 'current_page' => 1, 'last_page' => 1], 'publishPlatforms' => $meta->platforms($r->user()->getKey()), 'metaAuth' => $meta->publicConfig()]);
@@ -59,7 +66,7 @@ class ShortVideoController extends Controller
 
     public function upload(Request $r, VideoInspector $inspector, LocalShortMedia $local)
     {
-        $r->validate(['frame_offset' => 'sometimes|numeric|min:0', 'edit' => 'sometimes|array:mode,x,y,zoom,start,end|min:6', 'edit.mode' => ['required_with:edit', Rule::in(['fit', 'crop'])], 'edit.x' => 'required_with:edit|numeric|between:0,1', 'edit.y' => 'required_with:edit|numeric|between:0,1', 'edit.zoom' => 'required_with:edit|numeric|between:1,4', 'edit.start' => 'required_with:edit|numeric|min:0', 'edit.end' => 'required_with:edit|numeric|gt:edit.start', 'video' => ['required', 'file', 'mimetypes:video/mp4', 'extensions:mp4', 'max:'.config('shorts.max_upload_kb')], 'short_video_id' => 'nullable|integer|exists:short_videos,id']);
+        $r->validate(['title' => 'nullable|string|max:255', 'description' => 'nullable|string|max:10000', 'frame_offset' => 'sometimes|numeric|min:0', 'edit' => 'sometimes|array:mode,x,y,zoom,start,end|min:6', 'edit.mode' => ['required_with:edit', Rule::in(['fit', 'crop'])], 'edit.x' => 'required_with:edit|numeric|between:0,1', 'edit.y' => 'required_with:edit|numeric|between:0,1', 'edit.zoom' => 'required_with:edit|numeric|between:1,4', 'edit.start' => 'required_with:edit|numeric|min:0', 'edit.end' => 'required_with:edit|numeric|gt:edit.start', 'video' => ['required', 'file', 'mimetypes:video/mp4', 'extensions:mp4', 'max:'.config('shorts.max_upload_kb')], 'short_video_id' => 'nullable|integer|exists:short_videos,id']);
         $existing = $r->filled('short_video_id') ? ShortVideo::findOrFail($r->integer('short_video_id')) : null;
         if ($existing) {
             $this->own($r, $existing);
@@ -76,19 +83,17 @@ class ShortVideoController extends Controller
             $asset = $local->store($r->file('video'));
             $original = $asset;
             try {
+                $edit = null;
                 if (VideoCropper::needsFit($metadata) || $r->has('edit')) {
-                    @set_time_limit(660);
                     $edit = $r->input('edit', ['mode' => 'fit', 'x' => 0.5, 'y' => 0.5, 'zoom' => 1, 'start' => 0, 'end' => $metadata['duration']]);
                     $edit = ['mode' => $edit['mode'], ...array_map('floatval', Arr::only($edit, ['x', 'y', 'zoom', 'start', 'end']))];
-                    $result = app(VideoCropper::class)->export($asset['url'], $edit, $asset['path']);
-                    $source = [...$asset, 'public_id' => '', 'metadata' => $metadata];
-                    $asset = $result['asset'];
-                    $metadata = [...$result['metadata'], 'crop_source' => $source, 'video_crop' => $edit];
+                    abort_if($edit['end'] > $metadata['duration'] + 0.05 || $edit['end'] - $edit['start'] < 0.1, 422, 'Rentang waktu video tidak valid.');
                 }
-                $frameOffset = $r->has('edit') ? max(0, min((float) $r->input('frame_offset', 0) - (float) $edit['start'], max(0, $metadata['duration'] - 0.05))) : 0;
-                $frame = $local->frame($asset['path'], $frameOffset);
-                $attributes = ['video_url' => $asset['url'], 'video_public_id' => '', 'thumbnail_url' => $frame, 'thumbnail_public_id' => null, 'frame_offset' => $frameOffset,
-                    'metadata' => [...$metadata, 'local_path' => $asset['path'], 'cover_source' => 'frame']];
+                $frameOffset = max(0, min((float) $r->input('frame_offset', 0) - ($edit['start'] ?? 0), max(0, ($edit ? $edit['end'] - $edit['start'] : $metadata['duration']) - 0.05)));
+                $attributes = ['title' => $r->input('title', $existing?->title ?? ''), 'description' => $r->input('description', $existing?->description ?? ''), 'video_url' => $asset['url'], 'video_public_id' => '', 'thumbnail_url' => '', 'thumbnail_public_id' => null, 'frame_offset' => $frameOffset,
+                    'metadata' => [...$metadata, 'local_path' => $asset['path'], 'cover_source' => 'frame',
+                        'crop_source' => [...$original, 'public_id' => '', 'metadata' => $metadata],
+                        'video_crop' => $edit, 'processing' => ProcessShortVideo::pending($edit)]];
                 if ($existing) {
                     DB::transaction(function () use ($existing, $attributes, $r) {
                         $video = ShortVideo::whereKey($existing->id)->lockForUpdate()->firstOrFail();
@@ -102,8 +107,6 @@ class ShortVideoController extends Controller
                 }
             } catch (\Throwable $e) {
                 $local->delete($asset['path']);
-                $local->delete($original['path']);
-                $local->delete($local->pathFromUrl($frame ?? null));
                 throw $e;
             }
             if ($existing) {
@@ -113,13 +116,15 @@ class ShortVideoController extends Controller
                 $local->delete($local->pathFromUrl($oldCover));
             }
 
+            ProcessShortVideo::enqueue($video->refresh());
+
             return response()->json(['video' => $video->refresh()], $existing ? 200 : 201);
         } finally {
             $lock?->release();
         }
     }
 
-    public function crop(Request $r, ShortVideo $shortVideo, VideoCropper $cropper, LocalShortMedia $local)
+    public function crop(Request $r, ShortVideo $shortVideo)
     {
         $this->own($r, $shortVideo);
         abort_unless($shortVideo->status === 'draft', 422, 'Hanya draf dapat diedit.');
@@ -158,34 +163,17 @@ class ShortVideoController extends Controller
             if ($same || $unchanged) {
                 return response()->json(['video' => $shortVideo, 'changed' => false]);
             }
-            @set_time_limit(660);
-            $result = isset($source['path']) ? $cropper->export($source['url'], $edit, $source['path']) : $cropper->export($source['url'], $edit);
-            try {
-                $frame = ($shortVideo->metadata['cover_source'] ?? (str_contains($shortVideo->thumbnail_url, '/video/upload/') ? 'frame' : 'photo')) === 'frame'
-                    ? $local->frame($result['asset']['path'], $nextOffset) : null;
-                DB::transaction(function () use ($shortVideo, $data, $result, $source, $edit, $frame, $nextOffset) {
-                    $video = ShortVideo::whereKey($shortVideo->id)->lockForUpdate()->firstOrFail();
-                    abort_unless($video->status === 'draft' && $video->video_url === $data['expected_url'], 409, 'Video telah berubah. Muat ulang editor.');
-                    $attributes = ['video_url' => $result['asset']['url'], 'video_public_id' => '',
-                        'metadata' => [...Arr::only($video->metadata, ['cover_original', 'cover_crop', 'social_cover']), ...$result['metadata'], 'local_path' => $result['asset']['path'], 'crop_source' => $source,
-                            'cover_source' => $frame ? 'frame' : 'photo', 'video_crop' => $edit], 'frame_offset' => $nextOffset];
-                    if ($frame) {
-                        $attributes['thumbnail_url'] = $frame;
-                    }
-                    $video->update($attributes);
-                });
-            } catch (\Throwable $e) {
-                $local->delete($result['asset']['path']);
-                $local->delete($local->pathFromUrl($frame ?? null));
-                throw $e;
-            }
-            $oldPath = $shortVideo->metadata['local_path'] ?? null;
-            if ($oldPath && $oldPath !== ($source['path'] ?? null)) {
-                $local->delete($oldPath);
-            }
-            if ($frame) {
-                $local->delete($local->pathFromUrl($shortVideo->thumbnail_url));
-            }
+            DB::transaction(function () use ($shortVideo, $data, $source, $edit, $nextOffset) {
+                $video = ShortVideo::whereKey($shortVideo->id)->lockForUpdate()->firstOrFail();
+                abort_unless($video->status === 'draft' && $video->video_url === $data['expected_url'], 409, 'Video telah berubah. Muat ulang editor.');
+                $metadata = $video->metadata;
+                $metadata['cover_source'] ??= str_contains($video->thumbnail_url, '/video/upload/') ? 'frame' : 'photo';
+                $metadata['crop_source'] = $source;
+                $metadata['video_crop'] = $edit;
+                $metadata['processing'] = ProcessShortVideo::pending($edit);
+                $video->update(['metadata' => $metadata, 'frame_offset' => $nextOffset]);
+                ProcessShortVideo::enqueue($video);
+            });
 
             return response()->json(['video' => $shortVideo->fresh(), 'changed' => true]);
         } finally {
@@ -221,8 +209,9 @@ class ShortVideoController extends Controller
                 if ($editingCover) {
                     $cover = ['url' => $local->editCover($originalCover ?? $shortVideo->thumbnail_url, $coverEdit), 'public_id' => null];
                 } elseif ($data['cover_mode'] === 'frame' && ! (($shortVideo->metadata['cover_source'] ?? null) === 'frame' && abs((float) $shortVideo->frame_offset - (float) $data['frame_offset']) < 0.001)) {
-                    $cover = $localPath ? ['url' => $local->frame($localPath, (float) $data['frame_offset']), 'public_id' => null]
-                        : $cloud->cover(null, $shortVideo->video_public_id, (float) $data['frame_offset']);
+                    if (! $localPath) {
+                        $cover = $cloud->cover(null, $shortVideo->video_public_id, (float) $data['frame_offset']);
+                    }
                 }
             } catch (\Throwable $e) {
                 if ($data['cover_mode'] === 'upload') {
@@ -235,6 +224,9 @@ class ShortVideoController extends Controller
                     $v = ShortVideo::whereKey($shortVideo->id)->lockForUpdate()->firstOrFail();
                     abort_unless($v->status === 'draft', 422);
                     $metadata = $v->metadata;
+                    if (! $editingCover && $cover['url'] === $shortVideo->thumbnail_url) {
+                        $cover = ['url' => $v->thumbnail_url, 'public_id' => $v->thumbnail_public_id];
+                    }
                     if ($editingCover) {
                         $metadata['cover_original'] = $originalCover ?? $v->thumbnail_url;
                         $metadata['cover_crop'] = $coverEdit;
@@ -242,7 +234,17 @@ class ShortVideoController extends Controller
                     $metadata['cover_source'] = $data['cover_mode'] === 'keep'
                         ? ($metadata['cover_source'] ?? (str_contains($v->thumbnail_url, '/video/upload/') ? 'frame' : 'photo'))
                         : ($data['cover_mode'] === 'frame' ? 'frame' : 'photo');
+                    $queueFrame = $data['cover_mode'] === 'frame' && ! empty($metadata['local_path'])
+                        && (($v->metadata['cover_source'] ?? null) !== 'frame' || abs($v->frame_offset - (float) $data['frame_offset']) >= 0.001);
+                    if ($queueFrame && ! in_array($metadata['processing']['status'] ?? 'ready', ['queued', 'processing', 'failed'])) {
+                        $metadata['processing'] = ProcessShortVideo::pending();
+                    } else {
+                        $queueFrame = false;
+                    }
                     $v->update(['title' => $data['title'] ?? '', 'description' => $data['description'] ?? '', 'frame_offset' => $data['frame_offset'], 'thumbnail_url' => $cover['url'], 'thumbnail_public_id' => $cover['public_id'], 'metadata' => $metadata]);
+                    if ($queueFrame) {
+                        ProcessShortVideo::enqueue($v);
+                    }
                 });
             } catch (\Throwable $e) {
                 if ($cover['url'] !== $shortVideo->thumbnail_url) {
@@ -266,6 +268,31 @@ class ShortVideoController extends Controller
         }
     }
 
+    public function processing(Request $r, ShortVideo $shortVideo)
+    {
+        $this->own($r, $shortVideo);
+
+        return response()->json(['video' => $shortVideo]);
+    }
+
+    public function retryProcessing(Request $r, ShortVideo $shortVideo)
+    {
+        $this->own($r, $shortVideo);
+        DB::transaction(function () use ($shortVideo) {
+            $v = ShortVideo::whereKey($shortVideo->id)->lockForUpdate()->firstOrFail();
+            abort_unless($v->status === 'draft', 422);
+            $m = $v->metadata;
+            if (($m['processing']['status'] ?? null) !== 'failed') {
+                return;
+            }
+            $m['processing'] = ProcessShortVideo::pending($m['processing']['edit'] ?? null);
+            $v->update(['metadata' => $m]);
+            ProcessShortVideo::enqueue($v);
+        });
+
+        return response()->json(['video' => $shortVideo->fresh()]);
+    }
+
     private function targets(Request $r): array
     {
         $data = $r->validate(['platforms' => ['required', 'array', 'min:1', 'max:3'], 'platforms.*' => ['distinct', Rule::in(['website', 'instagram', 'facebook'])]]);
@@ -278,12 +305,13 @@ class ShortVideoController extends Controller
 
     private function fingerprint(ShortVideo $v, array $platforms): string
     {
-        return hash('sha256', json_encode([$v->title, $v->description, $v->video_url, $v->thumbnail_url, $v->frame_offset, $platforms]));
+        return hash('sha256', json_encode([$v->title, $v->description, $v->video_url, $v->thumbnail_url, $v->frame_offset, $v->metadata['processing'] ?? null, $platforms]));
     }
 
     public function preview(Request $r, ShortVideo $shortVideo, VideoInspector $inspector)
     {
         $this->own($r, $shortVideo);
+        abort_unless(($shortVideo->metadata['processing']['status'] ?? 'ready') === 'ready', 422, 'Tunggu sampai video siap sebelum menerbitkan.');
         $platforms = $this->targets($r);
         $inspector->validate($shortVideo->metadata, $platforms);
         $caption = ReelCaption::format($shortVideo);
@@ -303,6 +331,7 @@ class ShortVideoController extends Controller
     public function publish(Request $r, ShortVideo $shortVideo, VideoInspector $inspector, CloudinaryVideoService $cloud, LocalShortMedia $local)
     {
         $this->own($r, $shortVideo);
+        abort_unless(($shortVideo->metadata['processing']['status'] ?? 'ready') === 'ready', 422, 'Tunggu sampai video siap sebelum menerbitkan.');
         $platforms = $this->targets($r);
         $r->validate(['preview_token' => 'required|string']);
         $preview = Cache::get('short-preview:'.$r->input('preview_token'));

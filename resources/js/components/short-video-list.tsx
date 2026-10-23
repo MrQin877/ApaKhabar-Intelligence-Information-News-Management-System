@@ -294,6 +294,23 @@ export function ShortVideoList({
                                         </Link>
                                     </Button>
                                 )}
+                                {item.status === 'published' && (
+                                    <Button asChild size="sm">
+                                        <Link href={`/shorts/${item.id}`}>
+                                            Lihat Video
+                                        </Link>
+                                    </Button>
+                                )}
+                                {item.status === 'processing' && (
+                                    <Button size="sm" onClick={() => onStatus(item)}>
+                                        Lihat Progres
+                                    </Button>
+                                )}
+                                {item.status === 'failed' && (
+                                    <Button size="sm" onClick={() => setDetail(item.id)}>
+                                        Lihat Status
+                                    </Button>
+                                )}
                                 <Button
                                     variant="outline"
                                     size="sm"

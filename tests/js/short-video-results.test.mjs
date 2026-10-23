@@ -43,7 +43,7 @@ test('video results distinguish queued unselected and uncertain destinations', (
 });
 test('legacy image results retain existing success labels', () => {
     const view = render({ attempt_id:'image', success:true, results:{ application:{success:true,message:'OK'} } }, false);
-    assert.ok(view.text.includes('Publikasi Berhasil'));
+    assert.ok(view.text.includes('Status Publikasi Berita'));
     assert.ok(view.text.includes('Berhasil diterbitkan'));
     assert.ok(!view.text.includes('Status Publikasi Video'));
 });
