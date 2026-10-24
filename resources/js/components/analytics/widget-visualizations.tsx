@@ -179,7 +179,7 @@ export function TimeChart({
 }) {
     const gradient = useId().replace(/:/g, '');
 
-    if (!rows.length || !rows.some((r) => r.value > 0)) {
+    if (!rows.length) {
         return (
             <div
                 className="flex items-center text-xs text-muted-foreground"
@@ -615,7 +615,7 @@ function Citizenship({
                             width={105}
                             tickLine={false}
                             axisLine={false}
-                            tick={{ fontSize: 11 }}
+                            tick={{ fontSize: 12 }}
                             tickFormatter={(v) =>
                                 v === 'Dua Kewarganegaraan'
                                     ? 'Ganda'
@@ -977,8 +977,8 @@ function Heatmap({
                 <div
                     className={
                         compact
-                            ? 'grid gap-px text-[10px]'
-                            : 'grid min-w-[620px] gap-1 text-[10px]'
+                            ? 'grid gap-px text-xs'
+                            : 'grid min-w-[620px] gap-1 text-xs'
                     }
                     style={{
                         gridTemplateColumns: compact
@@ -1316,6 +1316,93 @@ function InlineBreakdown({
     );
 }
 
+function RegistrationTrend({
+    widget,
+    tall,
+}: {
+    widget: ReportWidget;
+    tall: boolean;
+}) {
+    const trend = widget.registration_trend ?? [];
+
+    if (!trend.length) {
+        return null;
+    }
+
+    return (
+        <div
+            className="flex min-h-0 flex-1 flex-col gap-1"
+            data-registration-trend
+        >
+            <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                <span className="mr-auto">
+                    Pendaftaran harian (akun) · X: tanggal
+                </span>
+                <span className="inline-flex items-center gap-1">
+                    <span className="size-2 rounded-sm bg-chart-1" />
+                    Periode ini
+                </span>
+                <span className="inline-flex items-center gap-1">
+                    <span className="size-2 rounded-sm bg-chart-2" />
+                    Periode lalu (hari sejajar)
+                </span>
+            </div>
+            <ChartContainer
+                config={{
+                    current: { label: 'Periode ini', color: 'var(--chart-1)' },
+                    previous: {
+                        label: 'Periode lalu (hari sejajar)',
+                        color: 'var(--chart-2)',
+                    },
+                }}
+                className="aspect-auto min-h-0 w-full flex-1"
+                initialDimension={{ width: 320, height: 60 }}
+            >
+                <AreaChart
+                    data={trend}
+                    accessibilityLayer
+                    aria-label="Pendaftaran harian dibanding periode sebelumnya"
+                    margin={{ top: 4, right: 8, left: -12, bottom: 0 }}
+                >
+                    <CartesianGrid vertical={false} />
+                    <XAxis
+                        dataKey="label"
+                        hide={!tall}
+                        tick={{ fontSize: 12 }}
+                        minTickGap={35}
+                        tickFormatter={(value) => value.slice(5)}
+                    />
+                    <YAxis
+                        allowDecimals={false}
+                        tick={{ fontSize: 12 }}
+                        width={36}
+                        tickLine={false}
+                        axisLine={false}
+                    />
+                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <Area
+                        dataKey="previous"
+                        type="monotone"
+                        stroke="var(--color-previous)"
+                        fill="var(--color-previous)"
+                        fillOpacity={0.04}
+                        strokeDasharray="4 3"
+                        isAnimationActive={false}
+                    />
+                    <Area
+                        dataKey="current"
+                        type="monotone"
+                        stroke="var(--color-current)"
+                        fill="var(--color-current)"
+                        fillOpacity={0.14}
+                        isAnimationActive={false}
+                    />
+                </AreaChart>
+            </ChartContainer>
+        </div>
+    );
+}
+
 function BoundedWidget({
     widget,
     box,
@@ -1336,58 +1423,63 @@ function BoundedWidget({
         const icons = [Users, ArrowUpRight, Activity, Clock3];
 
         return (
-            <div
-                className="grid h-full content-start gap-2"
-                style={{
-                    gridTemplateColumns: `repeat(${wide ? 4 : 2},minmax(0,1fr))`,
-                }}
-            >
-                {rows.map((r, i) => {
-                    const Icon = icons[i % 4];
+            <div className="flex h-full min-h-0 flex-col gap-2">
+                <div
+                    className="grid shrink-0 gap-2"
+                    style={{
+                        gridTemplateColumns: `repeat(${wide ? 4 : 2},minmax(0,1fr))`,
+                    }}
+                >
+                    {rows.map((r, i) => {
+                        const Icon = icons[i % 4];
 
-                    return (
-                        <div
-                            key={r.label}
-                            className="min-w-0 rounded-xl border border-neutral-200 p-2 dark:border-neutral-800"
-                        >
-                            <div className="flex items-center justify-between gap-1">
-                                <span className="truncate text-[11px] text-muted-foreground">
-                                    {[
-                                        'Total warga',
-                                        'Pendaftaran baru',
-                                        'Pembaca aktif',
-                                        'Profil lengkap',
-                                    ][i] ?? r.label}
-                                </span>
-                                <span className="rounded bg-primary/10 p-1 text-primary">
-                                    <Icon className="size-3" />
-                                </span>
-                            </div>
-                            <p className="text-2xl font-semibold tabular-nums">
-                                {count(r.value)}
-                            </p>
-                            <p className="truncate text-[10px] text-muted-foreground">
-                                {i === 0
-                                    ? 'Profil saat ini'
-                                    : i === 1
-                                      ? widget.registration_previous ===
-                                        undefined
-                                          ? 'Dalam periode terpilih'
-                                          : `${r.value - widget.registration_previous >= 0 ? '+' : ''}${count(r.value - widget.registration_previous)} vs periode sebelumnya`
-                                      : `${percent(r.value, rows[0]?.value ?? 0)}% dari warga`}
-                            </p>
-                            {tall && (
-                                <p className="mt-3 text-xs text-muted-foreground">
-                                    {i === 3
-                                        ? 'Tanggal lahir dan kewarganegaraan terisi.'
-                                        : i === 2
-                                          ? 'Warga unik yang membuka feed atau berita.'
-                                          : r.label}
+                        return (
+                            <div
+                                key={r.label}
+                                className="min-w-0 rounded-xl border border-neutral-200 p-2 dark:border-neutral-800"
+                            >
+                                <div className="flex items-center justify-between gap-1">
+                                    <span className="truncate text-[11px] text-muted-foreground">
+                                        {[
+                                            'Warga terdaftar',
+                                            'Pendaftaran baru',
+                                            'Warga aktif',
+                                            'Profil lengkap',
+                                        ][i] ?? r.label}
+                                    </span>
+                                    <span className="rounded bg-primary/10 p-1 text-primary">
+                                        <Icon className="size-3" />
+                                    </span>
+                                </div>
+                                <p className="text-2xl font-semibold tabular-nums">
+                                    {count(r.value)}
                                 </p>
-                            )}
-                        </div>
-                    );
-                })}
+                                <p className="truncate text-[10px] text-muted-foreground">
+                                    {i === 0
+                                        ? 'Profil saat ini'
+                                        : i === 1
+                                          ? widget.registration_previous ===
+                                            undefined
+                                              ? 'Dalam periode terpilih'
+                                              : `${r.value - widget.registration_previous >= 0 ? '+' : ''}${count(r.value - widget.registration_previous)} vs periode sebelumnya`
+                                          : `${percent(r.value, rows[0]?.value ?? 0)}% dari warga`}
+                                </p>
+                                {tall && (
+                                    <p className="mt-3 text-xs text-muted-foreground">
+                                        {i === 3
+                                            ? 'Tanggal lahir dan kewarganegaraan terisi.'
+                                            : i === 2
+                                              ? 'Warga unik yang membuka feed atau berita.'
+                                              : r.label}
+                                    </p>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+                {(wide || tall) && (
+                    <RegistrationTrend widget={widget} tall={tall} />
+                )}
             </div>
         );
     }
@@ -1588,10 +1680,17 @@ function BoundedWidget({
                             />
                             <XAxis
                                 type="number"
+                                height={36}
+                                label={{
+                                    value: 'Akun (jumlah)',
+                                    position: 'insideBottom',
+                                    offset: 0,
+                                    fontSize: 10,
+                                }}
                                 allowDecimals={false}
                                 tickLine={false}
                                 axisLine={false}
-                                tick={{ fontSize: 10 }}
+                                tick={{ fontSize: 12 }}
                             />
                             <YAxis
                                 type="category"
@@ -1599,7 +1698,7 @@ function BoundedWidget({
                                 width={70}
                                 tickLine={false}
                                 axisLine={false}
-                                tick={{ fontSize: 10 }}
+                                tick={{ fontSize: 12 }}
                                 tickFormatter={(v) =>
                                     v === 'Dua Kewarganegaraan'
                                         ? 'Ganda'
@@ -1677,7 +1776,7 @@ function BoundedWidget({
                                     0,
                                 ),
                             )}{' '}
-                            tayangan sepanjang waktu
+                            tayangan kumulatif (kali)
                         </SummaryChip>
                     )}
                 </div>
@@ -1897,7 +1996,11 @@ function BoundedWidget({
                                 <>
                                     <div className="flex min-w-0 items-center gap-1 text-[10px]">
                                         <span className="truncate">
-                                            {group.metric}
+                                            {group.metric} (
+                                            {a.platform === 'facebook'
+                                                ? 'kali/hari'
+                                                : 'akun/hari'}
+                                            )
                                         </span>
                                         <strong className="ml-auto text-sm tabular-nums">
                                             {count(latest?.value ?? 0)}
@@ -1921,7 +2024,7 @@ function BoundedWidget({
                                     />
                                     {!mini && (
                                         <p className="truncate text-[10px] text-muted-foreground">
-                                            {latest?.label} ·{' '}
+                                            X: tanggal UTC · {latest?.label} ·{' '}
                                             {delta !== null
                                                 ? 'Δ vs hari sebelumnya'
                                                 : 'Tanpa pembanding harian'}{' '}

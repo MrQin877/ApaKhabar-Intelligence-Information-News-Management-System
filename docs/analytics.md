@@ -165,3 +165,48 @@ failed observations remain unavailable. Engagement stays explicitly unavailable.
 Verification includes all four sizes at desktop, 390px and 320px widths, inline
 paging, definition tooltips and unavailable-data states using a temporary local
 component harness. It does not contact live Meta APIs or modify account data.
+
+## Dasbor operasional dan kategori tetap (Oktober 2026)
+
+Dasbor tidak lagi mewarisi widget yang dibagikan dari halaman Analisis. Admin menerima perhatian draf miliknya (termasuk sesi AI berita yang belum menghasilkan draf), antrean komentar, masalah integrasi miliknya, warga aktif 30 hari, jumlah artikel aktif saat ini, interaksi akun warga tersimpan, grafik publikasi, perbandingan baca siaran, dan empat berita teratas. Riwayat aktivitas memakai riwayat moderasi yang tersedia, bukan audit fiktif seluruh platform.
+
+Moderator hanya menerima payload `operational.moderation` dan `operational.broadcast`. Tidak ada payload demografi, akun Meta, atau kinerja berita. Ringkasan siaran tetap inline, tanpa akses halaman Analisis. Sidebar moderator hanya berisi Dasbor, Berita, Moderasi Komentar, dan Pesan Siaran. Keputusan inline memakai endpoint moderasi yang sama, CSRF, dan revisi optimistis; 409 tidak mengubah antrean lokal. Angka dimuat ulang setelah keputusan berhasil; interval pembaruan 30 detik. Grafik keputusan adalah keputusan akun yang sedang masuk, tujuh hari terakhir; antrean tertua dihitung dari waktu kirim dengan target operasional enam jam.
+
+Analisis khusus Admin menggunakan lima tab: Ringkasan, Pengguna & Website, Kinerja Berita, Siaran, dan Media Sosial. Filter tanggal berlaku bersama; pelaporan memakai zona waktu konfigurasi analytics, sedangkan periode Meta UTC. Dasbor operasional Admin/Moderator tetap terpisah.
+
+Pemetaan kategori mempertahankan ukuran, urutan relatif dalam kategori, dan pilihan widget tersembunyi. Tata letak asli tidak ditulis ketika halaman dibuka. Penyimpanan pertama dengan `fixed_categories=true` menyimpan cadangan tata letak lama di `analytics_setting_changes`, lalu server menetapkan widget ke kategori yang sesuai. Widget engagement kosong digantikan tabel kinerja berita. Mode edit mendukung drag judul, grip 24px, snap maksimal 2×2, tombol lebar/tinggi, sembunyikan, urungkan, dan pulihkan bawaan. Pengaturan disimpan otomatis; kegagalan ditampilkan dan dapat dicoba lagi.
+
+### Batas data kinerja berita
+
+`news.view` dan `news.unique_views` adalah penghitung kumulatif, bukan data kunjungan bertanggal. `news_visits` tidak memiliki relasi artikel atau tanggal kunjungan; `news_viewers` tidak menyimpan waktu kunjungan. Identitas unik mencakup akun dan tamu; identitas tamu memiliki retensi, sehingga penghitung bukan jumlah orang unik sepanjang masa. Tidak ada kolom tanggal terbit terpisah; tabel memberi label **tanggal dibuat**, bukan tanggal terbit.
+
+Karena itu, perbandingan tayangan berdasarkan periode dan tujuh hari pertama tidak ditawarkan; keterbatasannya dijelaskan langsung. Tidak ada rekonstruksi, perkiraan tayangan harian, atau perubahan skema/pelacakan dalam pekerjaan ini. Tabel menyediakan pencarian server dengan debounce, kategori, pengurutan, paginasi 15 berita, dan inspeksi inline. Semua status berita dapat dibandingkan dan statusnya dilabeli. Suka aktif dan komentar yang kini published (termasuk tamu) dihitung berdasarkan tanggal dibuat dalam periode. Rasio campuran antara interaksi periode dan identitas kumulatif tidak ditampilkan. Jangan menjumlahkan unik antarartikel untuk mendapatkan jangkauan platform.
+
+Tren inspeksi menampilkan tanggal pembuatan suka yang masih aktif dan komentar yang kini published dalam periode pilihan. Riwayat suka yang dibatalkan dan perubahan status komentar tidak direkonstruksi. Grafik publikasi memakai berita yang kini aktif, dikelompokkan tanggal dibuat. Demografi selalu profil saat ini; filter tanggal hanya berlaku pada metrik bertanggal. Heatmap memakai zona waktu konfigurasi analytics, warga unik per kombinasi hari/jam, serta filter platform yang sudah ada.
+
+Siaran memakai notifikasi tercatat sebagai denominator eksplisit; status read_at dibaca saat ini untuk siaran terkirim dalam rentang. Ini tidak menyatakan bukti pengiriman perangkat atau keselamatan. Data Meta tetap pada metrik yang benar-benar didukung integrasi saat ini; jangkauan post, interaksi Meta, atau kunjungan profil yang belum diambil tidak diisi nol/perkiraan. Kegagalan koneksi dan sinkronisasi ditampilkan dengan tindakan hubungkan ulang.
+
+### Penyempurnaan susunan seksi dan filter
+
+Lima tab menampilkan satu kategori laporan dalam satu waktu. Pengguna & Website menggabungkan ringkasan akun, demografi, status pelacakan website, dan aktivitas warga. Filter platform hanya memengaruhi aktivitas dan warga aktif. Tautan `section` (dan parameter `tab` lama) membuka tab terkait; `activity` dipetakan ke Pengguna & Website. Enam kunci kategori penyimpanan lama tetap dipakai agar ukuran, urutan, visibilitas, autosave, dan cadangan migrasi tidak berubah. Track tab/filter di halaman lain memakai latar netral dan border yang terlihat, serta permukaan pilihan aktif yang kontras pada mode terang/gelap.
+
+Kartu Ringkasan warga menggunakan ruang tersisa untuk tren pendaftaran harian saat ukuran lebar atau tinggi, sehingga tidak ada grafik pendaftaran duplikat di bawahnya. Pada kartu ringkas/ponsel pendek, metrik memakai susunan 2×2; perbesar kartu untuk menampilkan tren. Kontrol lebar/tinggi memakai ikon Lucide, bukan karakter Unicode yang dapat ditampilkan sebagai emoji oleh sistem operasi.
+
+## Data demo presentasi lokal
+
+Jalankan `php artisan db:seed --class=AnalyticsDemoSeeder` secara eksplisit pada database lokal. Seeder ini tidak dipanggil dari DatabaseSeeder dan menolak lingkungan selain local/testing. Dataset dibuat dalam satu transaksi dan tidak mengubah pengguna, kredensial, berita, atau pengaturan yang sudah ada. Identitas penanda `warga001@analytics-demo.example.test` membuat pengulangan menjadi no-op.
+
+Dataset mencakup 144 akun warga sintetis (alamat `.test`, sandi acak yang tidak dibagikan), pendaftaran dalam 90 hari terakhir, profil demografi bervariasi, aktivitas UTC 30 hari terakhir, 16 berita dengan penghitung tayangan/unik dan suka yang konsisten, komentar serta riwayat moderasi, 9 siaran dan log notifikasi baca, dan 3 draf. Nama warga diawali `[Demo]`; judul/konten berita, siaran, komentar, dan draf memakai `[DEMO ANALITIK]`. Penghitung tayangan adalah nilai contoh kumulatif, bukan log kunjungan harian yang direkayasa. Pendaftaran lebih banyak pada periode terbaru agar perbandingan terlihat. Aktivitas hanya dibuat setelah akun terdaftar dan sebelum waktu sekarang.
+
+Tidak ada email, SMS, push, posting sosial, antrean pekerjaan, atau permintaan API. Notifikasi hanya berupa baris demo untuk pengguna sintetis, bukan pengiriman ke warga asli. Seeder tidak mengubah tanggal mulai pelacakan asli atau tata letak. Data Facebook/Instagram dan koneksi API tidak dipalsukan; visual Meta memerlukan data integrasi yang sah. Dataset contoh akan ikut terhitung dalam ringkasan database lokal selama belum dihapus.
+
+
+## Ekspor laporan dan pembacaan metrik (23 Oktober 2026)
+
+Tombol **Ekspor laporan** membuka pilihan Excel (.xlsx) atau CSV dan cakupan semua kategori/tab aktif. Tabel serta inspeksi berita menyediakan ekspor **berita ini saja**. Endpoint tetap GET `/admin/analytics?export=xlsx|csv&scope=all|summary|audience|posts|broadcasts|social`, dengan `export_post=<postID>` untuk satu berita. Semua ekspor khusus Admin. Filter judul/kategori berlaku pada lembar Berita; ekspor tidak dibatasi paginasi 15 berita atau tampilan 30 siaran. Pemilihan berita tunggal mengabaikan filter daftar dan tidak bergantung pada halaman tabel.
+
+Excel dibuat dengan PhpSpreadsheet dan berisi Ringkasan, Pengguna, Berita, Siaran, Website, Aktivitas, Facebook, Instagram, serta Definisi sesuai cakupan. Grafik asli Excel menyertakan judul, sumbu tanggal/kategori, satuan jumlah, dan legenda; data sumber grafik sengaja tersedia di kolom N dan seterusnya. Tabel memakai header berwarna, filter, baris bergantian, dan panel beku. File sementara dihapus setelah respons dikirim. CSV adalah satu tabel datar; CSV tidak mendukung lembar atau grafik.
+
+Kedua format mempunyai kolom Kategori, Kanal, Objek, Metrik, Nilai, Satuan, Cakupan data, Dari, Sampai, Penjelasan, Status data. Angka nol tetap numerik; data tidak tersedia diberi teks/status yang jelas. Teks tidak tepercaya disimpan sebagai string Excel, dan awalan formula CSV dinetralkan. Demografi tidak memuat identitas warga individual.
+
+Tayangan kumulatif berarti jumlah akses berita yang tercatat, termasuk pengulangan. Identitas unik berita mencakup akun/tamu dan bukan jumlah orang unik lintas berita. Interaksi adalah suka aktif + komentar yang kini diterbitkan dan dibuat dalam periode; perubahan historis status/suka batal tidak direkonstruksi. Website belum memiliki pelacakan sesi/kunjungan tersendiri; engagement Facebook/Instagram belum diintegrasikan. Metrik tersebut tidak dipalsukan atau diisi nol. Jangkauan Instagram harian tidak dijumlahkan menjadi akun unik bulanan. Ringkasan melaporkan seluruh berita, sedangkan lembar Berita mengikuti filter daftar.

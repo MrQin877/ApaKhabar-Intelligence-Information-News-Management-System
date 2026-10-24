@@ -16,6 +16,31 @@ class SectionLayout
         'engagement' => ['wide', 'small', 'medium', 'large'],
     ];
 
+    public const CATEGORIES = [
+        'summary' => ['Ringkasan', ['overview']],
+        'posts' => ['Kinerja Berita', ['categories']],
+        'audience' => ['Demografi Warga', ['age', 'citizenship', 'ethnicity']],
+        'broadcasts' => ['Siaran & Notifikasi', ['broadcast']],
+        'activity' => ['Waktu Aktif', ['activity']],
+        'social' => ['Media Sosial', ['meta']],
+    ];
+
+    public static function categories(array $layout): array
+    {
+        $items = array_merge([], ...array_column(self::resolve($layout)['sections'], 'widgets'));
+        $sections = [];
+        foreach (self::CATEGORIES as $id => [$title, $allowed]) {
+            $widgets = array_values(array_filter($items, fn ($w) => in_array($w['id'], $allowed, true)));
+            foreach ($widgets as $i => &$widget) {
+                $widget['order'] = $i;
+            }
+            unset($widget);
+            $sections[] = ['id' => $id, 'title' => $title, 'order' => count($sections), 'columns' => 2, 'widgets' => $widgets];
+        }
+
+        return ['version' => 2, 'sections' => $sections];
+    }
+
     public static function compatible(string $id, string $size, int $columns): string
     {
         if (! in_array($size, self::SIZES[$id], true)) {

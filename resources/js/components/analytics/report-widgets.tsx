@@ -63,6 +63,16 @@ export type ReportRow = {
 
 export type ReportWidget = {
     registration_previous?: number;
+    registration_trend?: { label: string; current: number; previous: number }[];
+    recent?: {
+        id: number;
+        title: string;
+        category: string;
+        sent_at: string;
+        recorded: number;
+        read: number;
+    }[];
+    category_trend?: { label: string; recorded: number; read: number }[];
     id: string;
     title: string;
     note: string;

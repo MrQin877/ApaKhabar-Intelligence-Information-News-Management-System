@@ -25,6 +25,8 @@ import {
     CircleHelp,
     ArrowUp,
     ArrowDown,
+    MoveHorizontal,
+    MoveVertical,
 } from 'lucide-react';
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
@@ -62,10 +64,10 @@ import type { ReportWidget } from './report-widgets';
 import AnalyticsWidgetRenderer from './widget-visualizations';
 
 const labels: Record<WidgetSize, string> = {
-    small: 'Compact · 1 × 1',
-    wide: 'Wide · 2 × 1',
-    medium: 'Tall · 1 × 2',
-    large: 'Large · 2 × 2',
+    small: 'Ringkas · 1 × 1',
+    wide: 'Lebar · 2 × 1',
+    medium: 'Tinggi · 1 × 2',
+    large: 'Besar · 2 × 2',
 };
 export function useDashboardWidth() {
     const ref = useRef<HTMLDivElement>(null);
@@ -178,6 +180,53 @@ function Tile({
                     </Tooltip>
                 </TooltipProvider>
                 {editable && (
+                    <>
+                        <button
+                            type="button"
+                            className="rounded p-1 text-xs hover:bg-muted"
+                            aria-label={`Ubah lebar ${widget.title}`}
+                            onClick={() =>
+                                onResize(
+                                    size === 'wide'
+                                        ? 'small'
+                                        : size === 'large'
+                                          ? 'medium'
+                                          : size === 'medium'
+                                            ? 'large'
+                                            : 'wide',
+                                )
+                            }
+                            disabled={columns === 1}
+                        >
+                            <MoveHorizontal
+                                className="size-4"
+                                aria-hidden="true"
+                            />
+                        </button>
+                        <button
+                            type="button"
+                            className="rounded p-1 text-xs hover:bg-muted"
+                            aria-label={`Ubah tinggi ${widget.title}`}
+                            onClick={() =>
+                                onResize(
+                                    size === 'medium'
+                                        ? 'small'
+                                        : size === 'large'
+                                          ? 'wide'
+                                          : size === 'wide'
+                                            ? 'large'
+                                            : 'medium',
+                                )
+                            }
+                        >
+                            <MoveVertical
+                                className="size-4"
+                                aria-hidden="true"
+                            />
+                        </button>
+                    </>
+                )}
+                {editable && (
                     <button
                         type="button"
                         className="rounded p-1.5 hover:bg-muted"
@@ -192,7 +241,7 @@ function Tile({
                 <AnalyticsWidgetRenderer widget={widget} size={size} bounded />
             </div>
             <footer className="flex h-6 shrink-0 items-center gap-1 pr-9 pl-3 text-xs text-muted-foreground">
-                <span className="mr-auto">{labels[size]}</span>
+                <span className="mr-auto">{editable ? labels[size] : ''}</span>
                 {editable && columns === 1 && (
                     <>
                         <button
@@ -376,11 +425,15 @@ export default function SectionDashboard({
     layout = defaultSections(),
     editable = false,
     onChange,
+    fixedCategories = false,
+    hideSectionTitle = false,
 }: {
     widgets: ReportWidget[];
     layout?: SectionLayout;
     editable?: boolean;
     onChange?: (layout: SectionLayout) => void;
+    fixedCategories?: boolean;
+    hideSectionTitle?: boolean;
 }) {
     const { ref, width } = useDashboardWidth();
     const [adding, setAdding] = useState<string | null>(null);
@@ -502,38 +555,50 @@ export default function SectionDashboard({
 
                     return (
                         <Section id={section.id} key={section.id}>
-                            <div className="mb-3 flex items-center gap-2">
-                                <h2 className="mr-auto text-sm font-semibold">
-                                    {section.title || 'Tanpa judul'}
-                                </h2>
-                                {editable && (
-                                    <>
-                                        <Button
-                                            size="sm"
-                                            variant="ghost"
-                                            aria-label={`Pengaturan bagian ${section.title}`}
-                                            onClick={() =>
-                                                setManage(
-                                                    structuredClone(section),
-                                                )
-                                            }
-                                        >
-                                            <Settings2 className="size-4" />
-                                        </Button>
-                                        <Button
-                                            size="sm"
-                                            variant="outline"
-                                            disabled={!available.length}
-                                            onClick={() =>
-                                                setAdding(section.id)
-                                            }
-                                        >
-                                            <Plus className="size-4" />
-                                            Widget
-                                        </Button>
-                                    </>
-                                )}
-                            </div>
+                            {(!hideSectionTitle || editable) && (
+                                <div className="mb-3 flex items-center gap-2">
+                                    <h2
+                                        className={
+                                            hideSectionTitle
+                                                ? 'sr-only'
+                                                : 'mr-auto text-sm font-semibold'
+                                        }
+                                    >
+                                        {section.title || 'Tanpa judul'}
+                                    </h2>
+                                    {editable && (
+                                        <>
+                                            {!fixedCategories && (
+                                                <Button
+                                                    size="sm"
+                                                    variant="ghost"
+                                                    aria-label={`Pengaturan bagian ${section.title}`}
+                                                    onClick={() =>
+                                                        setManage(
+                                                            structuredClone(
+                                                                section,
+                                                            ),
+                                                        )
+                                                    }
+                                                >
+                                                    <Settings2 className="size-4" />
+                                                </Button>
+                                            )}
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                disabled={!available.length}
+                                                onClick={() =>
+                                                    setAdding(section.id)
+                                                }
+                                            >
+                                                <Plus className="size-4" />
+                                                Widget
+                                            </Button>
+                                        </>
+                                    )}
+                                </div>
+                            )}
                             <SortableContext
                                 items={section.widgets.map((w) => w.id)}
                                 strategy={rectSortingStrategy}
@@ -638,7 +703,7 @@ export default function SectionDashboard({
                     ) : null}
                 </DragOverlay>
             </DndContext>
-            {editable && (
+            {editable && !fixedCategories && (
                 <Button
                     variant="ghost"
                     onClick={() =>

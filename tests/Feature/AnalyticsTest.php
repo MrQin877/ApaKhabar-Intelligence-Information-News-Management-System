@@ -2,10 +2,13 @@
 
 use App\Models\AnalyticsSetting;
 use App\Models\Broadcast;
+use App\Models\Comment;
+use App\Models\Like;
 use App\Models\News;
 use App\Models\SocialConnection;
 use App\Models\User;
 use App\Models\UserRole;
+use App\Notifications\BroadcastNotification;
 use App\Services\Analytics\AnalyticsReport;
 use App\Services\Analytics\MetaInsights;
 use App\Services\Analytics\SectionLayout;
@@ -30,15 +33,12 @@ test('only admins can read and configure analytics', function () {
     $this->actingAs(analyticsUser('villager'))->get('/admin/analytics')->assertRedirect('/');
     $this->actingAs(analyticsUser())->get('/admin/analytics')->assertOk()->assertInertia(fn (Assert $page) => $page->component('admin/analytics')->has('widgets', 9));
 });
-test('moderator responses contain only approved widgets and revocation is immediate', function () {
-    AnalyticsSetting::current()->update(['widgets' => ['categories']]);
-    $moderator = analyticsUser('moderator');
-    $this->actingAs($moderator)->get('/admin/dashboard')->assertOk()->assertInertia(fn (Assert $page) => $page->has('widgets', 1)->where('widgets.0.id', 'categories')->missing('configuration')->missing('connections'));
-    $this->get('/admin/broadcasting')->assertOk()->assertInertia(fn (Assert $page) => $page->where('analytics', null));
-    $admin = analyticsUser();
-    $this->actingAs($admin)->put('/admin/analytics/dashboard', ['widgets' => [], 'period_days' => 7])->assertRedirect();
-    $this->assertDatabaseHas('analytics_setting_changes', ['user_id' => $admin->getKey()]);
-    $this->actingAs($moderator)->get('/admin/dashboard')->assertInertia(fn (Assert $page) => $page->has('widgets', 0));
+test('moderator dashboard is operational and never shares admin analytics even when configured', function () {
+    AnalyticsSetting::current()->update(['widgets' => ['age', 'meta', 'categories']]);
+    $this->actingAs(analyticsUser('moderator'))->get('/admin/dashboard')->assertOk()->assertInertia(fn (Assert $page) => $page
+        ->has('operational.moderation')->where('operational.broadcast.id', 'broadcast')
+        ->missing('operational.admin')->missing('widgets')->missing('connections')->missing('configuration'));
+    $this->get('/admin/analytics')->assertForbidden();
 });
 test('widget configuration rejects unknown and duplicate keys', function () {
     $this->actingAs(analyticsUser())->put('/admin/analytics/dashboard', ['widgets' => ['secrets'], 'period_days' => 30])->assertSessionHasErrors('widgets.0');
@@ -67,14 +67,9 @@ test('admin can customize widget layout order, column span, and chart height', f
         ->where('widgets.2.height', 'sm')
     );
 
-    $moderator = analyticsUser('moderator');
-    $this->actingAs($moderator)->get('/admin/dashboard')->assertOk()->assertInertia(fn (Assert $page) => $page
-        ->has('widgets', 2)
-        ->where('widgets.0.id', 'broadcast')
-        ->where('widgets.0.span', 2)
-        ->where('widgets.1.id', 'age')
-        ->where('widgets.1.span', 1)
-    );
+    $this->actingAs(analyticsUser('moderator'))->get('/admin/dashboard')->assertOk()->assertInertia(fn (Assert $page) => $page
+        ->where('operational.broadcast.id', 'broadcast')->missing('operational.admin')->missing('widgets'));
+
 });
 test('demographics exclude officers and keep unknown groups and exact birthday boundaries', function () {
     $this->travelTo(Carbon::parse('2026-10-19 12:00:00', 'Asia/Jakarta'));
@@ -187,8 +182,7 @@ test('grid positions and dimensions persist independently from moderator visibil
         ->where('configuration.layout.sections.0.widgets.1.id', 'categories')
         ->where('configuration.layout.sections.0.widgets.1.size', 'large'));
     $this->actingAs(analyticsUser('moderator'))->get('/admin/dashboard')
-        ->assertInertia(fn (Assert $page) => $page->has('widgets', 1)
-            ->where('widgets.0.id', 'age')->where('widgets.0.grid.w', 4));
+        ->assertInertia(fn (Assert $page) => $page->where('operational.broadcast.id', 'broadcast')->missing('operational.admin')->missing('widgets'));
 });
 
 test('grid rejects invalid dimensions and positions', function ($cell) {
@@ -214,8 +208,7 @@ test('section layouts persist shared across admins without changing permissions 
     expect(AnalyticsSetting::current()->layout)->toBe($layout);
     $this->actingAs(analyticsUser())->get('/admin/analytics')->assertInertia(fn (Assert $page) => $page->where('configuration.layout', $layout)->has('widgets', 9));
     $this->actingAs(analyticsUser('moderator'))->get('/admin/dashboard')->assertInertia(fn (Assert $page) => $page
-        ->has('widgets', 1)->where('widgets.0.id', 'age')->has('layout.sections', 1)->has('layout.sections.0.widgets', 1)
-        ->where('layout.sections.0.widgets.0.id', 'age')->missing('configuration')->missing('connections'));
+        ->where('operational.broadcast.id', 'broadcast')->missing('widgets')->missing('layout')->missing('operational.admin')->missing('configuration')->missing('connections'));
     $this->put('/admin/analytics/dashboard', ['widgets' => ['meta'], 'period_days' => 14, 'layout' => $layout])->assertForbidden();
 });
 
@@ -266,4 +259,69 @@ test('registration comparison uses the preceding equal calendar period and exclu
     $report = app(AnalyticsReport::class)->build(['overview'], '2026-10-01', '2026-10-07')[0];
     expect($report['registration_previous'])->toBe(2)
         ->and($report['rows'][1]['value'])->toBe(1);
+});
+
+test('post performance uses stored counters and excludes unpublished comments without inventing historical views', function () {
+    $admin = analyticsUser();
+    $reader = analyticsUser('villager');
+    $post = News::factory()->create(['title' => 'Layanan kesehatan', 'view' => 18]);
+    $post->forceFill(['unique_views' => 4])->save();
+    Like::create(['postID' => $post->getKey(), 'userID' => $reader->getKey()]);
+    foreach (['published', 'pending_review', 'rejected'] as $status) {
+        Comment::create(['newsID' => $post->getKey(), 'userID' => $reader->getKey(), 'content' => $status, 'status' => $status]);
+    }
+    $this->actingAs($admin)->get('/admin/analytics?search=kesehatan&sort=ratio&post='.$post->getKey())->assertOk()->assertInertia(fn (Assert $page) => $page
+        ->has('posts.data', 1)->where('posts.data.0.views', 18)->where('posts.data.0.unique', 4)
+        ->where('posts.data.0.likes', 1)->where('posts.data.0.comments', 1)->where('posts.data.0.ratio', null)
+        ->where('inspection.id', $post->getKey())->missing('inspection.views')->missing('inspection.trend.0.views'));
+    $this->get('/admin/analytics?search=tidak-ada')->assertInertia(fn (Assert $page) => $page->has('posts.data', 0));
+});
+
+test('moderator queue counts distinct flagged comments and only personal decisions today', function () {
+    $this->travelTo(Carbon::parse('2026-10-22 12:00:00', 'Asia/Jakarta'));
+    $moderator = analyticsUser('moderator');
+    $other = analyticsUser('moderator');
+    $post = News::factory()->create();
+    $c = Comment::create(['newsID' => $post->getKey(), 'content' => 'Perlu ditinjau', 'status' => 'pending_review', 'ai_flagged' => true]);
+    $reporter = analyticsUser('villager');
+    DB::table('comment_reports')->insert(['comment_id' => $c->getKey(), 'user_id' => $reporter->getKey(), 'reason' => 'Spam', 'created_at' => now()]);
+    foreach ([$moderator, $other] as $actor) {
+        DB::table('comment_moderation_history')->insert(['comment_id' => $c->getKey(), 'moderator_id' => $actor->getKey(), 'to_status' => 'published', 'reason' => 'approve: test', 'created_at' => now()]);
+    }
+    $this->actingAs($moderator)->get('/admin/dashboard')->assertOk()->assertInertia(fn (Assert $page) => $page
+        ->where('operational.moderation.pending', 1)->where('operational.moderation.flagged', 1)->where('operational.moderation.today', 1)
+        ->where('operational.moderation.queue.0.reports', 1)->missing('operational.admin'));
+    $this->postJson('/admin/comments/'.$c->getKey().'/decision', ['action' => 'approve', 'expected_revision' => 0])->assertOk();
+    $this->get('/admin/dashboard')->assertInertia(fn (Assert $page) => $page->where('operational.moderation.pending', 0)->where('operational.moderation.today', 2)->has('operational.moderation.queue', 0));
+    $this->postJson('/admin/comments/'.$c->getKey().'/decision', ['action' => 'reject', 'expected_revision' => 0])->assertConflict();
+});
+
+test('fixed category migration preserves size ordering hidden choices and backs up the old layout', function () {
+    $layout = ['version' => 2, 'sections' => [['id' => 'custom', 'title' => 'Favorit', 'order' => 0, 'columns' => 2, 'widgets' => [['id' => 'ethnicity', 'size' => 'large', 'order' => 0], ['id' => 'age', 'size' => 'small', 'order' => 1], ['id' => 'broadcast', 'size' => 'wide', 'order' => 2]]]]];
+    AnalyticsSetting::current()->update(['layout' => $layout]);
+    $this->actingAs(analyticsUser())->put('/admin/analytics/dashboard', ['widgets' => [], 'period_days' => 30, 'fixed_categories' => true, 'layout' => $layout])->assertSessionHasNoErrors();
+    $saved = AnalyticsSetting::current()->layout;
+    expect(array_column($saved['sections'], 'id'))->toBe(array_keys(SectionLayout::CATEGORIES));
+    expect($saved['sections'][2]['widgets'])->toBe([['id' => 'ethnicity', 'size' => 'large', 'order' => 0], ['id' => 'age', 'size' => 'small', 'order' => 1]]);
+    expect($saved['sections'][0]['widgets'])->toBe([]);
+    $backup = DB::table('analytics_setting_changes')->where('configuration', 'like', '%migration_backup%')->first();
+    expect(json_decode($backup->configuration, true)['layout'])->toBe($layout);
+});
+
+test('admin overview deduplicates activity across platforms and excludes staff', function () {
+    $admin = analyticsUser();
+    $reader = analyticsUser('villager');
+    foreach ([[$reader, 'web'], [$reader, 'mobile'], [$admin, 'web']] as [$user, $platform]) {
+        DB::table('villager_activity_hours')->insert(['user_id' => $user->getKey(), 'hour' => now('UTC')->startOfHour(), 'platform' => $platform]);
+    }
+    $this->actingAs($admin)->get('/admin/dashboard')->assertOk()->assertInertia(fn (Assert $page) => $page->where('operational.admin.active_readers', 1)->has('operational.broadcast')->missing('widgets'));
+});
+
+test('broadcast inline breakdown keeps denominator attached to the selected broadcast', function () {
+    $admin = analyticsUser();
+    $b = Broadcast::create(['created_by' => $admin->getKey(), 'title' => 'Pengumuman', 'message' => 'Pesan', 'sent_at' => now()]);
+    $reader = analyticsUser('villager');
+    $reader->notify(new BroadcastNotification($b));
+    $data = app(AnalyticsReport::class)->build(['broadcast'], now(config('analytics.timezone'))->toDateString(), now(config('analytics.timezone'))->toDateString())[0];
+    expect($data['rows'][1]['value'])->toBe(1)->and($data['recent'][0]['recorded'])->toBe(1)->and($data['recent'][0]['read'])->toBe(0);
 });

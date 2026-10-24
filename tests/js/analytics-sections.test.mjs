@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import ts from 'typescript';
 const compiled=ts.transpileModule(readFileSync(new URL('../../resources/js/lib/analytics-sections.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.ES2022}}).outputText;
-const {pack,compatible,defaultSections,moveWidget,normalize,supportedSizes,resizePreset,ROW_HEIGHT,GRID_GAP}=await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+const {pack,compatible,defaultSections,moveWidget,normalize,supportedSizes,resizePreset,ROW_HEIGHT,GRID_GAP,categorySections}=await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 test('all supported footprints pack without overlap or crossing boundaries',()=>{
  for(const columns of [1,2,3]) for(let seed=0;seed<40;seed++){
   const widgets=Object.entries(supportedSizes).map(([id,sizes],i)=>({id,size:sizes[(seed+i)%sizes.length],order:i}));
@@ -40,4 +40,14 @@ test('all widgets share four presets and resize clamps at 2 by 2',()=>{
  assert.equal(ROW_HEIGHT,260); assert.equal(ROW_HEIGHT*2+GRID_GAP,536);
  assert.equal(resizePreset('small',100,100,300,2),'small');
  assert.equal(resizePreset('small',180,150,300,2),'large');
+});
+
+
+test('fixed categories preserve relative order sizes and hidden widget preferences',()=>{
+ const original={version:2,sections:[{id:'custom',title:'Custom',order:0,columns:2,widgets:[{id:'ethnicity',size:'large',order:0},{id:'age',size:'small',order:1},{id:'broadcast',size:'wide',order:2}]}]};
+ const snapshot=structuredClone(original),mapped=categorySections(original);
+ assert.deepEqual(mapped.sections.map(s=>s.id),['summary','posts','audience','broadcasts','activity','social']);
+ assert.deepEqual(mapped.sections[2].widgets,[{id:'ethnicity',size:'large',order:0},{id:'age',size:'small',order:1}]);
+ assert.deepEqual(mapped.sections[0].widgets,[]);
+ assert.deepEqual(original,snapshot);
 });

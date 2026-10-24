@@ -38,7 +38,7 @@ const mainNavItems: NavItem[] = [
     },
 
     {
-        title: 'Pesan',
+        title: 'Pesan Siaran',
         icon: Radio,
         items: [
             {
@@ -104,7 +104,7 @@ export function AppSidebar() {
               ]
             : []),
     ];
-    const visibleMainNavItems: NavItem[] = [
+    const allMainNavItems: NavItem[] = [
         mainNavItems[0],
         {
             title: 'Asisten AI',
@@ -134,6 +134,18 @@ export function AppSidebar() {
                     item.title !== 'Analisis' || auth.user?.role === 'admin',
             ),
     ];
+
+    const visibleMainNavItems =
+        auth.user?.role === 'moderator'
+            ? allMainNavItems.filter((item) =>
+                  [
+                      'Dasbor',
+                      'Berita',
+                      'Moderasi Komentar',
+                      'Pesan Siaran',
+                  ].includes(item.title),
+              )
+            : allMainNavItems;
 
     return (
         <>

@@ -20,7 +20,7 @@ class AnalyticsReport
 
     public function allowed(User $user, string $widget): bool
     {
-        return $user->isAdmin() || ($user->isModerator() && in_array($widget, AnalyticsSetting::current()->widgets, true));
+        return $user->isAdmin() || ($user->isModerator() && $widget === 'broadcast');
     }
 
     public function build(array $widgets, string $from, string $to, string $source = 'news', string $platform = 'all', array $sizes = []): array
@@ -43,7 +43,7 @@ class AnalyticsReport
                     ['label' => 'Pendaftaran dalam periode', 'value' => $villagers()->whereBetween('created_at', [$recordStart, $recordEnd])->count()],
                     ['label' => 'Warga aktif dalam periode', 'value' => $activity()->distinct()->count('user_id')],
                     ['label' => 'Profil lengkap (lahir & kewarganegaraan)', 'value' => $villagers()->whereNotNull('date_of_birth')->whereNotNull('citizenship')->count()],
-                ], 'registration_previous' => $villagers()->whereBetween('created_at', [
+                ], 'registration_trend' => $this->registrations($villagers(), $from, $to), 'registration_previous' => $villagers()->whereBetween('created_at', [
                     CarbonImmutable::parse($from, $zone)->subDays((int) CarbonImmutable::parse($from, $zone)->diffInDays(CarbonImmutable::parse($to, $zone)) + 1)->timezone(config('app.timezone')),
                     $recordStart->subSecond(),
                 ])->count(), 'note' => 'Populasi akun terdaftar, bukan sensus penduduk. Profil dihitung saat ini. Perbandingan pendaftaran memakai periode sebelumnya dengan jumlah hari yang sama.'],
@@ -90,7 +90,7 @@ class AnalyticsReport
             ->map(fn ($group, $label) => ['label' => $label, 'value' => $group->count()])->sortBy('label')->values()->all();
 
         return ['rows' => $rows, 'trend' => $trend, 'note' => $source === 'news'
-            ? 'Berita dibuat dalam periode, termasuk yang kini diarsipkan. Tayangan adalah total seumur hidup, bukan pembaca unik atau tayangan dalam periode.'
+            ? 'Berita dibuat dalam periode, termasuk yang kini diarsipkan. Tayangan adalah total kumulatif (kali), bukan pembaca unik atau tayangan dalam periode.'
             : 'Siaran terkirim dalam periode, termasuk yang kini diarsipkan.'];
     }
 
@@ -147,23 +147,45 @@ class AnalyticsReport
             'note' => 'Warga unik per hari/jam minggu dalam periode (bukan jumlah klik). Zona waktu: '.$zone.'. Pelacakan dimulai '.AnalyticsSetting::current()->tracking_started_at->timezone($zone)->format('d M Y').'.'];
     }
 
-    private function broadcast($start, $end): array
+    private function registrations($query, string $from, string $to): array
     {
-        $ids = Broadcast::whereBetween('sent_at', [$start, $end])->pluck('alertID')->map(fn ($id) => (string) $id);
-        $sent = 0;
-        $read = 0;
-        DB::table('notifications')->select('data', 'read_at')->orderBy('notificationID')->chunk(500, function ($rows) use ($ids, &$sent, &$read) {
+        $zone = config('analytics.timezone');
+        $start = CarbonImmutable::parse($from, $zone);
+        $days = (int) $start->diffInDays(CarbonImmutable::parse($to, $zone)) + 1;
+        $previous = $start->subDays($days);
+        $counts = $query->whereBetween('created_at', [$previous->timezone(config('app.timezone')), $start->addDays($days)->subSecond()->timezone(config('app.timezone'))])->get(['created_at'])->countBy(fn ($u) => $u->created_at->timezone($zone)->format('Y-m-d'));
+        $rows = [];
+        for ($i = 0; $i < $days; $i++) {
+            $date = $start->addDays($i)->format('Y-m-d');
+            $rows[] = ['label' => $date, 'current' => $counts[$date] ?? 0, 'previous' => $counts[$previous->addDays($i)->format('Y-m-d')] ?? 0];
+        }
+
+        return $rows;
+    }
+
+    public function broadcastExport(string $from, string $to): array
+    {
+        [$start, $end] = app(PostPerformance::class)->bounds($from, $to);
+
+        return $this->broadcast($start, $end, false);
+    }
+
+    private function broadcast($start, $end, bool $limit = true): array
+    {
+        $broadcasts = Broadcast::with('categoryRecord')->whereBetween('sent_at', [$start, $end])->orderByDesc('sent_at')->get();
+        $counts = $broadcasts->mapWithKeys(fn ($b) => [(string) $b->getKey() => ['recorded' => 0, 'read' => 0]])->all();
+        DB::table('notifications')->select('data', 'read_at')->orderBy('notificationID')->chunk(500, function ($rows) use (&$counts) {
             foreach ($rows as $row) {
-                $data = json_decode($row->data, true);
-                if (isset($data['broadcast_id']) && $ids->containsStrict((string) $data['broadcast_id'])) {
-                    $sent++;
-                    if ($row->read_at) {
-                        $read++;
-                    }
+                $id = (string) (json_decode($row->data, true)['broadcast_id'] ?? '');
+                if (isset($counts[$id])) {
+                    $counts[$id]['recorded']++;
+                    $counts[$id]['read'] += $row->read_at ? 1 : 0;
                 }
             }
         });
+        $recent = $broadcasts->map(fn ($b) => ['id' => $b->getKey(), 'title' => $b->title, 'category' => $b->categoryRecord?->name ?? 'Tanpa kategori', 'sent_at' => $b->sent_at?->toIso8601String(), ...$counts[(string) $b->getKey()]])->all();
+        $categories = collect($recent)->groupBy('category')->map(fn ($g, $label) => ['label' => $label, 'recorded' => $g->sum('recorded'), 'read' => $g->sum('read')])->values()->all();
 
-        return ['rows' => [['label' => 'Siaran terkirim', 'value' => $ids->count()], ['label' => 'Notifikasi tercatat', 'value' => $sent], ['label' => 'Notifikasi dibaca', 'value' => $read]], 'note' => 'Status baca saat ini untuk siaran dalam periode. Notifikasi tercatat bukan bukti pengiriman perangkat atau keselamatan penerima.'];
+        return ['rows' => [['label' => 'Siaran terkirim', 'value' => $broadcasts->count()], ['label' => 'Notifikasi tercatat', 'value' => array_sum(array_column($counts, 'recorded'))], ['label' => 'Notifikasi dibaca', 'value' => array_sum(array_column($counts, 'read'))]], 'recent' => $limit ? array_slice($recent, 0, 30) : $recent, 'category_trend' => $categories, 'note' => 'Status baca saat ini untuk siaran dalam periode. Notifikasi tercatat bukan bukti pengiriman perangkat atau keselamatan penerima.'];
     }
 }

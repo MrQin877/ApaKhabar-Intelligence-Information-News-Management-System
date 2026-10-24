@@ -262,7 +262,7 @@ export function DataTable<TData extends RowData, TValue = unknown>({ columns, da
               }}
               className="shrink-0"
             >
-              <TabsList className="h-9 bg-muted/40 p-1">
+              <TabsList className="h-10 p-1">
                 <TabsTrigger value="all" className="h-8 px-3 text-xs sm:text-sm">
                   Semua
                 </TabsTrigger>

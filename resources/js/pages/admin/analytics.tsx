@@ -1,19 +1,22 @@
-import { Head, router, useForm, usePage } from '@inertiajs/react';
+import { Head, router, useForm } from '@inertiajs/react';
+import { Download, RefreshCw, RotateCcw, Settings2, Undo2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import AnalyticsExportDialog from '@/components/analytics/analytics-export-dialog';
 import {
-    Check,
-    CircleHelp,
-    Download,
-    LayoutGrid,
-    RefreshCw,
-    RotateCcw,
-    Undo2,
-    SlidersHorizontal,
-} from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+    BroadcastPanel,
+    Metric,
+    TrendChart,
+} from '@/components/analytics/operational-charts';
+import PostPerformanceTable from '@/components/analytics/post-performance-table';
+import type {
+    PostListing,
+    Inspection,
+    PostFilters,
+    PostRow,
+} from '@/components/analytics/post-performance-table';
 import type { ReportWidget } from '@/components/analytics/report-widgets';
-import SectionDashboard, {
-    useDashboardWidth,
-} from '@/components/analytics/section-dashboard';
+import SectionDashboard from '@/components/analytics/section-dashboard';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -25,89 +28,95 @@ import {
     DialogTrigger,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-    Tooltip,
-    TooltipContent,
-    TooltipProvider,
-    TooltipTrigger,
-} from '@/components/ui/tooltip';
+    Select,
+    SelectTrigger,
+    SelectValue,
+    SelectContent,
+    SelectItem,
+} from '@/components/ui/select';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import AppLayout from '@/layouts/app-layout';
-import { defaultSections } from '@/lib/analytics-sections';
+import {
+    analyticsCategories,
+    categorySections,
+    defaultSections,
+} from '@/lib/analytics-sections';
 import type { SectionLayout } from '@/lib/analytics-sections';
 
+const reportTabs = [
+    { id: 'summary', title: 'Ringkasan' },
+    { id: 'audience', title: 'Pengguna & Website' },
+    { id: 'posts', title: 'Kinerja Berita' },
+    { id: 'broadcasts', title: 'Siaran' },
+    { id: 'social', title: 'Media Sosial' },
+];
 type Props = {
+    activeTab: string;
+    reportingTimezone: string;
+    selectedPost: PostRow | null;
+    interactionTrend: { label: string; likes: number; comments: number }[];
     widgets: ReportWidget[];
     filters: { from: string; to: string; source: string; platform: string };
-    catalog: Record<string, string>;
+    posts: PostListing;
+    inspection: Inspection;
+    postFilters: PostFilters;
+    newsCategories: { categoryID: number; name: string }[];
     configuration: {
         widgets: string[];
         period_days: number;
-        layout?: SectionLayout;
-        updated_at: string | null;
+        layout: SectionLayout;
         meta_connection_ids: number[];
     };
     connections: { id: number; platform: string; account_name: string }[];
 };
-
 export default function Analytics({
     widgets,
     filters,
-    catalog,
+    posts,
+    inspection,
+    postFilters,
+    newsCategories,
     configuration,
     connections,
+    activeTab,
+    reportingTimezone,
+    selectedPost,
+    interactionTrend,
 }: Props) {
-    const initialLayout = useMemo(
-        () => configuration.layout ?? defaultSections(),
-        [configuration.layout],
+    const tab = activeTab;
+    const [exportOpen, setExportOpen] = useState(false);
+    const [exportPost, setExportPost] = useState<PostRow | null>(null);
+    function selectTab(value: string) {
+        const url = new URL(window.location.href);
+        url.searchParams.set('section', value);
+        url.searchParams.delete('tab');
+        // Inertia keeps the current component state while back/forward stays consistent.
+        router.replace({
+            url: url.pathname + url.search,
+            preserveState: true,
+            preserveScroll: true,
+            props: (current) => ({ ...current, activeTab: value }),
+        });
+    }
+    const [layout, setLayout] = useState(() =>
+        categorySections(configuration.layout ?? defaultSections()),
     );
-
-    const form = useForm({
-        widgets: configuration.widgets,
-        period_days: configuration.period_days,
-        layout: initialLayout,
-    });
-
-    const meta = useForm({ connection_ids: configuration.meta_connection_ids });
-    const [editMode, setEditMode] = useState(false);
-    const [preview, setPreview] = useState(false);
-    const [range, setRange] = useState(filters);
-    const { errors } = usePage().props;
-
-    const { ref: dashboardRef } = useDashboardWidth();
-    const orderedWidgets = widgets;
-    const [savedLayout, setSavedLayout] = useState(
-        JSON.stringify(initialLayout),
+    const [saved, setSaved] = useState(() =>
+        JSON.stringify(
+            categorySections(configuration.layout ?? defaultSections()),
+        ),
     );
-    const history = useRef<SectionLayout[]>([]);
-    const [undoCount, setUndoCount] = useState(0);
+    const [edit, setEdit] = useState(false);
     const [saving, setSaving] = useState(false);
-    const [saveError, setSaveError] = useState(false);
-    const layoutKey = JSON.stringify(form.data.layout);
-    const dirty = layoutKey !== savedLayout;
-
-    function changeLayout(next: SectionLayout) {
-        if (JSON.stringify(next) === layoutKey) {
-            return;
-        }
-
-        history.current.push(structuredClone(form.data.layout));
-        history.current = history.current.slice(-30);
-        setUndoCount(history.current.length);
-        setSaveError(false);
-        form.setData('layout', next);
-    }
-    function undoLayout() {
-        const previous = history.current.pop();
-
-        if (previous) {
-            form.setData('layout', previous);
-            setUndoCount(history.current.length);
-            setSaveError(false);
-        }
-    }
-    // Serialize saves: edits made during a request are sent after it finishes.
-    // Only committed gestures enter this queue; previews never write settings.
+    const [saveError, setSaveError] = useState('');
+    const [filterError, setFilterError] = useState('');
+    const [range, setRange] = useState(filters);
+    const history = useRef<SectionLayout[]>([]);
+    const [undos, setUndos] = useState(0);
+    const meta = useForm({ connection_ids: configuration.meta_connection_ids });
+    const key = JSON.stringify(layout);
+    const dirty = key !== saved;
     useEffect(() => {
         if (!dirty || saving || saveError) {
             return;
@@ -120,515 +129,133 @@ export default function Analytics({
                 {
                     widgets: configuration.widgets,
                     period_days: configuration.period_days,
-                    layout: JSON.parse(layoutKey),
+                    fixed_categories: true,
+                    layout,
                 },
                 {
                     preserveScroll: true,
                     preserveState: true,
-                    onSuccess: () => {
-                        setSavedLayout(layoutKey);
-                    },
-                    onError: () => setSaveError(true),
-                    onCancel: () => setSaveError(true),
+                    onSuccess: () => setSaved(key),
+                    onError: () =>
+                        setSaveError('Tata letak belum tersimpan. Coba lagi.'),
                     onFinish: () => setSaving(false),
                 },
             );
-        }, 400);
+        }, 600);
 
-        return () => window.clearTimeout(timer);
+        return () => clearTimeout(timer);
     }, [
-        layoutKey,
         dirty,
         saving,
         saveError,
+        key,
+        layout,
         configuration.widgets,
         configuration.period_days,
     ]);
-    useEffect(() => {
-        if (!dirty && !saving) {
-            return;
-        }
+    function change(next: SectionLayout) {
+        history.current.push(layout);
+        setUndos(history.current.length);
+        setSaveError('');
+        setLayout(next);
+    }
+    const broadcast = widgets.find((w) => w.id === 'broadcast');
+    const accounts = widgets.find((w) => w.id === 'meta')?.accounts ?? [];
+    const isLegacy = configuration.layout.sections.some(
+        (s) => !analyticsCategories.some((c) => c.id === s.id),
+    );
 
-        const warn = (event: BeforeUnloadEvent) => {
-            event.preventDefault();
-        };
-        window.addEventListener('beforeunload', warn);
-        const remove = router.on('before', (event) => {
-            if (
-                event.detail.visit.method === 'get' &&
-                !window.confirm(
-                    'Tata letak belum tersimpan. Tinggalkan halaman?',
-                )
-            ) {
-                event.preventDefault();
-            }
-        });
+    const overview = widgets.find((w) => w.id === 'overview');
+    const interactions = interactionTrend.reduce(
+        (sum, day) => sum + day.likes + day.comments,
+        0,
+    );
+    const recorded = broadcast?.rows[1]?.value ?? 0;
+    const read = broadcast?.rows[2]?.value ?? 0;
+    function renderCategory(id: string) {
+        const c = analyticsCategories.find((item) => item.id === id)!;
 
-        return () => {
-            window.removeEventListener('beforeunload', warn);
-            remove();
-        };
-    }, [dirty, saving]);
+        return (
+            <SectionDashboard
+                widgets={widgets.filter((w) => c.widgets.includes(w.id))}
+                layout={{
+                    version: 2,
+                    sections: layout.sections.filter(
+                        (section) => section.id === id,
+                    ),
+                }}
+                editable={edit}
+                fixedCategories
+                hideSectionTitle
+                onChange={(next) =>
+                    change({
+                        version: 2,
+                        sections: layout.sections.map((section) =>
+                            section.id === id
+                                ? { ...next.sections[0], order: section.order }
+                                : section,
+                        ),
+                    })
+                }
+            />
+        );
+    }
 
     return (
-        <Dialog>
-            <div
-                ref={dashboardRef}
-                className="mx-auto w-full max-w-[1600px] space-y-5 p-4 md:p-6"
-            >
-                <Head title="Analisis" />
-                <header className="flex flex-wrap items-center justify-between gap-4">
-                    <div>
-                        <div className="flex items-center gap-2">
-                            <Badge
-                                variant="secondary"
-                                className="text-xs font-semibold tracking-wider text-primary uppercase"
-                            >
-                                Khusus admin
-                            </Badge>
-                        </div>
-                        <h1 className="mt-1.5 text-2xl font-semibold tracking-tight sm:text-3xl">
-                            Analisis warga & publikasi
-                        </h1>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2.5">
+        <div className="analytics-redesign min-w-0 space-y-5 p-4 md:p-6">
+            <Head title="Analisis" />
+            <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <h1 className="text-2xl font-semibold">Analisis</h1>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                        Kinerja konten, aktivitas warga, dan hasil siaran
+                    </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                    <Button
+                        onClick={() => {
+                            setExportPost(null);
+                            setExportOpen(true);
+                        }}
+                    >
+                        <Download /> Ekspor laporan
+                    </Button>
+                    {tab !== 'summary' && (
                         <Button
-                            type="button"
-                            variant={editMode ? 'default' : 'outline'}
-                            className="gap-2"
-                            disabled={form.processing}
-                            onClick={() => setEditMode(!editMode)}
+                            variant="outline"
+                            onClick={() => setEdit(!edit)}
                         >
-                            <LayoutGrid className="size-4" />
-                            {editMode ? 'Selesai' : 'Atur Tata Letak'}
+                            <Settings2 />
+                            {edit ? 'Selesai' : 'Atur tata letak'}
                         </Button>
-                        <a
-                            className="inline-flex h-9 items-center gap-2 rounded-md border bg-background px-3.5 text-sm font-medium transition hover:bg-muted"
-                            href={`/admin/analytics?${new URLSearchParams({ ...filters, export: 'csv' })}`}
-                        >
-                            <Download className="size-4 text-muted-foreground" />
-                            Ekspor CSV
-                        </a>
+                    )}
+                    <Dialog>
                         <DialogTrigger asChild>
-                            <Button variant="outline" className="gap-2">
-                                <SlidersHorizontal className="size-4" />
-                                Pengaturan analisis
+                            <Button variant="outline">
+                                Akun & sinkronisasi
                             </Button>
                         </DialogTrigger>
-                    </div>
-                </header>
-
-                {(editMode || dirty || saving || saveError) && (
-                    <div className="sticky top-3 z-30 flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card/95 p-3 backdrop-blur">
-                        <div className="space-y-1">
-                            <p className="text-sm font-medium">
-                                {editMode
-                                    ? 'Atur tata letak'
-                                    : 'Status tata letak'}
-                            </p>
-                            <p
-                                role="status"
-                                className="text-xs text-muted-foreground"
-                            >
-                                {saveError
-                                    ? 'Belum tersimpan. Perubahan tetap tersedia untuk dicoba lagi.'
-                                    : saving || dirty
-                                      ? 'Menyimpan perubahan…'
-                                      : 'Tersimpan otomatis'}
-                            </p>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                            {saveError && (
-                                <Button
-                                    size="sm"
-                                    onClick={() => setSaveError(false)}
-                                >
-                                    Coba lagi
-                                </Button>
-                            )}
-                            <Button
-                                size="sm"
-                                variant="outline"
-                                disabled={!undoCount}
-                                onClick={undoLayout}
-                            >
-                                <Undo2 className="size-4" />
-                                Urungkan
-                            </Button>
-                            {editMode && (
-                                <>
-                                    <label className="text-xs">
-                                        Susunan
-                                        <select
-                                            aria-label="Preset tata letak"
-                                            className="ml-2 rounded border bg-background p-2"
-                                            value=""
-                                            onChange={(e) => {
-                                                const preset = e.target.value;
-                                                changeLayout({
-                                                    ...form.data.layout,
-                                                    sections:
-                                                        form.data.layout.sections.map(
-                                                            (section) => ({
-                                                                ...section,
-                                                                widgets:
-                                                                    section.widgets.map(
-                                                                        (
-                                                                            w,
-                                                                        ) => ({
-                                                                            ...w,
-                                                                            size:
-                                                                                preset ===
-                                                                                'detail'
-                                                                                    ? 'large'
-                                                                                    : preset ===
-                                                                                            'summary' &&
-                                                                                        w.id ===
-                                                                                            'overview'
-                                                                                      ? 'wide'
-                                                                                      : 'small',
-                                                                        }),
-                                                                    ),
-                                                            }),
-                                                        ),
-                                                });
-                                            }}
-                                        >
-                                            <option value="" disabled>
-                                                Pilih preset
-                                            </option>
-                                            <option value="summary">
-                                                Ringkasan
-                                            </option>
-                                            <option value="balanced">
-                                                Seimbang
-                                            </option>
-                                            <option value="detail">
-                                                Detail
-                                            </option>
-                                        </select>
-                                    </label>
-                                    <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        onClick={() =>
-                                            changeLayout(defaultSections())
-                                        }
-                                    >
-                                        <RotateCcw className="size-4" />
-                                        Default
-                                    </Button>
-                                </>
-                            )}
-                        </div>
-                    </div>
-                )}
-
-                {Object.keys(form.errors).length > 0 && (
-                    <div
-                        role="alert"
-                        className="rounded-xl border border-danger-border bg-danger-bg p-4 text-sm text-danger-text"
-                    >
-                        <p className="font-medium">
-                            Pengaturan belum disimpan.
-                        </p>
-                        {Object.entries(form.errors).map(([key, message]) => (
-                            <p key={key}>{message}</p>
-                        ))}
-                    </div>
-                )}
-
-                {form.recentlySuccessful && !editMode && (
-                    <div
-                        role="status"
-                        className="flex items-center gap-2 rounded-xl border border-success-border bg-success-bg px-4 py-2.5 text-xs font-medium text-success-text"
-                    >
-                        <Check className="size-4" />
-                        Tata letak & pengaturan dasbor berhasil disimpan.
-                    </div>
-                )}
-
-                <form
-                    className="flex flex-wrap items-end gap-3 rounded-xl border bg-card p-4 shadow-xs"
-                    onSubmit={(e) => {
-                        e.preventDefault();
-                        router.get('/admin/analytics', range, {
-                            preserveState: true,
-                            preserveScroll: true,
-                        });
-                    }}
-                >
-                    <label className="space-y-1 text-xs font-medium text-muted-foreground">
-                        Dari
-                        <Input
-                            type="date"
-                            required
-                            className="mt-1 text-foreground"
-                            value={range.from}
-                            onChange={(e) =>
-                                setRange({ ...range, from: e.target.value })
-                            }
-                        />
-                    </label>
-                    <label className="space-y-1 text-xs font-medium text-muted-foreground">
-                        Sampai
-                        <Input
-                            type="date"
-                            required
-                            min={range.from}
-                            className="mt-1 text-foreground"
-                            value={range.to}
-                            onChange={(e) =>
-                                setRange({ ...range, to: e.target.value })
-                            }
-                        />
-                    </label>
-                    <label className="grid gap-1 text-xs font-medium text-muted-foreground">
-                        Sumber publikasi
-                        <select
-                            className="h-9 rounded-md border bg-background px-3 text-sm text-foreground"
-                            value={range.source}
-                            onChange={(e) =>
-                                setRange({ ...range, source: e.target.value })
-                            }
-                        >
-                            <option value="news">Berita</option>
-                            <option value="broadcast">Siaran</option>
-                        </select>
-                    </label>
-                    <label className="grid gap-1 text-xs font-medium text-muted-foreground">
-                        Aktivitas
-                        <select
-                            className="h-9 rounded-md border bg-background px-3 text-sm text-foreground"
-                            value={range.platform}
-                            onChange={(e) =>
-                                setRange({ ...range, platform: e.target.value })
-                            }
-                        >
-                            <option value="all">Semua platform</option>
-                            <option value="web">Website</option>
-                            <option value="mobile">Aplikasi mobile</option>
-                        </select>
-                    </label>
-                    <Button type="submit">Terapkan</Button>
-                    <TooltipProvider>
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <button
-                                    type="button"
-                                    className="mb-1 inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                                    aria-label="Info filter analisis"
-                                >
-                                    <CircleHelp className="size-4" />
-                                </button>
-                            </TooltipTrigger>
-                            <TooltipContent className="max-w-xs text-xs leading-relaxed">
-                                Maksimal 366 hari. Demografi selalu
-                                menggambarkan profil saat ini. Sumber publikasi
-                                mengubah kategori & tren; platform mengubah
-                                aktivitas.
-                            </TooltipContent>
-                        </Tooltip>
-                    </TooltipProvider>
-                </form>
-
-                {(['from', 'to', 'source', 'platform'] as const).map(
-                    (key) =>
-                        errors[key] && (
-                            <p
-                                key={key}
-                                role="alert"
-                                className="text-sm text-destructive"
-                            >
-                                {errors[key]}
-                            </p>
-                        ),
-                )}
-
-                <SectionDashboard
-                    widgets={widgets}
-                    layout={form.data.layout}
-                    editable={editMode}
-                    onChange={changeLayout}
-                />
-
-                <DialogContent className="flex max-h-[90dvh] flex-col overflow-hidden p-0 sm:max-w-3xl">
-                    <DialogHeader className="shrink-0 border-b px-6 pt-6 pr-12 pb-4">
-                        <DialogTitle>Pengaturan analisis</DialogTitle>
-                        <DialogDescription>
-                            Kelola akun media sosial dan ringkasan yang dapat
-                            dilihat moderator.
-                        </DialogDescription>
-                    </DialogHeader>
-                    <Tabs
-                        defaultValue="accounts"
-                        className="min-h-0 overflow-y-auto px-4 pb-6 sm:px-6"
-                    >
-                        <TabsList
-                            className="w-full shrink-0"
-                            aria-label="Pengaturan analisis"
-                        >
-                            <TabsTrigger value="accounts">
-                                Akun & sinkronisasi
-                            </TabsTrigger>
-                            <TabsTrigger value="moderator">
-                                Dashboard moderator
-                            </TabsTrigger>
-                        </TabsList>
-                        <TabsContent value="moderator">
+                        <DialogContent className="max-h-[85dvh] overflow-y-auto">
+                            <DialogHeader>
+                                <DialogTitle>Akun resmi Meta</DialogTitle>
+                                <DialogDescription>
+                                    Pilih maksimal satu akun per platform.
+                                    Halaman ini khusus Admin.
+                                </DialogDescription>
+                            </DialogHeader>
                             <form
-                                className="mt-5 space-y-4"
-                                onSubmit={(e) => {
-                                    e.preventDefault();
-                                    form.put('/admin/analytics/dashboard', {
-                                        preserveScroll: true,
-                                    });
-                                }}
-                            >
-                                <p className="text-sm text-muted-foreground">
-                                    Satu konfigurasi untuk semua moderator.
-                                    Hanya ringkasan terpilih yang dibagikan;
-                                    halaman Analisis tetap khusus admin.
-                                </p>
-                                <div className="grid gap-3 sm:grid-cols-2">
-                                    {Object.entries(catalog).map(
-                                        ([key, label]) => (
-                                            <label
-                                                className="flex items-center gap-2 rounded-lg border p-3 text-sm"
-                                                key={key}
-                                            >
-                                                <input
-                                                    type="checkbox"
-                                                    checked={form.data.widgets.includes(
-                                                        key,
-                                                    )}
-                                                    onChange={(e) =>
-                                                        form.setData(
-                                                            'widgets',
-                                                            e.target.checked
-                                                                ? [
-                                                                      ...form
-                                                                          .data
-                                                                          .widgets,
-                                                                      key,
-                                                                  ]
-                                                                : form.data.widgets.filter(
-                                                                      (k) =>
-                                                                          k !==
-                                                                          key,
-                                                                  ),
-                                                        )
-                                                    }
-                                                />
-                                                {label}
-                                            </label>
-                                        ),
-                                    )}
-                                </div>
-                                <label className="flex items-center gap-3 text-sm">
-                                    Periode dasbor
-                                    <select
-                                        className="rounded border bg-background p-2"
-                                        value={form.data.period_days}
-                                        onChange={(e) =>
-                                            form.setData(
-                                                'period_days',
-                                                Number(e.target.value),
-                                            )
-                                        }
-                                    >
-                                        {[7, 14, 30, 90, 180, 365].map((n) => (
-                                            <option key={n} value={n}>
-                                                {n} hari terakhir
-                                            </option>
-                                        ))}
-                                    </select>
-                                </label>
-                                <p className="text-xs text-muted-foreground">
-                                    Urutan mengikuti tata letak di halaman
-                                    Analisis. Widget yang dihapus dari tata
-                                    letak tidak muncul di dasbor moderator.
-                                </p>
-                                {Object.values(form.errors).map((error) => (
-                                    <p
-                                        key={error}
-                                        className="text-sm text-destructive"
-                                    >
-                                        {error}
-                                    </p>
-                                ))}
-                                <div className="flex flex-wrap gap-3">
-                                    <Button
-                                        disabled={
-                                            form.processing || saving || dirty
-                                        }
-                                    >
-                                        Simpan pengaturan
-                                    </Button>
-                                    <Button
-                                        type="button"
-                                        variant="outline"
-                                        onClick={() => setPreview(!preview)}
-                                    >
-                                        {preview
-                                            ? 'Tutup pratinjau'
-                                            : 'Pratinjau pilihan'}
-                                    </Button>
-                                    {form.recentlySuccessful && (
-                                        <span
-                                            role="status"
-                                            className="self-center text-sm"
-                                        >
-                                            Pengaturan disimpan.
-                                        </span>
-                                    )}
-                                </div>
-                                {preview && (
-                                    <div className="space-y-3 rounded-xl bg-muted/40 p-4">
-                                        <p className="text-sm text-muted-foreground">
-                                            Pratinjau susunan menggunakan data
-                                            filter saat ini. Dasbor memakai
-                                            periode yang dipilih di atas dan
-                                            sumber berita.
-                                        </p>
-                                        <SectionDashboard
-                                            widgets={form.data.widgets.flatMap(
-                                                (id) =>
-                                                    orderedWidgets.filter(
-                                                        (w) => w.id === id,
-                                                    ),
-                                            )}
-                                            layout={form.data.layout}
-                                        />
-                                        {!form.data.widgets.length && (
-                                            <p>
-                                                Tidak ada ringkasan dibagikan.
-                                            </p>
-                                        )}
-                                    </div>
-                                )}
-                            </form>
-                        </TabsContent>
-                        <TabsContent value="accounts">
-                            <form
-                                className="mt-4 space-y-4"
                                 onSubmit={(e) => {
                                     e.preventDefault();
                                     meta.put('/admin/analytics/meta', {
                                         preserveScroll: true,
                                     });
                                 }}
+                                className="space-y-3"
                             >
-                                <p className="text-sm text-muted-foreground">
-                                    Pilih maksimal satu akun per platform dari
-                                    koneksi Anda. Statistik hanya tersedia
-                                    setelah izin Insights diberikan dan
-                                    sinkronisasi berhasil.
-                                </p>
                                 {connections.length ? (
                                     connections.map((c) => (
                                         <label
-                                            className="flex items-center gap-2.5 rounded-lg border p-3 text-sm"
+                                            className="flex items-center gap-2 rounded-lg border p-3 text-sm"
                                             key={c.id}
                                         >
                                             <input
@@ -653,69 +280,42 @@ export default function Analytics({
                                                     )
                                                 }
                                             />
-                                            <span
-                                                className="size-2.5 rounded-full"
-                                                style={{
-                                                    backgroundColor:
-                                                        c.platform ===
-                                                        'facebook'
-                                                            ? 'var(--platform-facebook)'
-                                                            : 'var(--platform-instagram)',
-                                                }}
-                                            />
-                                            <span className="font-medium capitalize">
-                                                {c.platform}
-                                            </span>{' '}
-                                            — {c.account_name}
+                                            {c.platform} · {c.account_name}
                                         </label>
                                     ))
                                 ) : (
                                     <p className="text-sm text-muted-foreground">
-                                        Hubungkan akun melalui Pengaturan →
-                                        Integrasi terlebih dahulu.
+                                        Belum ada akun terhubung.
                                     </p>
                                 )}
-                                {Object.values(meta.errors).map((error) => (
+                                {Object.values(meta.errors).map((e) => (
                                     <p
-                                        key={error}
                                         className="text-sm text-destructive"
+                                        key={e}
                                     >
-                                        {error}
+                                        {e}
                                     </p>
                                 ))}
-                                <div className="flex flex-wrap gap-3 text-sm">
-                                    <a
-                                        className="underline"
-                                        href="/admin/social/facebook/connect?insights=1"
-                                    >
-                                        Berikan izin Insights Facebook
-                                    </a>
-                                    <a
-                                        className="underline"
-                                        href="/admin/social/instagram/connect?insights=1"
-                                    >
-                                        Berikan izin Insights Instagram
-                                    </a>
-                                </div>
-                                <p className="text-xs text-muted-foreground">
-                                    Jika menggunakan konfigurasi Business Login,
-                                    tambahkan izin Insights pada konfigurasi
-                                    aplikasi Meta terlebih dahulu.
-                                </p>
                                 <Button disabled={meta.processing}>
                                     Simpan akun resmi
                                 </Button>
                                 {meta.recentlySuccessful && (
-                                    <span
-                                        className="ml-3 text-sm"
-                                        role="status"
-                                    >
-                                        Akun disimpan.
-                                    </span>
+                                    <p role="status">Akun disimpan.</p>
                                 )}
                             </form>
+                            <a
+                                className="text-sm underline"
+                                href="/admin/social/facebook/connect?insights=1"
+                            >
+                                Hubungkan Facebook / beri izin Insights
+                            </a>
+                            <a
+                                className="text-sm underline"
+                                href="/admin/social/instagram/connect?insights=1"
+                            >
+                                Hubungkan Instagram / beri izin Insights
+                            </a>
                             <Button
-                                className="mt-3 gap-2"
                                 variant="outline"
                                 onClick={() =>
                                     router.post(
@@ -725,21 +325,444 @@ export default function Analytics({
                                     )
                                 }
                             >
-                                <RefreshCw className="size-4" />
+                                <RefreshCw />
                                 Jadwalkan sinkronisasi
                             </Button>
-                            <p className="mt-2 text-xs text-muted-foreground">
-                                Proses berjalan di antrean default. Muat ulang
-                                halaman setelah sinkronisasi selesai.
+                            <p className="text-xs text-muted-foreground">
+                                Sinkronisasi berjalan di antrean. Muat ulang
+                                setelah selesai; data gagal tidak dianggap nol.
                             </p>
-                        </TabsContent>
-                    </Tabs>
-                </DialogContent>
+                        </DialogContent>
+                    </Dialog>
+                </div>
             </div>
-        </Dialog>
+            <form
+                className="flex flex-wrap items-end gap-3"
+                onSubmit={(e) => {
+                    e.preventDefault();
+                    setFilterError('');
+                    router.get(
+                        '/admin/analytics',
+                        {
+                            ...range,
+                            ...postFilters,
+                            section: tab,
+                            ...(inspection ? { post: inspection.id } : {}),
+                        },
+                        {
+                            preserveState: true,
+                            preserveScroll: true,
+                            onError: (errors) =>
+                                setFilterError(Object.values(errors).join(' ')),
+                        },
+                    );
+                }}
+            >
+                <label className="space-y-1 text-xs text-muted-foreground">
+                    Dari
+                    <Input
+                        type="date"
+                        value={range.from}
+                        onChange={(e) =>
+                            setRange({ ...range, from: e.target.value })
+                        }
+                        required
+                    />
+                </label>
+                <label className="space-y-1 text-xs text-muted-foreground">
+                    Sampai
+                    <Input
+                        type="date"
+                        value={range.to}
+                        min={range.from}
+                        onChange={(e) =>
+                            setRange({ ...range, to: e.target.value })
+                        }
+                        required
+                    />
+                </label>
+                <Button type="submit" variant="outline">
+                    Terapkan
+                </Button>
+                <p className="self-center text-xs text-muted-foreground">
+                    Zona waktu: {reportingTimezone} · Periode untuk interaksi &
+                    aktivitas; profil dan tayangan kumulatif diberi label
+                    tersendiri
+                </p>
+            </form>
+            {filterError && (
+                <Alert variant="destructive">
+                    <AlertDescription>{filterError}</AlertDescription>
+                </Alert>
+            )}
+            {isLegacy && (
+                <Dialog>
+                    <DialogTrigger asChild>
+                        <Button
+                            variant="link"
+                            className="h-auto max-w-full p-0 text-left text-xs whitespace-normal"
+                        >
+                            Susunan lama dipetakan ke kategori standar · Lihat
+                            pemetaan
+                        </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                        <DialogHeader>
+                            <DialogTitle>Pemetaan tata letak lama</DialogTitle>
+                            <DialogDescription>
+                                Ukuran, urutan relatif, dan widget tersembunyi
+                                dipertahankan. Susunan lama tetap tersimpan
+                                hingga Anda mengubah tata letak; cadangannya
+                                dicatat saat penyimpanan pertama.
+                            </DialogDescription>
+                        </DialogHeader>
+                        <div className="max-h-72 space-y-2 overflow-y-auto text-sm">
+                            {configuration.layout.sections.map((s) => (
+                                <div
+                                    key={s.id}
+                                    className="rounded-lg border p-3"
+                                >
+                                    <strong>{s.title || 'Tanpa judul'}</strong>
+                                    {s.widgets.map((w) => (
+                                        <p
+                                            key={w.id}
+                                            className="text-xs text-muted-foreground"
+                                        >
+                                            {widgets.find((x) => x.id === w.id)
+                                                ?.title ?? w.id}{' '}
+                                            →{' '}
+                                            {analyticsCategories.find((c) =>
+                                                c.widgets.includes(w.id),
+                                            )?.title ??
+                                                'Digantikan tabel interaksi berita'}
+                                        </p>
+                                    ))}
+                                </div>
+                            ))}
+                        </div>
+                    </DialogContent>
+                </Dialog>
+            )}
+            {edit && (
+                <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="secondary">
+                        {saving
+                            ? 'Menyimpan…'
+                            : dirty
+                              ? 'Perubahan belum tersimpan'
+                              : 'Tersimpan'}
+                    </Badge>
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={!undos}
+                        onClick={() => {
+                            const previous = history.current.pop();
+
+                            if (previous) {
+                                setLayout(previous);
+                                setSaveError('');
+                                setUndos(history.current.length);
+                            }
+                        }}
+                    >
+                        <Undo2 />
+                        Urungkan
+                    </Button>
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() =>
+                            change(categorySections(defaultSections()))
+                        }
+                    >
+                        <RotateCcw />
+                        Pulihkan bawaan
+                    </Button>
+                    {saveError && (
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setSaveError('')}
+                        >
+                            Coba simpan lagi
+                        </Button>
+                    )}
+                </div>
+            )}
+            {saveError && (
+                <Alert variant="destructive">
+                    <AlertDescription>{saveError}</AlertDescription>
+                </Alert>
+            )}
+
+            {exportOpen && (
+                <AnalyticsExportDialog
+                    open={exportOpen}
+                    onOpenChange={setExportOpen}
+                    tab={tab}
+                    filters={filters}
+                    postFilters={postFilters}
+                    post={exportPost}
+                />
+            )}
+            <Tabs
+                value={tab}
+                onValueChange={selectTab}
+                className="min-w-0 gap-5"
+            >
+                <TabsList className="grid h-auto! w-full grid-cols-2 gap-1 p-1 sm:flex">
+                    {reportTabs.map((item) => (
+                        <TabsTrigger
+                            key={item.id}
+                            value={item.id}
+                            className="h-auto min-h-10 flex-1 px-3"
+                        >
+                            {item.title}
+                        </TabsTrigger>
+                    ))}
+                </TabsList>
+                <TabsContent value="summary" className="min-w-0 space-y-5">
+                    <div>
+                        <h2 className="text-lg font-semibold">
+                            Apa yang terjadi dalam periode ini?
+                        </h2>
+                        <p className="text-sm text-muted-foreground">
+                            {filters.from} — {filters.to} · Rincian dan definisi
+                            tersedia di setiap tab.
+                        </p>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-3">
+                        <Metric
+                            label="Warga aktif"
+                            value={overview?.rows[2]?.value ?? 'Belum tersedia'}
+                            note={`Akun warga unik dengan aktivitas tercatat dalam periode · platform: ${filters.platform === 'all' ? 'web dan aplikasi' : filters.platform}.`}
+                        />
+                        <Metric
+                            label="Interaksi berita"
+                            value={interactions}
+                            note="Jumlah suka aktif dan komentar yang kini diterbitkan, dibuat dalam periode. Tidak termasuk tayangan."
+                        />
+                        <Metric
+                            label="Rasio baca siaran"
+                            value={
+                                recorded
+                                    ? `${((read / recorded) * 100).toFixed(1)}%`
+                                    : '—'
+                            }
+                            note="Notifikasi dibaca ÷ tercatat untuk siaran dikirim dalam periode. Status baca saat ini; bukan bukti terkirim ke perangkat."
+                        />
+                    </div>
+                    <TrendChart
+                        title="Respons warga terhadap berita"
+                        rows={interactionTrend}
+                        yLabel="Interaksi (jumlah)"
+                        description="Suka dan komentar mengikuti tanggal dibuat dalam periode. Riwayat tayangan harian belum tersedia."
+                        series={[
+                            {
+                                key: 'likes',
+                                label: 'Suka aktif',
+                                color: '#16a34a',
+                            },
+                            {
+                                key: 'comments',
+                                label: 'Komentar diterbitkan',
+                                color: '#0d9488',
+                            },
+                        ]}
+                    />
+                    <div className="rounded-xl border p-4 text-sm text-muted-foreground">
+                        <strong className="text-foreground">
+                            Baca angka sesuai cakupannya.
+                        </strong>{' '}
+                        Warga aktif adalah akun terdaftar. Identitas unik berita
+                        mencakup akun dan tamu. Tayangan berita dapat berulang
+                        dan tidak sama dengan kunjungan seluruh website.
+                    </div>
+                </TabsContent>
+                <TabsContent value="audience" className="min-w-0 space-y-5">
+                    <div>
+                        <h2 className="text-lg font-semibold">
+                            Pengguna, profil & akses website
+                        </h2>
+                        <p className="text-sm text-muted-foreground">
+                            Profil akun warga saat ini, bukan sensus penduduk.
+                            Demografi tidak mengikuti filter tanggal.
+                        </p>
+                    </div>
+                    {renderCategory('summary')}
+                    {renderCategory('audience')}
+                    <div className="rounded-xl border p-4">
+                        <h3 className="font-medium">Akses seluruh website</h3>
+                        <Badge variant="secondary" className="mt-2">
+                            Belum dilacak
+                        </Badge>
+                        <p className="mt-2 text-sm text-muted-foreground">
+                            Kunjungan, sesi, dan pengunjung unik website
+                            memerlukan pelacakan tersendiri. Tayangan berita
+                            ditampilkan pada Kinerja Berita dan tidak digunakan
+                            sebagai pengganti metrik ini.
+                        </p>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                        <h3 className="font-medium">Kapan warga aktif?</h3>
+                        <Select
+                            value={filters.platform}
+                            onValueChange={(platform) => {
+                                setRange((current) => ({
+                                    ...current,
+                                    platform,
+                                }));
+                                router.get(
+                                    '/admin/analytics',
+                                    {
+                                        ...filters,
+                                        ...postFilters,
+                                        platform,
+                                        section: 'audience',
+                                    },
+                                    {
+                                        preserveState: true,
+                                        preserveScroll: true,
+                                    },
+                                );
+                            }}
+                        >
+                            <SelectTrigger
+                                className="w-48"
+                                aria-label="Platform aktivitas"
+                            >
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">
+                                    Semua platform
+                                </SelectItem>
+                                <SelectItem value="web">Web portal</SelectItem>
+                                <SelectItem value="mobile">
+                                    Aplikasi mobile
+                                </SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    {renderCategory('activity')}
+                    <p className="text-xs text-muted-foreground">
+                        Nilai heatmap adalah akun warga unik per kombinasi
+                        hari/jam dalam periode dan platform terpilih. Akun yang
+                        sama dapat muncul pada beberapa slot; jangan
+                        menjumlahkannya sebagai total pengguna unik.
+                    </p>
+                </TabsContent>
+                <TabsContent value="posts" className="min-w-0 space-y-5">
+                    <div>
+                        <h2 className="text-lg font-semibold">
+                            Kinerja berita & respons warga
+                        </h2>
+                        <p className="text-sm text-muted-foreground">
+                            Tayangan dan identitas unik bersifat kumulatif. Suka
+                            dan komentar mengikuti {filters.from} — {filters.to}
+                            .
+                        </p>
+                    </div>
+                    <PostPerformanceTable
+                        posts={posts}
+                        inspection={inspection}
+                        selectedPost={selectedPost}
+                        filters={postFilters}
+                        categories={newsCategories}
+                        onExport={(post) => {
+                            setExportPost(post);
+                            setExportOpen(true);
+                        }}
+                    />
+                    {renderCategory('posts')}
+                </TabsContent>
+                <TabsContent value="broadcasts" className="min-w-0 space-y-5">
+                    <div>
+                        <h2 className="text-lg font-semibold">
+                            Efektivitas siaran
+                        </h2>
+                        <p className="text-sm text-muted-foreground">
+                            Siaran dikirim dalam periode · status pembacaan saat
+                            ini.
+                        </p>
+                    </div>
+                    {renderCategory('broadcasts')}
+                    {broadcast && (
+                        <>
+                            <TrendChart
+                                title="Pembacaan menurut kategori siaran"
+                                rows={broadcast.category_trend ?? []}
+                                bars
+                                xLabel="Kategori siaran"
+                                yLabel="Notifikasi (jumlah)"
+                                description="Tercatat berarti notifikasi dibuat di sistem; bukan konfirmasi perangkat menerima pesan."
+                                series={[
+                                    {
+                                        key: 'recorded',
+                                        label: 'Notifikasi tercatat',
+                                        color: '#0d9488',
+                                    },
+                                    {
+                                        key: 'read',
+                                        label: 'Dibaca',
+                                        color: '#16a34a',
+                                    },
+                                ]}
+                            />
+                            <BroadcastPanel widget={broadcast} />
+                        </>
+                    )}
+                </TabsContent>
+                <TabsContent value="social" className="min-w-0 space-y-5">
+                    <div>
+                        <h2 className="text-lg font-semibold">
+                            Facebook & Instagram
+                        </h2>
+                        <p className="text-sm text-muted-foreground">
+                            Bandingkan kanal dalam satu tampilan dengan metrik,
+                            satuan, dan status sinkronisasi masing-masing.
+                        </p>
+                    </div>
+                    {accounts
+                        .filter((account) =>
+                            ['disconnected', 'unavailable'].includes(
+                                account.status,
+                            ),
+                        )
+                        .map((account) => (
+                            <Alert key={account.platform}>
+                                <AlertDescription>
+                                    <strong className="capitalize">
+                                        {account.platform}
+                                    </strong>
+                                    : {account.note}
+                                    <a
+                                        className="ml-2 underline"
+                                        href={`/admin/social/${account.platform}/connect?insights=1`}
+                                    >
+                                        Hubungkan ulang
+                                    </a>
+                                </AlertDescription>
+                            </Alert>
+                        ))}
+                    {renderCategory('social')}
+                    <div className="rounded-xl border p-4 text-sm text-muted-foreground">
+                        <strong className="text-foreground">
+                            Engagement media sosial: belum tersedia.
+                        </strong>{' '}
+                        Integrasi saat ini menyediakan kunjungan halaman
+                        Facebook dan jangkauan harian Instagram. Reaksi,
+                        komentar, dan bagikan tidak dianggap nol. Jangkauan
+                        harian tidak boleh dijumlahkan menjadi akun unik
+                        bulanan. Periode harian Meta mengikuti UTC; aktivitas
+                        warga mengikuti zona waktu pelaporan sistem.
+                    </div>
+                </TabsContent>
+            </Tabs>
+        </div>
     );
 }
-
 Analytics.layout = (page: React.ReactNode) => (
     <AppLayout breadcrumbs={[{ title: 'Analisis', href: '/admin/analytics' }]}>
         {page}

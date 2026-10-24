@@ -172,3 +172,34 @@ export function resizePreset(
 
     return wide ? (tall ? 'large' : 'wide') : tall ? 'medium' : 'small';
 }
+
+export const analyticsCategories = [
+    { id: 'summary', title: 'Ringkasan', widgets: ['overview'] },
+    { id: 'posts', title: 'Kinerja Berita', widgets: ['categories'] },
+    {
+        id: 'audience',
+        title: 'Demografi Warga',
+        widgets: ['age', 'citizenship', 'ethnicity'],
+    },
+    { id: 'broadcasts', title: 'Siaran & Notifikasi', widgets: ['broadcast'] },
+    { id: 'activity', title: 'Waktu Aktif', widgets: ['activity'] },
+    { id: 'social', title: 'Media Sosial', widgets: ['meta'] },
+];
+
+/** Preserve hidden widgets, relative ordering and size while assigning fixed topics. */
+export function categorySections(source: SectionLayout): SectionLayout {
+    const items = source.sections.flatMap((s) => s.widgets);
+
+    return {
+        version: 2,
+        sections: analyticsCategories.map((category, order) => ({
+            id: category.id,
+            title: category.title,
+            columns: 2,
+            order,
+            widgets: items
+                .filter((w) => category.widgets.includes(w.id))
+                .map((w, order) => ({ ...w, order })),
+        })),
+    };
+}

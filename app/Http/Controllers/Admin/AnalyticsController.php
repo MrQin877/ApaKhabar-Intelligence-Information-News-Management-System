@@ -4,8 +4,12 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\AnalyticsSetting;
+use App\Models\NewsCategory;
 use App\Models\SocialConnection;
+use App\Services\Analytics\AnalyticsExport;
 use App\Services\Analytics\AnalyticsReport;
+use App\Services\Analytics\OperationalDashboard;
+use App\Services\Analytics\PostPerformance;
 use App\Services\Analytics\SectionLayout;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
@@ -20,7 +24,7 @@ class AnalyticsController extends Controller
     public function index(Request $request, AnalyticsReport $reports)
     {
         abort_unless($request->user()->isAdmin(), 403);
-        $filters = $request->validate(['from' => ['sometimes', 'date_format:Y-m-d'], 'to' => ['sometimes', 'date_format:Y-m-d', 'after_or_equal:from'], 'source' => ['sometimes', Rule::in(['news', 'broadcast'])], 'platform' => ['sometimes', Rule::in(['all', 'web', 'mobile'])]]);
+        $filters = $request->validate(['from' => ['sometimes', 'date_format:Y-m-d'], 'to' => ['sometimes', 'date_format:Y-m-d', 'after_or_equal:from'], 'source' => ['sometimes', Rule::in(['news', 'broadcast'])], 'platform' => ['sometimes', Rule::in(['all', 'web', 'mobile'])], 'search' => ['nullable', 'string', 'max:200'], 'category' => ['nullable', 'integer'], 'sort' => ['sometimes', Rule::in(['views', 'unique', 'likes', 'comments', 'ratio', 'newest'])], 'posts_page' => ['sometimes', 'integer', 'min:1'], 'post' => ['sometimes', 'integer', 'exists:news,postID'], 'export' => ['sometimes', Rule::in(['csv', 'xlsx'])], 'scope' => ['sometimes', Rule::in(['all', 'summary', 'audience', 'posts', 'broadcasts', 'social'])], 'export_post' => ['sometimes', 'integer', 'exists:news,postID']]);
         $from = $filters['from'] ?? now(config('analytics.timezone'))->subDays(29)->toDateString();
         $to = $filters['to'] ?? now(config('analytics.timezone'))->toDateString();
         if ($from > $to || CarbonImmutable::parse($from)->diffInDays($to) >= 366) {
@@ -30,30 +34,35 @@ class AnalyticsController extends Controller
         $platform = $filters['platform'] ?? 'all';
         $setting = AnalyticsSetting::current();
         $layout = $setting->resolvedLayout();
-        $widgets = $reports->build($layout['order'], $from, $to, $source, $platform, $layout['sizes']);
-        if ($request->query('export') === 'csv') {
-            return response()->streamDownload(function () use ($widgets, $from, $to) {
+        $widgets = $reports->build(array_values(array_unique([...$layout['order'], ...array_keys(AnalyticsReport::WIDGETS)])), $from, $to, $source, $platform, $layout['sizes']);
+        if (isset($filters['export'])) {
+            $export = app(AnalyticsExport::class);
+            $sheets = $export->data($widgets, $from, $to, $filters['scope'] ?? 'all', isset($filters['export_post']) ? (int) $filters['export_post'] : null, $filters['search'] ?? '', (string) ($filters['category'] ?? ''), $filters['sort'] ?? 'views', $platform);
+            $filename = 'analisis-'.(isset($filters['export_post']) ? 'berita-'.$filters['export_post'].'-' : '').$from.'-'.$to.'.'.$filters['export'];
+            if ($filters['export'] === 'xlsx') {
+                return response()->download($export->workbook($sheets, $from, $to), $filename, ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Cache-Control' => 'private, no-store'])->deleteFileAfterSend(true);
+            }
+
+            return response()->streamDownload(function () use ($export, $sheets) {
                 $stream = fopen('php://output', 'w');
-                fwrite($stream, "\xEF\xBB\xBF");
-                fputcsv($stream, ['Laporan', 'Kelompok', 'Jumlah', 'Persen', 'Laki-laki', 'Perempuan', 'Tidak disebutkan', 'Tayangan seumur hidup', 'Dari', 'Sampai', 'Catatan'], ',', '"', '');
-                $safe = fn ($value) => is_string($value) && preg_match('/^[\s]*[=+@-]/u', $value) ? "'".$value : $value;
-                foreach ($widgets as $widget) {
-                    $rows = $widget['rows'];
-                    foreach ($widget['accounts'] ?? [] as $account) {
-                        foreach ($account['rows'] as $row) {
-                            $rows[] = [...$row, 'label' => $account['platform'].' / '.$row['label']];
-                        }
-                    }
-                    foreach ($rows as $row) {
-                        fputcsv($stream, array_map($safe, [$widget['title'], $row['label'], $row['value'], $row['percent'] ?? '', $row['male'] ?? '', $row['female'] ?? '', $row['unspecified'] ?? '', $row['lifetime_views'] ?? '', $from, $to, $widget['note']]), ',', '"', '');
-                    }
-                }
+                $export->csv($sheets, $stream);
                 fclose($stream);
-            }, 'analisis-'.$from.'-'.$to.'.csv', ['Content-Type' => 'text/csv; charset=UTF-8', 'Cache-Control' => 'private, no-store']);
+            }, $filename, ['Content-Type' => 'text/csv; charset=UTF-8', 'Cache-Control' => 'private, no-store']);
         }
+        $interactionTrend = app(PostPerformance::class)->interactionTrend($from, $to);
+        $active = $request->query('section', $request->query('tab', 'summary'));
+        $activeTab = $active === 'activity' ? 'audience' : (in_array($active, ['summary', 'audience', 'posts', 'broadcasts', 'social'], true) ? $active : 'summary');
 
         return Inertia::render('admin/analytics', [
             'widgets' => $widgets,
+            'posts' => app(PostPerformance::class)->listing($filters['search'] ?? '', (string) ($filters['category'] ?? ''), $filters['sort'] ?? 'views', (int) ($filters['posts_page'] ?? 1), 15, $from, $to),
+            'selectedPost' => isset($filters['post']) ? app(PostPerformance::class)->selected((int) $filters['post'], $from, $to) : null,
+            'activeTab' => $activeTab,
+            'reportingTimezone' => config('analytics.timezone'),
+            'interactionTrend' => $interactionTrend,
+            'inspection' => isset($filters['post']) ? app(PostPerformance::class)->inspection((int) $filters['post'], $from, $to) : null,
+            'postFilters' => ['search' => $filters['search'] ?? '', 'category' => (string) ($filters['category'] ?? ''), 'sort' => $filters['sort'] ?? 'views'],
+            'newsCategories' => NewsCategory::orderBy('name')->get(['categoryID', 'name']),
             'filters' => compact('from', 'to', 'source', 'platform'),
             'catalog' => AnalyticsReport::WIDGETS,
             'configuration' => [
@@ -69,18 +78,13 @@ class AnalyticsController extends Controller
 
     public function dashboard(Request $request, AnalyticsReport $reports)
     {
-        $setting = AnalyticsSetting::current();
-        $layout = $setting->resolvedLayout();
-        $sections = $setting->resolvedSections();
-        $sections = SectionLayout::visible($sections, $request->user()->isAdmin() ? array_keys(AnalyticsReport::WIDGETS) : $setting->widgets);
-        $keys = array_column(array_merge([], ...array_column($sections['sections'], 'widgets')), 'id');
-        $from = now(config('analytics.timezone'))->subDays($setting->period_days - 1)->toDateString();
+        abort_unless($request->user()->isAdmin() || $request->user()->isModerator(), 403);
+        $from = now(config('analytics.timezone'))->subDays(29)->toDateString();
         $to = now(config('analytics.timezone'))->toDateString();
 
         return Inertia::render('admin/dashboard', [
-            'widgets' => $reports->build($keys, $from, $to, 'news', 'all', $layout['sizes']),
+            'operational' => app(OperationalDashboard::class)->build($request->user(), $from, $to),
             'period' => compact('from', 'to'),
-            'layout' => $sections,
         ])->toResponse($request)->header('Cache-Control', 'private, no-store');
     }
 
@@ -89,6 +93,7 @@ class AnalyticsController extends Controller
         abort_unless($request->user()->isAdmin(), 403);
         $validKeys = array_keys(AnalyticsReport::WIDGETS);
         $data = $request->validate([
+            'fixed_categories' => ['sometimes', 'boolean'],
             'widgets' => ['present', 'array', 'max:9'],
             'widgets.*' => ['string', 'distinct', Rule::in($validKeys)],
             'period_days' => ['required', 'integer', Rule::in([7, 14, 30, 90, 180, 365])],
@@ -136,6 +141,10 @@ class AnalyticsController extends Controller
             $data['layout'] = SectionLayout::resolve($data['layout']);
         }
 
+        if ($data['fixed_categories'] ?? false) {
+            $data['layout'] = SectionLayout::categories($data['layout'] ?? AnalyticsSetting::current()->resolvedSections());
+        }
+
         foreach ($data['layout']['grid'] ?? [] as $id => $cell) {
             if ($cell['x'] + $cell['w'] > 12) {
                 throw ValidationException::withMessages(['layout.grid.'.$id => 'Kartu harus berada dalam 12 kolom.']);
@@ -144,7 +153,7 @@ class AnalyticsController extends Controller
 
         DB::transaction(function () use ($data, $request) {
             $setting = AnalyticsSetting::current();
-            if (($data['layout']['version'] ?? null) === 2 && ($setting->layout['version'] ?? null) !== 2 && $setting->layout) {
+            if (($data['layout']['version'] ?? null) === 2 && $setting->layout && (($setting->layout['version'] ?? null) !== 2 || (($data['fixed_categories'] ?? false) && array_diff(array_column($setting->resolvedSections()['sections'], 'id'), array_keys(SectionLayout::CATEGORIES))))) {
                 DB::table('analytics_setting_changes')->insert([
                     'user_id' => $request->user()->getKey(),
                     'configuration' => json_encode(['migration_backup' => true, 'layout' => $setting->layout, 'widgets' => $setting->widgets, 'period_days' => $setting->period_days]),
