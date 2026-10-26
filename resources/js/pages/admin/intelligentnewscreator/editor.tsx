@@ -22,7 +22,6 @@ import type {
     PublishPlatform,
     PublishPlatformId,
 } from '@/components/publish-news-dialog';
-import { PublishResultDialog } from '@/components/publish-result-dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -46,11 +45,11 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { useUnsavedNews } from '@/hooks/use-unsaved-news';
 import AppLayout from '@/layouts/app-layout';
+import { manualSnapshot } from '@/lib/editor-snapshot';
 import { defaultCrops, initializeCrops } from '@/lib/image-crops';
 import type { ImageCrops } from '@/lib/image-crops';
 import { hasManualContent, saveManualDraft } from '@/lib/manual-draft';
 import { publishManual } from '@/lib/manual-publish';
-import type { PublishResult } from '@/lib/manual-publish';
 import type { MetaAuthConfig } from '@/lib/meta-auth';
 import type { BreadcrumbItem } from '@/types';
 
@@ -101,7 +100,6 @@ export default function ManualEditor({
     const [saveError, setSaveError] = useState('');
     const savingStarted = useRef(false);
     const [draftId, setDraftId] = useState(draft?.id);
-    const [publishResult, setPublishResult] = useState<PublishResult>();
     const publishStarted = useRef(false);
     const [dragging, setDragging] = useState(false);
     const [preview, setPreview] = useState('');
@@ -143,11 +141,17 @@ export default function ManualEditor({
         }
     }, [selectedCategoryExists, setFormData, setFormDefaults]);
 
-    const busy =
-        savingDraft || form.processing || publishing || Boolean(publishResult);
-    const isDirty =
-        form.isDirty && (Boolean(draftId) || hasManualContent(form.data));
-    const unsaved = useUnsavedNews(isDirty, busy);
+    const busy = savingDraft || form.processing || publishing;
+    const snapshot = manualSnapshot({
+        ...form.data,
+        category_id: selectedCategoryExists ? form.data.category_id : '',
+    });
+    const [savedSnapshot, setSavedSnapshot] = useState(snapshot);
+    const isDirty = snapshot !== savedSnapshot;
+    const unsaved = useUnsavedNews(
+        isDirty,
+        savingDraft || form.processing || publishing,
+    );
     const contentText = useMemo(() => {
         if (typeof DOMParser === 'undefined') {
             return '';
@@ -255,6 +259,18 @@ export default function ManualEditor({
                 body.append('_method', 'put');
             }
 
+            const workloadId = `manual-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+            const workload = {
+                id: workloadId,
+                title: form.data.headline,
+                thumbnail_url: form.data.image || preview || undefined,
+                destinations: [...form.data.platforms],
+            };
+            window.dispatchEvent(
+                new CustomEvent('news-publication', {
+                    detail: { ...workload, ready: false },
+                }),
+            );
             void publishManual(
                 draftId
                     ? `/admin/news/manual/${draftId}`
@@ -269,11 +285,21 @@ export default function ManualEditor({
                         )
                     ) {
                         form.setDefaults(form.data);
+                        setSavedSnapshot(manualSnapshot(form.data));
                         unsaved.allowLeave();
                     }
 
                     setConfirmPublish(false);
-                    setPublishResult(result);
+                    window.dispatchEvent(
+                        new CustomEvent('news-publication', {
+                            detail: {
+                                ...workload,
+                                ready: true,
+                                result,
+                                open: true,
+                            },
+                        }),
+                    );
                 })
                 .finally(() => setPublishing(false));
 
@@ -304,6 +330,7 @@ export default function ManualEditor({
                 content: saved.content_html,
             };
             form.setDefaults(data);
+            setSavedSnapshot(manualSnapshot(data));
             form.setData(data);
             setPreview('');
 
@@ -800,7 +827,7 @@ export default function ManualEditor({
                                 <Save />{' '}
                                 {savingDraft || form.processing
                                     ? 'Menyimpan...'
-                                    : 'Simpan draf'}
+                                    : 'Simpan sebagai Draf'}
                             </Button>
                             <Button
                                 type="button"
@@ -850,7 +877,6 @@ export default function ManualEditor({
                 onPreparePreview={preparePreview}
                 onPublish={(token) => save('publish', token)}
             />
-            {publishResult && <PublishResultDialog result={publishResult} />}
             <Dialog
                 open={unsaved.open}
                 onOpenChange={(open) => {
@@ -885,17 +911,14 @@ export default function ManualEditor({
                             {saveError}
                         </p>
                     )}
-                    <DialogFooter className="flex-row justify-end">
+                    <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-between">
                         <Button
                             type="button"
                             variant="outline"
                             disabled={savingDraft}
-                            onClick={() => {
-                                form.reset();
-                                unsaved.leave();
-                            }}
+                            onClick={() => unsaved.leave()}
                         >
-                            Batal
+                            Keluar Tanpa Menyimpan
                         </Button>
                         <Button
                             type="button"
@@ -906,7 +929,9 @@ export default function ManualEditor({
                             {savingDraft && (
                                 <LoaderCircle className="animate-spin" />
                             )}
-                            {savingDraft ? 'Menyimpan...' : 'Simpan draf'}
+                            {savingDraft
+                                ? 'Menyimpan...'
+                                : 'Simpan sebagai Draf'}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

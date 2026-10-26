@@ -46,6 +46,7 @@ interface History {
     moderator_name: string | null;
     from_status: string | null;
     to_status: string;
+    action: string | null;
     reason: string | null;
     created_at: string;
 }
@@ -58,9 +59,18 @@ interface Feedback {
     administrator_name: string | null;
     created_at: string;
 }
+interface ManualFlag {
+    id: number;
+    category: string;
+    explanation: string | null;
+    moderator_name: string | null;
+    created_at: string;
+    resolved_at: string | null;
+}
 interface Entry {
     id: number;
-    news_id: number;
+    content_type?: 'news' | 'shorts';
+    news_id: number | null;
     news: { id: number; title: string } | null;
     user: { id: number; name: string } | null;
     guest_name: string | null;
@@ -74,11 +84,14 @@ interface Entry {
     reports: {
         id: number;
         reason: string;
+        category: string | null;
+        explanation: string | null;
         reporter_name: string | null;
         created_at: string;
         resolved_at: string | null;
     }[];
     history: History[];
+    flags: ManualFlag[];
     feedback: Feedback[];
 }
 interface Filters {
@@ -88,6 +101,7 @@ interface Filters {
     search: string;
     from: string;
     until: string;
+    content_type?: 'news' | 'shorts';
 }
 interface Props {
     comments: {
@@ -113,6 +127,7 @@ const moderationLabels: Record<string, string> = {
     submitted: 'Diajukan',
     pending_review: 'Menunggu peninjauan',
     published: 'Diterbitkan',
+    hidden: 'Disembunyikan',
     rejected: 'Ditolak',
     removed: 'Disembunyikan',
     ai_flagged: 'Ditandai AI',
@@ -192,9 +207,7 @@ function sources(comment: Entry) {
         labels.push('Dilaporkan');
     }
 
-    if (
-        comment.feedback.some((item) => item.classification === 'inappropriate')
-    ) {
+    if (comment.flags.length) {
         labels.push('Ditandai Admin');
     }
 
@@ -205,11 +218,15 @@ function decisionLabel(event?: History) {
         return 'Belum ditinjau';
     }
 
-    if (event.reason?.startsWith('restore:')) {
+    if (
+        event.reason?.startsWith('restore:') ||
+        (event.action === 'allow' &&
+            ['hidden', 'removed', 'rejected'].includes(event.from_status ?? ''))
+    ) {
         return 'Dipulihkan';
     }
 
-    return ['removed', 'rejected'].includes(event.to_status)
+    return ['hidden', 'removed', 'rejected'].includes(event.to_status)
         ? 'Ditolak'
         : 'Disetujui';
 }
@@ -310,6 +327,12 @@ export default function Comments({ comments, filters, counts }: Props) {
                             ? 'Tinjau komentar yang perlu keputusan admin.'
                             : 'Lihat keputusan moderasi yang telah diselesaikan.'}
                     </p>
+                    <Link
+                        href="/admin/comments/legacy-history"
+                        className="mt-2 inline-block text-sm font-medium text-primary underline-offset-4 hover:underline"
+                    >
+                        Lihat arsip moderasi lama
+                    </Link>
                 </header>
                 {notice && (
                     <Alert
@@ -364,6 +387,39 @@ export default function Comments({ comments, filters, counts }: Props) {
                                 </TabsTrigger>
                             </TabsList>
                         </Tabs>
+                        <div className="flex gap-2" aria-label="Jenis konten">
+                            {(
+                                [
+                                    ['news', 'Berita'],
+                                    ['shorts', 'Video Pendek'],
+                                ] as const
+                            ).map(([value, label]) => (
+                                <Button
+                                    key={value}
+                                    size="sm"
+                                    variant={
+                                        (filters.content_type ?? 'news') ===
+                                        value
+                                            ? 'secondary'
+                                            : 'outline'
+                                    }
+                                    aria-pressed={
+                                        (filters.content_type ?? 'news') ===
+                                        value
+                                    }
+                                    disabled={busy || loading}
+                                    onClick={() =>
+                                        visit({
+                                            content_type: value,
+                                            source: 'all',
+                                            decision: 'all',
+                                        })
+                                    }
+                                >
+                                    {label}
+                                </Button>
+                            ))}
+                        </div>
                         <form
                             className="space-y-3"
                             onSubmit={(event) => {
@@ -375,8 +431,8 @@ export default function Comments({ comments, filters, counts }: Props) {
                                 <div className="relative min-w-0 flex-1">
                                     <Search className="pointer-events-none absolute top-3 left-3 size-4 text-muted-foreground" />
                                     <Input
-                                        aria-label="Cari komentar, pengguna, atau judul berita"
-                                        placeholder="Cari komentar, pengguna, atau judul berita..."
+                                        aria-label="Cari komentar, pengguna, atau judul konten"
+                                        placeholder="Cari komentar, pengguna, atau judul konten..."
                                         value={search}
                                         maxLength={200}
                                         onChange={(event) =>
@@ -587,11 +643,18 @@ export default function Comments({ comments, filters, counts }: Props) {
                                                     <span className="truncate text-sm font-semibold">
                                                         {author(comment)}
                                                     </span>
+                                                    {comment.content_type ===
+                                                        'shorts' && (
+                                                        <Badge variant="outline">
+                                                            Video Pendek
+                                                        </Badge>
+                                                    )}
                                                     {filters.tab ===
                                                         'history' && (
                                                         <Badge
                                                             variant={
                                                                 [
+                                                                    'hidden',
                                                                     'removed',
                                                                     'rejected',
                                                                 ].includes(
@@ -616,7 +679,7 @@ export default function Comments({ comments, filters, counts }: Props) {
                                                 </p>
                                                 <p className="mt-2 truncate text-xs text-muted-foreground">
                                                     {comment.news?.title ??
-                                                        'Berita tidak tersedia'}
+                                                        'Konten tidak tersedia'}
                                                 </p>
                                                 <div className="mt-2 flex flex-wrap justify-between gap-x-3 gap-y-1 text-xs text-muted-foreground">
                                                     <span>
@@ -741,16 +804,7 @@ function CommentDetails({
         submitting.current = true;
         onBusy(true);
         setError('');
-        const action =
-            intent === 'approve'
-                ? comment.status === 'published'
-                    ? 'dismiss_reports'
-                    : comment.status === 'removed'
-                      ? 'restore'
-                      : 'approve'
-                : intent === 'reject' && comment.status === 'published'
-                  ? 'remove'
-                  : intent;
+        const action = intent === 'reject' ? 'hide' : 'allow';
 
         try {
             const result = await engagementPost(
@@ -759,6 +813,7 @@ function CommentDetails({
                     action,
                     reason: notes.trim() || undefined,
                     expected_revision: comment.revision,
+                    content_type: comment.content_type ?? 'news',
                 },
             );
             setConfirmation(null);
@@ -796,7 +851,13 @@ function CommentDetails({
             key: `report-${report.id}`,
             date: report.created_at,
             title: `Dilaporkan oleh ${report.reporter_name ?? 'Pengguna'}`,
-            text: report.reason,
+            text: `${report.category ?? 'Lainnya'}${report.explanation ? ': ' + report.explanation : ''}`,
+        })),
+        ...comment.flags.map((flag) => ({
+            key: `flag-${flag.id}`,
+            date: flag.created_at,
+            title: `Ditandai oleh ${flag.moderator_name ?? 'Moderator'}`,
+            text: `${moderationLabel(flag.category)}${flag.explanation ? ': ' + flag.explanation : ''}`,
         })),
     ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
@@ -843,10 +904,18 @@ function CommentDetails({
                     </blockquote>
                 </div>
                 <div>
-                    <h3 className="mb-2 text-sm font-medium">Berita terkait</h3>
+                    <h3 className="mb-2 text-sm font-medium">
+                        {comment.content_type === 'shorts'
+                            ? 'Video terkait'
+                            : 'Berita terkait'}
+                    </h3>
                     {comment.news ? (
                         <Link
-                            href={`/news/${comment.news.id}`}
+                            href={
+                                comment.content_type === 'shorts'
+                                    ? `/shorts/${comment.news.id}`
+                                    : `/news/${comment.news.id}`
+                            }
                             className="flex items-start justify-between gap-3 rounded-lg border p-3 text-sm hover:bg-accent"
                             target="_blank"
                             rel="noopener noreferrer"
@@ -856,12 +925,12 @@ function CommentDetails({
                             </span>
                             <ExternalLink className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                             <span className="sr-only">
-                                Buka berita di tab baru
+                                Buka konten di tab baru
                             </span>
                         </Link>
                     ) : (
                         <p className="text-sm text-muted-foreground">
-                            Berita tidak tersedia.
+                            Konten tidak tersedia.
                         </p>
                     )}
                 </div>
@@ -931,31 +1000,42 @@ function CommentDetails({
                                         key={report.id}
                                         className="rounded-lg bg-muted/40 p-3 text-sm break-words"
                                     >
-                                        {report.reason}
+                                        {report.category ?? 'Lainnya'}
+                                        {report.explanation
+                                            ? `: ${report.explanation}`
+                                            : ''}{' '}
+                                        · {report.reporter_name ?? 'Pengguna'} ·{' '}
+                                        {formatDate(report.created_at)}
                                     </p>
                                 ))}
                         </div>
                     )}
-                {pending && comment.feedback.length > 0 && (
+                {pending && comment.flags.some((flag) => !flag.resolved_at) && (
                     <div className="space-y-2">
-                        <h3 className="text-sm font-medium">Koreksi admin</h3>
-                        {comment.feedback.map((item) => (
-                            <div
-                                key={item.id}
-                                className="rounded-lg bg-muted/40 p-3 text-sm"
-                            >
-                                <p>{moderationLabel(item.category)}</p>
-                                {item.explanation && (
-                                    <p className="mt-1 break-words whitespace-pre-wrap">
-                                        {item.explanation}
+                        <h3 className="text-sm font-medium">
+                            Tanda admin / moderator
+                        </h3>
+                        {comment.flags
+                            .filter((flag) => !flag.resolved_at)
+                            .map((item) => (
+                                <div
+                                    key={item.id}
+                                    className="rounded-lg bg-muted/40 p-3 text-sm"
+                                >
+                                    <p>{moderationLabel(item.category)}</p>
+                                    {item.explanation && (
+                                        <p className="mt-1 break-words whitespace-pre-wrap">
+                                            {item.explanation}
+                                        </p>
+                                    )}
+                                    <p className="mt-1 text-xs text-muted-foreground">
+                                        {item.moderator_name ?? 'Moderator'}{' '}
+                                        &middot; {formatDate(item.created_at)}{' '}
+                                        &middot; Status:{' '}
+                                        {moderationLabel(comment.status)}
                                     </p>
-                                )}
-                                <p className="mt-1 text-xs text-muted-foreground">
-                                    {item.administrator_name ?? 'Admin'}{' '}
-                                    &middot; {formatDate(item.created_at)}
-                                </p>
-                            </div>
-                        ))}
+                                </div>
+                            ))}
                     </div>
                 )}
                 {!pending && (
@@ -982,7 +1062,9 @@ function CommentDetails({
                     </div>
                 )}
                 {(pending ||
-                    ['removed', 'rejected'].includes(comment.status)) && (
+                    ['hidden', 'removed', 'rejected'].includes(
+                        comment.status,
+                    )) && (
                     <div className="space-y-3 border-t pt-4">
                         <Label htmlFor="decision-notes">
                             Catatan keputusan (opsional)

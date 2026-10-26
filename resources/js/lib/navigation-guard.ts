@@ -1,5 +1,6 @@
 type Guard = { blocked: () => boolean; ask: (proceed: () => void) => void };
 let guard: Guard | undefined;
+const installed = new WeakSet<Window>();
 
 export function setNavigationGuard(next: Guard) {
     guard = next;
@@ -14,6 +15,12 @@ export function setNavigationGuard(next: Guard) {
 // Track real history entries (without adding dummy entries). Restore the editor
 // before asking, so Inertia never unmounts it while the dialog is open.
 export function installNavigationGuard(win: Window) {
+    if (installed.has(win)) {
+        return;
+    }
+
+    installed.add(win);
+    let currentUrl = new URL(win.location.href);
     const key = '__apakhabarPosition';
     const history = win.history;
     let position: number = history.state?.[key] ?? 0;
@@ -25,9 +32,11 @@ export function installNavigationGuard(win: Window) {
     history.pushState = (data, unused, url) => {
         push({ ...data, [key]: position + 1 }, unused, url);
         position++;
+        currentUrl = new URL(win.location.href);
     };
     history.replaceState = (data, unused, url) => {
         replace({ ...data, [key]: position }, unused, url);
+        currentUrl = new URL(win.location.href);
     };
     win.addEventListener(
         'popstate',
@@ -43,9 +52,18 @@ export function installNavigationGuard(win: Window) {
                 return;
             }
 
-            const delta = target === undefined ? -1 : target - position;
+            // An entry outside this document has no safe history delta to reverse.
+            if (target === undefined) {
+                return;
+            }
 
-            if (guard?.blocked() && delta !== 0) {
+            const delta = target - position;
+            const targetUrl = new URL(win.location.href);
+            const sameEditor =
+                targetUrl.pathname === currentUrl.pathname &&
+                targetUrl.search === currentUrl.search;
+
+            if (guard?.blocked() && delta !== 0 && !sameEditor) {
                 event.stopImmediatePropagation();
                 restoring = { delta, ask: guard.ask };
                 history.go(-delta);
@@ -53,7 +71,8 @@ export function installNavigationGuard(win: Window) {
                 return;
             }
 
-            position = target ?? position + delta;
+            position = target;
+            currentUrl = targetUrl;
         },
         true,
     );

@@ -69,22 +69,19 @@ class EngagementController extends Controller
 
     public function report(Request $request, string $id)
     {
+        abort_if($request->user()->isAdmin() || $request->user()->isModerator(), 403);
         $data = $request->validate([
-            'category' => ['required_without:reason', 'string', Rule::in([
-                'Penipuan / Scam', 'Pelecehan / Penghinaan', 'Ujaran Kebencian',
-                'Ancaman / Intimidasi', 'Spam', 'Konten Tidak Pantas', 'Lainnya',
-            ])],
+            'category' => ['required_without:reason', 'string', Rule::in(config('engagement.report_categories'))],
             'details' => 'nullable|string|max:450',
             'reason' => 'required_without:category|string|max:500',
         ]);
-        $reason = isset($data['category'])
-            ? $data['category'].(! empty($data['details']) ? ': '.trim($data['details']) : '')
-            : $data['reason'];
+        $category = $data['category'] ?? 'Lainnya';
+        $explanation = trim($data['details'] ?? ($data['reason'] ?? '')) ?: null;
         $comment = Comment::where('status', 'published')->findOrFail($id);
         News::active()->findOrFail($comment->newsID);
         DB::table('comment_reports')->insertOrIgnore([
             'comment_id' => $comment->getKey(), 'user_id' => $request->user()->getKey(),
-            'reason' => $reason, 'created_at' => now(),
+            'category' => $category, 'explanation' => $explanation, 'created_at' => now(),
         ]);
 
         return response()->json(['message' => 'Laporan diterima. Terima kasih.']);

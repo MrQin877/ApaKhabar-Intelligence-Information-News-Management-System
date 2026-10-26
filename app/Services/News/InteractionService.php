@@ -3,7 +3,6 @@
 namespace App\Services\News;
 
 use App\Models\Comment;
-use App\Models\CommentModerationAssessment;
 use App\Models\Like;
 use App\Models\News;
 use Illuminate\Support\Facades\DB;
@@ -45,7 +44,7 @@ class InteractionService
         });
     }
 
-    public function addComment(?int $userId, string $newsId, string $content, ?int $parentId = null): Comment
+    public function addComment(?int $userId, string $newsId, string $content, ?int $parentId = null, ?string $guestName = null): Comment
     {
         $news = News::active()->findOrFail($newsId);
         $content = trim($content);
@@ -54,10 +53,8 @@ class InteractionService
             throw ValidationException::withMessages(['content' => 'Komentar yang sama sudah dikirim.']);
         }
         $moderation = app(CommentModeration::class)->check($content);
-        $assessment = $moderation['_assessment'] ?? [];
-        unset($moderation['_assessment']);
 
-        return DB::transaction(function () use ($news, $userId, $content, $parentId, $hash, $moderation, $assessment) {
+        return DB::transaction(function () use ($news, $userId, $content, $parentId, $guestName, $hash, $moderation) {
             // Serialize the duplicate check and insert, including concurrent submissions.
             News::whereKey($news->getKey())->lockForUpdate()->firstOrFail();
             if (Comment::where('submission_hash', $hash)->exists()) {
@@ -65,10 +62,9 @@ class InteractionService
             }
             $comment = Comment::create(array_merge($moderation, [
                 'newsID' => $news->getKey(), 'userID' => $userId, 'content' => $content,
-                'guest_name' => $userId ? null : 'guest'.random_int(100000, 999999), 'parentID' => $parentId,
+                'guest_name' => $userId ? null : ($guestName ?? 'Guest'.random_int(10000, 99999)), 'parentID' => $parentId,
                 'submission_hash' => $hash,
             ]));
-            CommentModerationAssessment::capture($comment, $assessment);
             DB::table('comment_moderation_history')->insert([
                 'comment_id' => $comment->getKey(), 'from_status' => null,
                 'to_status' => $comment->status, 'reason' => $comment->moderation_reason,
@@ -79,10 +75,10 @@ class InteractionService
         });
     }
 
-    public function addReply(int $userId, string $commentId, string $content): Comment
+    public function addReply(?int $userId, string $commentId, string $content, ?string $guestName = null): Comment
     {
         $parent = Comment::where('status', 'published')->findOrFail($commentId);
 
-        return $this->addComment($userId, (string) $parent->newsID, $content, $parent->getKey());
+        return $this->addComment($userId, (string) $parent->newsID, $content, $parent->getKey(), $guestName);
     }
 }

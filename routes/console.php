@@ -1,9 +1,14 @@
 <?php
 
 use App\Jobs\ProcessIntelligenceDocument;
+use App\Jobs\ProcessShortVideo;
+use App\Jobs\PublishShortVideo;
 use App\Models\IntelligenceDocument;
 use App\Models\IntelligenceInformation;
+use App\Models\ShortVideo;
+use App\Models\ShortVideoPublication;
 use App\Services\PublicationPreviewFiles;
+use App\Services\Shorts\PublicationPermalink;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -13,6 +18,40 @@ use Illuminate\Support\Facades\Schedule;
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
+
+Artisan::command('shorts:recover-facebook-permalinks {--id= : Publication record ID}', function () {
+    $normalized = 0;
+    $queued = 0;
+    ShortVideoPublication::where('platform', 'facebook')->where('status', 'published')
+        ->when($this->option('id'), fn ($q, $id) => $q->whereKey($id))
+        ->whereHas('video', fn ($q) => $q->whereIn('status', ['published', 'archived']))
+        ->chunkById(100, function ($rows) use (&$normalized, &$queued) {
+            foreach ($rows as $row) {
+                DB::transaction(function () use ($row, &$normalized, &$queued) {
+                    $p = ShortVideoPublication::whereKey($row->id)->lockForUpdate()->first();
+                    if (! $p || $p->status !== 'published' || ($p->locked_until && $p->locked_until->isFuture())) {
+                        return;
+                    }
+                    $url = PublicationPermalink::normalize('facebook', $p->permalink);
+                    if ($url) {
+                        if ($url !== $p->permalink) {
+                            $p->update(['permalink' => $url, 'stage' => 'done', 'error_summary' => null]);
+                            $normalized++;
+                        }
+
+                        return;
+                    }
+                    if (! $p->media_id || $p->stage === 'permalink') {
+                        return;
+                    }
+                    $p->update(['permalink' => null, 'stage' => 'permalink', 'polls' => 0, 'next_attempt_at' => now(), 'error_summary' => 'Diterbitkan; tautan sedang diperiksa.']);
+                    DB::afterCommit(fn () => PublishShortVideo::dispatch($p->id));
+                    $queued++;
+                });
+            }
+        });
+    $this->info("Tautan dinormalisasi: {$normalized}; pemeriksaan dijadwalkan: {$queued}.");
+})->purpose('Recover Facebook Reel URLs using saved provider paths or read-only metadata jobs');
 
 Schedule::call(function (): void {
     IntelligenceDocument::query()
@@ -123,3 +162,39 @@ Schedule::call(function () {
     DB::table('news_viewers')->where('expires_at', '<', now())->delete();
     DB::table('news_visits')->where('expires_at', '<', now())->delete();
 })->daily()->name('engagement-retention')->withoutOverlapping();
+
+// Recover committed video publications when queue dispatch or a worker was interrupted.
+Schedule::call(function (): void {
+    ShortVideoPublication::where(fn ($q) => $q->whereIn('status', ['queued', 'processing'])->orWhere(fn ($q) => $q->where('status', 'published')->where('stage', 'permalink')))
+        ->where('platform', '!=', 'website')->where('updated_at', '<', now()->subMinutes(3))
+        ->whereHas('video', fn ($q) => $q->where('status', 'published')->whereNull('deleted_at'))
+        ->where(fn ($q) => $q->whereNull('next_attempt_at')->orWhere('next_attempt_at', '<=', now()))
+        ->chunkById(100, function ($rows) {
+            foreach ($rows as $row) {
+                PublishShortVideo::dispatch($row->id);
+            }
+        });
+})->everyMinute()->name('recover-short-publications')->withoutOverlapping();
+
+// A killed local worker may not invoke failed(); expose a retry without losing edits.
+Schedule::call(function (): void {
+    // Recover the narrow gap between saving a revision and inserting its queue job.
+    ShortVideo::where('status', 'draft')->where('metadata->processing->status', 'queued')
+        ->where('updated_at', '<', now()->subMinutes(3))
+        ->each(function ($video) {
+            $claimed = ShortVideo::whereKey($video->id)
+                ->where('metadata->processing->revision', $video->metadata['processing']['revision'])
+                ->where('metadata->processing->status', 'queued')
+                ->update(['updated_at' => now()]);
+            if ($claimed) {
+                ProcessShortVideo::enqueue($video);
+            }
+        });
+
+    ShortVideo::where('status', 'draft')
+        ->where('metadata->processing->status', 'processing')
+        ->where('metadata->processing->started_at', '<', now()->subMinutes(10)->toIso8601String())
+        ->each(function ($video) {
+            (new ProcessShortVideo($video->id, $video->metadata['processing']['revision']))->failed(null);
+        });
+})->everyMinute()->name('recover-short-processing')->withoutOverlapping();

@@ -1,5 +1,15 @@
 import { Link, usePage } from '@inertiajs/react';
-import { Bell, LayoutDashboard, LogIn, LogOut, Menu, Palette, Shield, UserPlus, UserCircle } from 'lucide-react';
+import {
+    Bell,
+    LayoutDashboard,
+    LogIn,
+    LogOut,
+    Menu,
+    Palette,
+    Shield,
+    UserPlus,
+    UserCircle,
+} from 'lucide-react';
 import { WebsiteLanguage } from '@/components/website-language';
 import { useInitials } from '@/hooks/use-initials';
 import { login, register } from '@/routes';
@@ -10,7 +20,11 @@ import { edit as editSecurity } from '@/routes/security';
 import type { SharedData } from '@/types';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { Button } from './ui/button';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from './ui/dropdown-menu';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuTrigger,
+} from './ui/dropdown-menu';
 import {
     Sheet,
     SheetClose,
@@ -23,44 +37,55 @@ import { VillagerUserMenuContent } from './villager-user-menu-content';
 
 export function HeaderBar() {
     const getInitials = useInitials();
-    const { auth, categories = [], unreadNotifications } = usePage<SharedData>().props;
-    const canAccessAdmin = auth.user?.role === 'admin' || auth.user?.role === 'moderator';
+    const page = usePage<SharedData>();
+    const { auth, unreadNotifications } = page.props;
+    const path = page.url.split('?')[0];
+    const homeActive = path === '/';
+    const newsActive = path === '/news' || path.startsWith('/news/');
+    const videosActive = path === '/videos' || path.startsWith('/shorts/');
+    const canAccessAdmin =
+        auth.user?.role === 'admin' || auth.user?.role === 'moderator';
 
     return (
-        <nav className="sticky top-0 z-40 border-b border-border bg-background px-4 py-3">
-            <div className="mx-auto flex max-w-7xl items-center justify-between">
-
+        <nav className="sticky top-0 z-40 h-[65px] border-b border-border bg-background px-4 py-3">
+            <div className="relative mx-auto flex max-w-7xl items-center justify-between">
                 {/*  Logo  */}
                 <div className="flex items-center">
                     <Link
                         href="/"
-                        className="transition-transform duration-200 hover:scale-105 inline-block"
+                        className="inline-block transition-transform duration-200 hover:scale-105"
                     >
-                        <img src="/logo_w_name.svg" alt="ApaKhabar" className="h-10 w-auto" />
+                        <img
+                            src="/logo_w_name.svg"
+                            alt="ApaKhabar"
+                            className="h-10 w-auto"
+                        />
                     </Link>
                 </div>
 
                 {/*  Nav links  */}
-                <div className="hidden items-center space-x-6 text-sm font-medium text-foreground lg:flex">
+                <div className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-6 text-sm font-medium text-foreground lg:flex">
                     <Link
                         href="/"
-                        className="relative text-foreground transition-colors duration-200 hover:text-primary
-                                   after:absolute after:bottom-[-2px] after:left-0 after:h-px after:w-0 after:bg-green-600
-                                   after:transition-[width] after:duration-300 hover:after:w-full"
+                        aria-current={homeActive ? 'page' : undefined}
+                        className={`relative transition-colors duration-200 after:absolute after:bottom-[-2px] after:left-0 after:h-px after:bg-green-600 after:transition-[width] after:duration-300 hover:text-primary hover:after:w-full ${homeActive ? 'text-primary after:w-full' : 'text-foreground'}`}
                     >
                         Beranda
                     </Link>
-                    {(categories as string[]).map((category) => (
-                        <Link
-                            key={category}
-                            href={`/news?category=${encodeURIComponent(category)}`}
-                            className="relative text-foreground transition-colors duration-200 hover:text-primary
-                                       after:absolute after:bottom-[-2px] after:left-0 after:h-px after:w-0 after:bg-green-600
-                                       after:transition-[width] after:duration-300 hover:after:w-full"
-                        >
-                            {category}
-                        </Link>
-                    ))}
+                    <Link
+                        href="/news"
+                        aria-current={newsActive ? 'page' : undefined}
+                        className={`relative transition-colors duration-200 after:absolute after:bottom-[-2px] after:left-0 after:h-px after:w-0 after:bg-green-600 after:transition-[width] after:duration-300 hover:text-primary hover:after:w-full ${newsActive ? 'text-primary after:w-full' : 'text-foreground'}`}
+                    >
+                        Berita Terbaru
+                    </Link>
+                    <Link
+                        href="/videos"
+                        aria-current={videosActive ? 'page' : undefined}
+                        className={`relative transition-colors duration-200 after:absolute after:bottom-[-2px] after:left-0 after:h-px after:w-0 after:bg-green-600 after:transition-[width] after:duration-300 hover:text-primary hover:after:w-full ${videosActive ? 'text-primary after:w-full' : 'text-foreground'}`}
+                    >
+                        Video
+                    </Link>
                 </div>
 
                 {/* Auth Buttons */}
@@ -70,7 +95,11 @@ export function HeaderBar() {
                         <>
                             {canAccessAdmin && (
                                 <Link href={adminRoutes.dashboard()}>
-                                    <Button variant="ghost" size="icon" className="relative h-9 w-9">
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="relative h-9 w-9"
+                                    >
                                         <LayoutDashboard data-icon="inline-start" />
                                     </Button>
                                 </Link>
@@ -78,16 +107,20 @@ export function HeaderBar() {
 
                             {/*  Bell  */}
                             <Link href="/notifications">
-                                <Button variant="ghost" size="icon" className="relative h-9 w-9">
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="relative h-9 w-9"
+                                >
                                     <Bell
-                                        className={`h-5 w-5 text-muted-foreground transition-transform duration-200
-                                                    hover:scale-110
-                                                    ${unreadNotifications > 0 ? '[animation:bellWobble_1.2s_ease_2]' : ''}`}
+                                        className={`h-5 w-5 text-muted-foreground transition-transform duration-200 hover:scale-110 ${unreadNotifications > 0 ? '[animation:bellWobble_1.2s_ease_2]' : ''}`}
                                     />
                                     {unreadNotifications > 0 && (
                                         // 5️⃣ Badge pulses to draw attention
-                                        <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-brand-500 text-[9px] font-bold text-white ring-2 ring-background animate-pulse">
-                                            {unreadNotifications > 9 ? '9+' : unreadNotifications}
+                                        <span className="absolute -top-1 -right-1 flex h-4 w-4 animate-pulse items-center justify-center rounded-full bg-brand-500 text-[9px] font-bold text-white ring-2 ring-background">
+                                            {unreadNotifications > 9
+                                                ? '9+'
+                                                : unreadNotifications}
                                         </span>
                                     )}
                                 </Button>
@@ -98,8 +131,7 @@ export function HeaderBar() {
                                 <DropdownMenuTrigger asChild>
                                     <Button
                                         variant="ghost"
-                                        className="size-10 rounded-full p-1 transition-all duration-200
-                                                   hover:ring-2 hover:ring-green-400 hover:ring-offset-1"
+                                        className="size-10 rounded-full p-1 transition-all duration-200 hover:ring-2 hover:ring-green-400 hover:ring-offset-1"
                                     >
                                         <Avatar className="size-8 overflow-hidden rounded-full">
                                             <AvatarImage
@@ -116,7 +148,9 @@ export function HeaderBar() {
                                     className="w-56"
                                     align="end"
                                     //  Dropdown slides down from top
-                                    style={{ animation: 'fadeSlideUp 0.2s ease both' }}
+                                    style={{
+                                        animation: 'fadeSlideUp 0.2s ease both',
+                                    }}
                                 >
                                     <VillagerUserMenuContent user={auth.user} />
                                 </DropdownMenuContent>
@@ -127,8 +161,7 @@ export function HeaderBar() {
                                 href="/logout"
                                 method="post"
                                 as="button"
-                                className="rounded-sm border border-gray-300 dark:border-neutral-700 px-4 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300
-                                           hover:bg-gray-100 dark:hover:bg-neutral-800 transition-colors duration-200"
+                                className="rounded-sm border border-gray-300 px-4 py-1.5 text-sm font-medium text-gray-700 transition-colors duration-200 hover:bg-gray-100 dark:border-neutral-700 dark:text-gray-300 dark:hover:bg-neutral-800"
                             >
                                 Keluar
                             </Link>
@@ -138,8 +171,7 @@ export function HeaderBar() {
                             {/* 9️⃣ Masuk — color transition */}
                             <Link
                                 href={login()}
-                                className="text-sm font-medium text-gray-700 dark:text-gray-300
-                                           hover:text-black dark:hover:text-white transition-colors duration-200"
+                                className="text-sm font-medium text-gray-700 transition-colors duration-200 hover:text-black dark:text-gray-300 dark:hover:text-white"
                             >
                                 Masuk
                             </Link>
@@ -147,8 +179,7 @@ export function HeaderBar() {
                             {/* 🔟 Daftar — scale press on click */}
                             <Link
                                 href={register()}
-                                className="rounded-sm bg-green-600 px-4 py-1.5 text-sm font-medium text-white
-                                           hover:bg-green-700 active:scale-95 transition-all duration-150"
+                                className="rounded-sm bg-green-600 px-4 py-1.5 text-sm font-medium text-white transition-all duration-150 hover:bg-green-700 active:scale-95"
                             >
                                 Daftar
                             </Link>
@@ -156,7 +187,9 @@ export function HeaderBar() {
                     )}
                 </div>
 
-                <div className="ml-auto mr-3 lg:hidden"><WebsiteLanguage /></div>
+                <div className="mr-3 ml-auto lg:hidden">
+                    <WebsiteLanguage />
+                </div>
                 <Sheet>
                     <SheetTrigger asChild>
                         <Button
@@ -168,9 +201,14 @@ export function HeaderBar() {
                             <Menu className="size-5" />
                         </Button>
                     </SheetTrigger>
-                    <SheetContent side="right" className="w-[min(22rem,calc(100vw-2rem))]">
-                                <SheetHeader className="border-b border-border px-6 py-5">
-                            <SheetTitle className="text-left">Menu ApaKhabar</SheetTitle>
+                    <SheetContent
+                        side="right"
+                        className="w-[min(22rem,calc(100vw-2rem))]"
+                    >
+                        <SheetHeader className="border-b border-border px-6 py-5">
+                            <SheetTitle className="text-left">
+                                Menu ApaKhabar
+                            </SheetTitle>
                         </SheetHeader>
 
                         <div className="flex flex-1 flex-col overflow-y-auto px-4 py-2">
@@ -178,21 +216,30 @@ export function HeaderBar() {
                                 <SheetClose asChild>
                                     <Link
                                         href="/"
-                                        className="flex min-h-11 items-center gap-3 rounded-md px-3 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-neutral-800"
+                                        aria-current={homeActive ? 'page' : undefined}
+                                        className={`flex min-h-11 items-center gap-3 rounded-md px-3 text-sm font-medium hover:bg-gray-100 dark:hover:bg-neutral-800 ${homeActive ? 'text-primary' : 'text-gray-700 dark:text-gray-300'}`}
                                     >
                                         Beranda
                                     </Link>
                                 </SheetClose>
-                                {(categories as string[]).map((category) => (
-                                    <SheetClose asChild key={category}>
-                                        <Link
-                                            href={`/news?category=${encodeURIComponent(category)}`}
-                                            className="flex min-h-11 items-center rounded-md px-3 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-neutral-800"
-                                        >
-                                            {category}
-                                        </Link>
-                                    </SheetClose>
-                                ))}
+                                <SheetClose asChild>
+                                    <Link
+                                        href="/news"
+                                        aria-current={newsActive ? 'page' : undefined}
+                                        className={`flex min-h-11 items-center rounded-md px-3 text-sm font-medium hover:bg-gray-100 dark:hover:bg-neutral-800 ${newsActive ? 'text-primary' : 'text-gray-700 dark:text-gray-300'}`}
+                                    >
+                                        Berita Terbaru
+                                    </Link>
+                                </SheetClose>
+                                <SheetClose asChild>
+                                    <Link
+                                        href="/videos"
+                                        aria-current={videosActive ? 'page' : undefined}
+                                        className={`flex min-h-11 items-center rounded-md px-3 text-sm font-medium hover:bg-gray-100 dark:hover:bg-neutral-800 ${videosActive ? 'text-primary' : 'text-gray-700 dark:text-gray-300'}`}
+                                    >
+                                        Video
+                                    </Link>
+                                </SheetClose>
                             </div>
 
                             <div className="my-4 border-t border-border" />
@@ -221,7 +268,9 @@ export function HeaderBar() {
                                             </span>
                                             {unreadNotifications > 0 && (
                                                 <span className="rounded-full bg-green-500 px-2 py-0.5 text-xs font-bold text-white">
-                                                    {unreadNotifications > 9 ? '9+' : unreadNotifications}
+                                                    {unreadNotifications > 9
+                                                        ? '9+'
+                                                        : unreadNotifications}
                                                 </span>
                                             )}
                                         </Link>
