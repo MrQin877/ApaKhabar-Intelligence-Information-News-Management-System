@@ -1,0 +1,15 @@
+.git
+.env
+.env.*
+!/.env.example
+vendor
+node_modules
+storage
+public/storage
+public/build
+public/hot
+deployment/.env
+deployment/laravel.env
+deployment/ai.env
+deployment/models
+*.gguf

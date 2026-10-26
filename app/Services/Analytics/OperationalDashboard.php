@@ -20,14 +20,14 @@ class OperationalDashboard
         $end = CarbonImmutable::parse($to, $zone)->endOfDay()->timezone(config('app.timezone'));
         $today = CarbonImmutable::now($zone)->startOfDay()->timezone(config('app.timezone'));
         $pending = Comment::awaitingReview();
-        $flagged = (clone $pending)->where(fn ($q) => $q->where('ai_flagged', true)->orWhereIn('commentID', DB::table('comment_reports')->whereNull('resolved_at')->select('comment_id')))->count();
+        $flagged = (clone $pending)->where(fn ($q) => $q->where('ai_flagged', true)->orWhereIn('commentID', DB::table('comment_reports')->whereNull('resolved_at')->select('comment_id'))->orWhereIn('commentID', DB::table('comment_flags')->whereNull('resolved_at')->select('comment_id')))->count();
         $history = DB::table('comment_moderation_history')->where('moderator_id', $actor->getKey());
         $trend = [];
         $events = (clone $history)->whereBetween('created_at', [CarbonImmutable::now($zone)->subDays(6)->startOfDay()->timezone(config('app.timezone')), $today->endOfDay()])->get();
         for ($i = 6; $i >= 0; $i--) {
             $day = CarbonImmutable::now($zone)->subDays($i)->format('Y-m-d');
             $group = $events->filter(fn ($r) => CarbonImmutable::parse($r->created_at, config('app.timezone'))->timezone($zone)->format('Y-m-d') === $day);
-            $trend[] = ['label' => $day, 'approved' => $group->where('to_status', 'published')->count(), 'rejected' => $group->whereIn('to_status', ['removed', 'rejected'])->count()];
+            $trend[] = ['label' => $day, 'approved' => $group->where('to_status', 'published')->count(), 'rejected' => $group->whereIn('to_status', ['hidden', 'removed', 'rejected'])->count()];
         }
         $queue = (clone $pending)->with(['news:postID,title', 'author:userID,name'])
             ->withCount(['reporters as unresolved_reports_count' => fn ($q) => $q->whereNull('comment_reports.resolved_at')])

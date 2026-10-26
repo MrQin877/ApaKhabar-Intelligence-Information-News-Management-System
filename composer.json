@@ -58,7 +58,7 @@
         ],
         "dev": [
             "Composer\\Config::disableProcessTimeout",
-            "npx concurrently --restart-tries=-1 --restart-after=5000 -c \"#93c5fd,#c4b5fd,#a7f3d0,#fdba74\" \"php scripts/serve.php\" \"php scripts/queue-worker.php --queue=documents,default --tries=5 --timeout=1250\" \"php scripts/queue-worker.php --queue=generation --tries=1 --timeout=1250\" \"php artisan schedule:work\" \"npm run dev\" --names=server,documents,generation,scheduler,vite"
+            "npx concurrently --restart-tries=-1 --restart-after=5000 -c \"#93c5fd,#c4b5fd,#a7f3d0,#fdba74\" \"php scripts/serve.php\" \"php scripts/queue-worker.php --queue=documents,default --tries=5 --timeout=1250\" \"php scripts/queue-worker.php --queue=generation --tries=1 --timeout=1250\" \"php scripts/queue-worker.php --queue=video-publishing --tries=1 --timeout=90\" \"php scripts/queue-worker.php --queue=video-publishing --tries=1 --timeout=90\" \"php artisan schedule:work\" \"npm run dev\" --names=server,documents,generation,videos-1,videos-2,scheduler,vite"
         ],
         "dev:ssr": [
             "npm run build:ssr",

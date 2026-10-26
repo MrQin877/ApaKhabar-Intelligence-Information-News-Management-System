@@ -1,8 +1,9 @@
 import { CheckCircle2, CircleAlert, Info, X } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 export type Feedback = {
     message: string;
+    title?: string;
     variant: 'success' | 'error' | 'info';
 };
 
@@ -10,20 +11,28 @@ export function FeedbackToast({
     feedback,
     onDismiss,
     inline = false,
+    duration = 4000,
 }: {
     feedback: Feedback | null;
     onDismiss: () => void;
     inline?: boolean;
+    duration?: number;
 }) {
+    const dismissRef = useRef(onDismiss);
+
+    useEffect(() => {
+        dismissRef.current = onDismiss;
+    }, [onDismiss]);
+
     useEffect(() => {
         if (!feedback) {
             return;
         }
 
-        const timer = window.setTimeout(onDismiss, 4000);
+        const timer = window.setTimeout(() => dismissRef.current(), duration);
 
         return () => window.clearTimeout(timer);
-    }, [feedback, onDismiss]);
+    }, [feedback, duration]);
 
     if (!feedback) {
         return null;
@@ -44,10 +53,15 @@ export function FeedbackToast({
     return (
         <div
             role={feedback.variant === 'error' ? 'alert' : 'status'}
-            className={`flex items-start gap-3 rounded-xl border p-4 text-sm ${inline ? 'w-full' : 'fixed top-4 right-4 z-[100] w-[calc(100%-2rem)] max-w-sm shadow-lg'} ${colors[feedback.variant]}`}
+            className={`flex items-start gap-3 rounded-xl border p-4 text-sm ${inline ? 'w-full' : 'fixed top-[calc(env(safe-area-inset-top)+5rem)] right-3 z-[100] w-[calc(100%-1.5rem)] max-w-sm shadow-lg sm:right-4'} ${colors[feedback.variant]}`}
         >
             <Icon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-            <p className="min-w-0 flex-1">{feedback.message}</p>
+            <div className="min-w-0 flex-1">
+                {feedback.title && (
+                    <p className="font-semibold">{feedback.title}</p>
+                )}
+                <p>{feedback.message}</p>
+            </div>
             <button
                 type="button"
                 onClick={onDismiss}

@@ -97,7 +97,7 @@ export function NavMain({ items = [] }: { items: NavItem[] }) {
                         </SidebarMenuItem>
                     ) : item.items && item.items.length > 0 ? (
                         <Collapsible
-                            key={item.title}
+                            key={`${item.title}:${url.split(/[?#]/)[0]}`}
                             asChild
                             defaultOpen={item.items.some((sub) =>
                                 url.startsWith(toUrl(sub.href ?? '#')),

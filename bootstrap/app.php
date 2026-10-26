@@ -41,6 +41,9 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->render(function (PostTooLargeException $exception, Request $request) {
             $message = 'Unggahan terlalu besar. Maksimum 20 MB per file dan 5 file per unggahan. Jika ukuran sudah sesuai, periksa batas unggahan server.';
+            if ($request->is('admin/short-videos/*')) {
+                $message = 'Video maksimal 100 MB dan sampul maksimal 5 MB. Periksa juga batas unggahan PHP/proxy server.';
+            }
             if ($request->expectsJson()) {
                 return response()->json(['message' => $message], 413);
             }

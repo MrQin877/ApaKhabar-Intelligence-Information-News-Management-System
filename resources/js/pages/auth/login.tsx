@@ -70,7 +70,7 @@ export default function Login({ status, canResetPassword, canRegister }: Props) 
                             </div>
  
                             <div className="flex items-center space-x-3">
-                                <Checkbox id="remember" name="remember" tabIndex={3} />
+                                <Checkbox id="remember" name="remember" value="1" tabIndex={3} />
                                 <Label htmlFor="remember">Ingat saya</Label>
                             </div>
  

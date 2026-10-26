@@ -3,13 +3,18 @@
 use App\Http\Controllers\Admin\AnalyticsController;
 use App\Http\Controllers\Admin\AssistantCategoryController;
 use App\Http\Controllers\Admin\BroadcastController;
-use App\Http\Controllers\Admin\MetaAnalyticsController;
+use App\Http\Controllers\Admin\CommentFlagController;
 use App\Http\Controllers\Admin\CommentModerationController;
+use App\Http\Controllers\Admin\MetaAnalyticsController;
 use App\Http\Controllers\Admin\MetaConnectionController;
 use App\Http\Controllers\Admin\NewsCategoryController;
 use App\Http\Controllers\Admin\NewsCreatorController;
 use App\Http\Controllers\Admin\NewsWorkspaceController;
+use App\Http\Controllers\Admin\ShortVideoController;
 use App\Http\Controllers\Auth\MobileEmailVerificationController;
+use App\Http\Controllers\Home\ShortEngagementController;
+use App\Http\Controllers\Home\ShortViewerController;
+use App\Http\Controllers\Home\VideoPageController;
 use App\Http\Controllers\Home\WelcomeController;
 use App\Http\Controllers\News\CommentController;
 use App\Http\Controllers\News\EngagementController;
@@ -20,6 +25,7 @@ use App\Http\Controllers\Village\NotificationController;
 use App\Http\Controllers\WebsiteTranslationController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Storage;
 
 Route::get('/mobile/email/verify/{id}/{hash}', [MobileEmailVerificationController::class, 'verify'])
     ->middleware('throttle:30,1')->name('mobile.verification.verify');
@@ -45,6 +51,33 @@ Route::post('/website/translate', WebsiteTranslationController::class)
 // Public routes — no auth required
 
 Route::get('/', [WelcomeController::class, 'index'])->name('home');
+Route::get('/videos', [VideoPageController::class, 'index'])->name('videos.index');
+Route::get('/short-media/{kind}/{file}', function (string $kind, string $file) {
+    abort_unless(in_array($kind, ['original', 'edits'], true)
+        && preg_match('/^[a-f0-9-]{36}\.mp4$/i', $file), 404);
+    $path = "shorts/{$kind}/{$file}";
+    abort_unless(Storage::disk('public')->exists($path), 404);
+
+    return response()->file(Storage::disk('public')->path($path), [
+        'Content-Type' => 'video/mp4',
+        'Cache-Control' => 'public, max-age=86400',
+        'X-Content-Type-Options' => 'nosniff',
+    ]);
+})->name('short-media.show');
+Route::get('/shorts/{id}', [ShortViewerController::class, 'show'])->whereNumber('id')->name('shorts.show');
+Route::get('/shorts/{id}/view-token', [ShortViewerController::class, 'token'])->whereNumber('id')->middleware('throttle:30,1');
+Route::post('/shorts/{id}/view', [ShortViewerController::class, 'view'])->whereNumber('id')->middleware('throttle:30,1');
+Route::get('/shorts/{id}/engagement', [ShortEngagementController::class, 'context'])->whereNumber('id')->middleware('throttle:30,1');
+Route::get('/shorts/{id}/comments', [ShortEngagementController::class, 'index'])->whereNumber('id')->middleware('throttle:60,1');
+Route::get('/shorts/{id}/comments/{comment}/replies', [ShortEngagementController::class, 'replies'])->whereNumber(['id', 'comment'])->middleware('throttle:60,1');
+Route::post('/shorts/{id}/comments', [ShortEngagementController::class, 'store'])->whereNumber('id')->middleware('throttle:5,1');
+Route::post('/shorts/{id}/comments/{comment}/replies', [ShortEngagementController::class, 'reply'])->whereNumber(['id', 'comment'])->middleware('throttle:5,1');
+Route::middleware(['auth', 'throttle:30,1'])->group(function () {
+    Route::post('/shorts/{id}/like', [ShortEngagementController::class, 'likeVideo'])->whereNumber('id');
+    Route::post('/shorts/{id}/comments/{comment}/like', [ShortEngagementController::class, 'likeComment'])->whereNumber(['id', 'comment']);
+    Route::post('/shorts/{id}/comments/{comment}/report', [ShortEngagementController::class, 'report'])->whereNumber(['id', 'comment'])->middleware('throttle:5,1');
+});
+Route::post('/shorts/{id}/comments/{comment}/flag', [ShortEngagementController::class, 'flag'])->whereNumber(['id', 'comment'])->middleware(['auth', 'verified', 'throttle:5,1']);
 
 Route::get('/news', [NewsController::class, 'index'])->name('news.index');
 
@@ -53,11 +86,11 @@ Route::get('/news/{id}', [NewsController::class, 'show'])->name('news.show');
 Route::get('/news/{id}/engagement', [EngagementController::class, 'context'])->middleware('throttle:30,1');
 Route::post('/news/{id}/view', [EngagementController::class, 'view'])->middleware('throttle:30,1');
 Route::post('/news/{id}/comment', [CommentController::class, 'store'])->middleware('throttle:5,1')->name('news.comment');
+Route::post('/comments/{id}/replies', [CommentController::class, 'reply'])->middleware('throttle:5,1')->name('comments.reply');
 Route::middleware(['auth', 'throttle:30,1'])->group(function () {
     Route::post('/news/{id}/like', [PostLikeController::class, 'store'])->name('news.like');
     Route::post('/comments/{id}/like', [CommentController::class, 'like'])->name('comments.like');
     Route::post('/comments/{id}/report', [EngagementController::class, 'report'])->name('comments.report');
-    Route::post('/comments/{id}/replies', [CommentController::class, 'reply'])->middleware('throttle:5,1')->name('comments.reply');
 });
 
 // Authenticated routes — login required for all but shared between villager and admin
@@ -80,9 +113,9 @@ Route::middleware(['auth', 'verified', 'role:villager'])->group(function () {
 
 // Article moderation data is never included in public article responses.
 Route::middleware(['auth', 'verified', 'throttle:30,1'])->prefix('admin/news/{news}/moderation-comments')->group(function () {
-    Route::get('/', [\App\Http\Controllers\Admin\ModerationFeedbackController::class, 'index']);
-    Route::get('/{comment}', [\App\Http\Controllers\Admin\ModerationFeedbackController::class, 'show']);
-    Route::post('/{comment}/feedback', [\App\Http\Controllers\Admin\ModerationFeedbackController::class, 'store']);
+    Route::get('/', [CommentFlagController::class, 'index']);
+    Route::get('/{comment}', [CommentFlagController::class, 'show']);
+    Route::post('/{comment}/flag', [CommentFlagController::class, 'flag']);
 });
 
 // Admin portal — admin and moderator only
@@ -109,7 +142,23 @@ Route::prefix('admin')
         Route::post('/analytics/meta/sync', [MetaAnalyticsController::class, 'sync'])->middleware('throttle:2,1,meta-insights-sync:')->name('analytics.meta.sync');
         Route::get('/analytics', [AnalyticsController::class, 'index'])->name('analytics.index');
         Route::put('/analytics/dashboard', [AnalyticsController::class, 'update'])->name('analytics.dashboard.update');
+        Route::get('/short-videos', [ShortVideoController::class, 'index'])->name('short-videos.index');
+        Route::get('/short-videos/create', [ShortVideoController::class, 'create'])->name('short-videos.create');
+        Route::post('/short-videos/upload', [ShortVideoController::class, 'upload'])->middleware('throttle:10,1');
+        Route::post('/short-videos/{shortVideo}', [ShortVideoController::class, 'update']);
+        Route::get('/short-videos/{shortVideo}/processing', [ShortVideoController::class, 'processing']);
+        Route::post('/short-videos/{shortVideo}/processing/retry', [ShortVideoController::class, 'retryProcessing'])->middleware('throttle:10,1');
+        Route::post('/short-videos/{shortVideo}/preview', [ShortVideoController::class, 'preview']);
+        Route::post('/short-videos/{shortVideo}/crop', [ShortVideoController::class, 'crop'])->middleware('throttle:5,1');
+        Route::post('/short-videos/{shortVideo}/publish', [ShortVideoController::class, 'publish'])->middleware('throttle:10,1');
+        Route::get('/short-videos/{shortVideo}/status', [ShortVideoController::class, 'status']);
+        Route::post('/short-videos/{shortVideo}/retry/{platform}', [ShortVideoController::class, 'retry'])->middleware('throttle:10,1');
+        Route::post('/short-videos/{shortVideo}/retry-selected', [ShortVideoController::class, 'retrySelected'])->middleware('throttle:10,1');
+        Route::post('/short-videos/{shortVideo}/restore', [ShortVideoController::class, 'restore']);
+        Route::post('/short-videos/{shortVideo}/archive', [ShortVideoController::class, 'archive']);
+        Route::post('/short-videos/{shortVideo}/delete', [ShortVideoController::class, 'destroy']);
         Route::get('/comments', [CommentModerationController::class, 'index'])->name('comments.index');
+        Route::get('/comments/legacy-history', [CommentModerationController::class, 'legacyHistory'])->name('comments.legacy-history');
         Route::post('/comments/{id}/decision', [CommentModerationController::class, 'decide'])->middleware('throttle:30,1')->name('comments.decision');
 
         // Broadcasting — full CRUD + archive/restore

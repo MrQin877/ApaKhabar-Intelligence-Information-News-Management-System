@@ -12,6 +12,8 @@ import AppLogoIcon from '@/components/app-logo-icon';
 import type { PublishPlatformId } from '@/components/publish-news-dialog';
 
 export interface PublicationPreviewData {
+    video_url?: string;
+    thumbnail_url?: string;
     token: string;
     title: string;
     category: string | null;

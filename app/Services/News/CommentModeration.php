@@ -8,7 +8,7 @@ class CommentModeration
 {
     public function check(string $content): array
     {
-        $result = ['status' => 'pending_review', 'ai_flagged' => null, 'moderation_categories' => [], 'moderation_reason' => 'moderation_unavailable', '_assessment' => ['requested_model' => 'omni-moderation-latest']];
+        $result = ['status' => 'pending_review', 'ai_flagged' => null, 'moderation_categories' => [], 'moderation_reason' => 'moderation_unavailable'];
         // Links are held for a human: the moderation endpoint is not a spam detector.
         $suspicious = preg_match('~https?://|www\.|[a-z0-9-]+\.(com|net|org|id)\b~iu', $content)
             || preg_match('/\b(promo|discount|diskon|whatsapp|telegram|judi|slot gacor)\b/iu', $content);
@@ -21,7 +21,6 @@ class CommentModeration
                 ->post('https://api.openai.com/v1/moderations', [
                     'model' => 'omni-moderation-latest', 'input' => $content,
                 ])->throw()->json();
-            $result['_assessment']['returned_model'] = is_string($response['model'] ?? null) ? $response['model'] : null;
             $response = $response['results'][0] ?? null;
             if (! is_array($response) || ! is_bool($response['flagged'] ?? null)
                 || ! is_array($response['categories'] ?? null) || empty($response['categories'])
@@ -31,7 +30,6 @@ class CommentModeration
             $flagged = $response['flagged'] || in_array(true, $response['categories'], true);
 
             return [
-                '_assessment' => array_merge($result['_assessment'], ['category_scores' => is_array($response['category_scores'] ?? null) ? $response['category_scores'] : null]),
                 'status' => ($flagged || $suspicious) ? 'pending_review' : 'published',
                 'ai_flagged' => $flagged,
                 'moderation_categories' => $response['categories'],

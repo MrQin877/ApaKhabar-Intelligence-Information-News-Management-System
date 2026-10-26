@@ -5,6 +5,7 @@ namespace App\Http\Middleware;
 use App\Models\Comment;
 use App\Models\NewsCategory;
 use App\Models\Notification;
+use App\Models\ShortVideoComment;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -30,7 +31,7 @@ class HandleInertiaRequests extends Middleware
                 $user = $request->user();
 
                 return $user && $user->hasVerifiedEmail() && ($user->isAdmin() || $user->isModerator())
-                    ? Comment::awaitingReview()->count() : 0;
+                    ? Comment::awaitingReview()->count() + ShortVideoComment::awaitingReview()->count() : 0;
             },
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
 

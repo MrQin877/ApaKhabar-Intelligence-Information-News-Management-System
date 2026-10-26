@@ -82,15 +82,7 @@ export default function Dashboard({
         lock.current = true;
         setBusy(comment.id);
         setError('');
-        const action = approve
-            ? comment.status === 'published'
-                ? 'dismiss_reports'
-                : comment.status === 'removed'
-                  ? 'restore'
-                  : 'approve'
-            : comment.status === 'published'
-              ? 'remove'
-              : 'reject';
+        const action = approve ? 'allow' : 'hide';
 
         try {
             await engagementPost(`/admin/comments/${comment.id}/decision`, {
@@ -100,7 +92,7 @@ export default function Dashboard({
             setMessage(
                 approve
                     ? 'Komentar disetujui. Antrean diperbarui.'
-                    : 'Komentar ditolak. Antrean diperbarui.',
+                    : 'Komentar disembunyikan. Antrean diperbarui.',
             );
             setRemoving(comment.id);
             window.setTimeout(
@@ -517,7 +509,7 @@ export default function Dashboard({
                                                 onClick={() => decide(c, false)}
                                             >
                                                 <X />
-                                                Tolak
+                                                Sembunyikan
                                             </Button>
                                         </div>
                                     </article>
@@ -540,7 +532,7 @@ export default function Dashboard({
                                 },
                                 {
                                     key: 'rejected',
-                                    label: 'Ditolak / dihapus',
+                                    label: 'Disembunyikan / ditolak',
                                     color: '#ef4444',
                                 },
                             ]}

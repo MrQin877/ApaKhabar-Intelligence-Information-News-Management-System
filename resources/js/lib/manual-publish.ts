@@ -1,9 +1,27 @@
 export type PublishResult = {
+    pending?: boolean;
+    permalink_pending?: boolean;
     success: boolean;
     attempt_id: string;
     retry_url?: string;
     completion_url?: string;
-    results: Record<string, { success: boolean; message: string }>;
+    results: Record<
+        string,
+        {
+            success: boolean;
+            message: string;
+            account?: string | null;
+            permalink?: string | null;
+            status?:
+                | 'published'
+                | 'failed'
+                | 'processing'
+                | 'uploading'
+                | 'queued'
+                | 'uncertain'
+                | 'not_selected';
+        }
+    >;
 };
 
 // Allow slow media publishing to finish, but never leave the editor waiting forever.
@@ -57,6 +75,7 @@ export async function publishManual(
                       }
                     : {
                           success: false,
+                          status: 'uncertain',
                           message:
                               'Hasil penerbitan tidak diterima. Periksa Daftar Berita sebelum mencoba kembali.',
                       };
@@ -81,6 +100,7 @@ export async function publishManual(
                     platform === 'website' ? 'application' : platform,
                     {
                         success: false,
+                        status: 'uncertain',
                         message: controller.signal.aborted
                             ? 'Waktu tunggu hasil penerbitan habis. Proses server mungkin masih berjalan. Periksa Daftar Berita sebelum mencoba kembali.'
                             : 'Hasil penerbitan tidak dapat diterima. Periksa Daftar Berita sebelum mencoba kembali; sebagian platform mungkin sudah berhasil.',

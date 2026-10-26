@@ -284,16 +284,16 @@ test('moderator queue counts distinct flagged comments and only personal decisio
     $post = News::factory()->create();
     $c = Comment::create(['newsID' => $post->getKey(), 'content' => 'Perlu ditinjau', 'status' => 'pending_review', 'ai_flagged' => true]);
     $reporter = analyticsUser('villager');
-    DB::table('comment_reports')->insert(['comment_id' => $c->getKey(), 'user_id' => $reporter->getKey(), 'reason' => 'Spam', 'created_at' => now()]);
+    DB::table('comment_reports')->insert(['comment_id' => $c->getKey(), 'user_id' => $reporter->getKey(), 'category' => 'Spam', 'created_at' => now()]);
     foreach ([$moderator, $other] as $actor) {
         DB::table('comment_moderation_history')->insert(['comment_id' => $c->getKey(), 'moderator_id' => $actor->getKey(), 'to_status' => 'published', 'reason' => 'approve: test', 'created_at' => now()]);
     }
     $this->actingAs($moderator)->get('/admin/dashboard')->assertOk()->assertInertia(fn (Assert $page) => $page
         ->where('operational.moderation.pending', 1)->where('operational.moderation.flagged', 1)->where('operational.moderation.today', 1)
         ->where('operational.moderation.queue.0.reports', 1)->missing('operational.admin'));
-    $this->postJson('/admin/comments/'.$c->getKey().'/decision', ['action' => 'approve', 'expected_revision' => 0])->assertOk();
+    $this->postJson('/admin/comments/'.$c->getKey().'/decision', ['action' => 'allow', 'expected_revision' => 0])->assertOk();
     $this->get('/admin/dashboard')->assertInertia(fn (Assert $page) => $page->where('operational.moderation.pending', 0)->where('operational.moderation.today', 2)->has('operational.moderation.queue', 0));
-    $this->postJson('/admin/comments/'.$c->getKey().'/decision', ['action' => 'reject', 'expected_revision' => 0])->assertConflict();
+    $this->postJson('/admin/comments/'.$c->getKey().'/decision', ['action' => 'hide', 'expected_revision' => 0])->assertConflict();
 });
 
 test('fixed category migration preserves size ordering hidden choices and backs up the old layout', function () {
@@ -324,4 +324,21 @@ test('broadcast inline breakdown keeps denominator attached to the selected broa
     $reader->notify(new BroadcastNotification($b));
     $data = app(AnalyticsReport::class)->build(['broadcast'], now(config('analytics.timezone'))->toDateString(), now(config('analytics.timezone'))->toDateString())[0];
     expect($data['rows'][1]['value'])->toBe(1)->and($data['recent'][0]['recorded'])->toBe(1)->and($data['recent'][0]['read'])->toBe(0);
+});
+
+test('dashboard resolves administrator flags using the merged hide action and counts hidden decisions', function () {
+    $moderator = analyticsUser('moderator');
+    $admin = analyticsUser();
+    $post = News::factory()->create();
+    $comment = Comment::create(['newsID' => $post->getKey(), 'content' => 'Flagged by staff', 'status' => 'published', 'ai_flagged' => false]);
+    DB::table('comment_flags')->insert(['comment_id' => $comment->getKey(), 'moderator_id' => $admin->getKey(), 'category' => 'Lainnya', 'explanation' => 'Needs review', 'created_at' => now()]);
+    $this->actingAs($moderator)->get('/admin/dashboard')->assertOk()->assertInertia(fn (Assert $page) => $page
+        ->where('operational.moderation.pending', 1)->where('operational.moderation.flagged', 1)
+        ->where('operational.moderation.queue.0.id', $comment->getKey())->missing('operational.admin'));
+    $this->postJson('/admin/comments/'.$comment->getKey().'/decision', ['action' => 'hide', 'expected_revision' => 0])->assertOk();
+    $this->assertDatabaseHas('comments', ['commentID' => $comment->getKey(), 'status' => 'hidden']);
+    expect(DB::table('comment_flags')->where('comment_id', $comment->getKey())->whereNull('resolved_at')->count())->toBe(0);
+    $this->get('/admin/dashboard')->assertOk()->assertInertia(fn (Assert $page) => $page
+        ->where('operational.moderation.pending', 0)->where('operational.moderation.flagged', 0)
+        ->where('operational.moderation.today', 1)->where('operational.moderation.trend.6.rejected', 1));
 });

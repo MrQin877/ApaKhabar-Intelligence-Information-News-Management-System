@@ -121,19 +121,19 @@ class AnalyticsDemoSeeder extends Seeder
                 $post->forceFill(['likes_count' => $likes])->save();
                 for ($j = 0; $j < 10 + $p % 12; $j++) {
                     $user = $users[($p * 7 + $j) % count($users)];
-                    $status = $j % 10 < 7 ? 'published' : ($j % 10 < 9 ? 'pending_review' : 'rejected');
+                    $status = $j % 10 < 7 ? 'published' : ($j % 10 < 9 ? 'pending_review' : 'hidden');
                     $time = $created->addDays($j % max(1, (int) $created->diffInDays($now)))->max(CarbonImmutable::parse($user->created_at)->addHour())->min($record($now->subHours(2)));
                     $comment = (new Comment)->forceFill(['newsID' => $post->getKey(), 'userID' => $j % 8 === 0 ? null : $user->getKey(), 'guest_name' => $j % 8 === 0 ? '[Demo] Tamu' : null, 'content' => self::PREFIX.['Terima kasih, informasinya membantu warga.', 'Apakah jadwal layanan ini juga tersedia hari Sabtu?', 'Mohon informasi lokasi kegiatan selengkapnya.', 'Saya ingin memberikan saran untuk kegiatan berikutnya.'][$j % 4].' (contoh '.($p + 1).'-'.($j + 1).')', 'status' => $status, 'ai_flagged' => $status !== 'published', 'moderation_reason' => 'Data demo, bukan hasil penilaian AI.', 'moderation_categories' => [], 'submission_hash' => hash('sha256', 'analytics-demo-v1:'.$p.':'.$j), 'created_at' => $time, 'updated_at' => $time]);
                     if ($status !== 'pending_review') {
                         $decision = $time->addMinutes(15)->max($record($anchor->subDays($j % 7)->addHours(8)))->min($record($now->subMinutes(10)));
-                        $comment->forceFill(['moderator_id' => $moderator->getKey(), 'moderated_at' => $decision]);
+                        $comment->forceFill(['moderated_at' => $decision]);
                     }
                     $comment->save();
                     if ($status !== 'pending_review') {
-                        DB::table('comment_moderation_history')->insert(['comment_id' => $comment->getKey(), 'moderator_id' => $moderator->getKey(), 'from_status' => 'pending_review', 'to_status' => $status, 'reason' => ($status === 'published' ? 'approve: ' : 'reject: ').self::PREFIX.'Contoh keputusan untuk demonstrasi.', 'created_at' => $decision]);
+                        DB::table('comment_moderation_history')->insert(['comment_id' => $comment->getKey(), 'moderator_id' => $moderator->getKey(), 'from_status' => 'pending_review', 'to_status' => $status, 'action' => $status === 'published' ? 'allow' : 'hide', 'reason' => self::PREFIX.'Contoh keputusan untuk demonstrasi.', 'created_at' => $decision]);
                     }
                     if ($status === 'pending_review' && $j % 2) {
-                        DB::table('comment_reports')->insert(['comment_id' => $comment->getKey(), 'user_id' => $users[($p + 90) % 144]->getKey(), 'reason' => self::PREFIX.'Contoh laporan untuk antrean peninjauan.', 'created_at' => $time->addMinutes(5)]);
+                        DB::table('comment_reports')->insert(['comment_id' => $comment->getKey(), 'user_id' => $users[($p + 90) % 144]->getKey(), 'category' => 'Lainnya', 'explanation' => self::PREFIX.'Contoh laporan untuk antrean peninjauan.', 'created_at' => $time->addMinutes(5)]);
                     }
                 }
             }
