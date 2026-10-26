@@ -151,8 +151,8 @@ test('real FFmpeg crop export is portrait, unrotated, playable and trimmed', fun
         $this->app->instance(LocalShortMedia::class, $local);
         $result = app(VideoCropper::class)->export('https://res.cloudinary.com/demo/video/upload/source.mp4', ['x' => 1, 'y' => 0.5, 'zoom' => 1.5, 'start' => 0.5, 'end' => 1.5]);
         expect($result['metadata']['codec'])->toBe('h264');
-        expect($result['metadata']['width'])->toBe(1080);
-        expect($result['metadata']['height'])->toBe(1920);
+        expect($result['metadata']['width'])->toBe(540);
+        expect($result['metadata']['height'])->toBe(960);
         expect($result['metadata']['rotation'])->toBe(0);
         expect($result['metadata']['sample_aspect_ratio'])->toEqual(1);
         expect($result['metadata']['duration'])->toBeGreaterThanOrEqual(0.9)->toBeLessThanOrEqual(1.1);
@@ -184,8 +184,8 @@ test('real Fit and Crop bake display matrices into upright pixels and keep audio
         expect(($source['rotation'] % 360 + 360) % 360)->toBe(($rotation % 360 + 360) % 360);
         $stored = $local->store($file);
         $result = app(VideoCropper::class)->export($stored['url'], ['mode' => $mode, 'x' => 0.5, 'y' => 0.5, 'zoom' => 1, 'start' => 0, 'end' => 0.4], $stored['path']);
-        expect($result['metadata']['width'])->toBe(1080);
-        expect($result['metadata']['height'])->toBe(1920);
+        expect($result['metadata']['width'])->toBe(540);
+        expect($result['metadata']['height'])->toBe(960);
         expect($result['metadata']['rotation'])->toBe(0);
         expect($result['metadata']['audio_codec'])->toBe('aac');
         Storage::disk('public')->assertExists($stored['path']);

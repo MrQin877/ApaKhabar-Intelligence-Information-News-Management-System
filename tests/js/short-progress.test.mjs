@@ -12,13 +12,13 @@ const words = node => node == null ? '' : typeof node !== 'object' ? String(node
 const videoResult = (instagram='processing') => ({attempt_id:'short-7',pending:instagram==='processing',results:{website:{status:'published',success:true},instagram:{status:instagram,success:instagram==='published'},facebook:{status:'not_selected'}}});
 const newsResult = (instagram=true) => ({attempt_id:'news-7',success:instagram,completion_url:'/admin/news',results:{application:{success:true},instagram:{success:instagram}}});
 function panel(storage = new Map()) {
-    const slots=[], effects=[], events=new Map(), intervals=new Map(), timeouts=new Map(), requests=[];
-    let cursor=0, serial=0, response={result:videoResult(),video:{thumbnail_url:'/video.jpg'}};
+    const slots=[], effects=[], events=new Map(), intervals=new Map(), timeouts=new Map(), requests=[], draftRequests=[];
+    let cursor=0, serial=0, response={result:videoResult(),video:{thumbnail_url:'/video.jpg'}}, draftResponse={video:{title:'Draf',thumbnail_url:null,metadata:{processing:{revision:'r1',status:'queued'}}}};
     const context={exports:{},sessionStorage:{getItem:key=>storage.get(key),setItem:(key,value)=>storage.set(key,value)},window:{
         addEventListener:(name,fn)=>events.set(name,fn),removeEventListener:name=>events.delete(name),
         setInterval:fn=>{const id=++serial;intervals.set(id,fn);return id;},clearInterval:id=>intervals.delete(id),
         setTimeout:(fn,ms)=>{const id=++serial;timeouts.set(id,{fn,ms});return id;},clearTimeout:id=>timeouts.delete(id),
-    },require(name){
+    },fetch:async url=>{draftRequests.push(url);return{ok:true,json:async()=>draftResponse};},require(name){
         if(name==='react')return{useState(init){const id=cursor++;if(!(id in slots))slots[id]=typeof init==='function'?init():init;return[slots[id],value=>{slots[id]=typeof value==='function'?value(slots[id]):value;}];},useRef(init){const id=cursor++;return slots[id]??={current:init};},useEffect(fn,deps){const id=cursor++;const prior=slots[id];if(!prior||deps.some((v,i)=>v!==prior.deps[i]))effects.push(()=>{prior?.cleanup?.();slots[id]={deps,cleanup:fn()};});}};
         if(name==='@inertiajs/react')return{usePage:()=>({props:{auth:{user:{id:42}}}}),Link:'Link'};
         if(name==='@/lib/short-publication')return{publicationPolling:result=>!result||result.pending===true||result.permalink_pending===true};
@@ -29,7 +29,7 @@ function panel(storage = new Map()) {
     vm.runInNewContext(compiled,context);
     const render=()=>{cursor=0;const tree=context.exports.ShortPublicationPanel();effects.splice(0).forEach(fn=>fn());return nodes(tree);};
     render();
-    return{render,storage,requests,timeouts,receive:(kind,detail)=>events.get(kind==='video'?'short-publication':'news-publication')({detail}),tick:async()=>{[...intervals.values()].forEach(fn=>fn());await new Promise(resolve=>setImmediate(resolve));},advance:ms=>{[...timeouts].filter(([,t])=>t.ms<=ms).forEach(([id,t])=>{timeouts.delete(id);t.fn();});},response:value=>{response=value;}};
+    return{render,storage,requests,draftRequests,timeouts,receive:(kind,detail)=>events.get(kind==='video'?'short-publication':kind==='draft'?'short-draft':'news-publication')({detail}),tick:async()=>{[...intervals.values()].forEach(fn=>fn());await new Promise(resolve=>setImmediate(resolve));},advance:ms=>{[...timeouts].filter(([,t])=>t.ms<=ms).forEach(([id,t])=>{timeouts.delete(id);t.fn();});},response:value=>{response=value;},draftResponse:value=>{draftResponse=value;}};
 }
 
 test('news and video share one panel with independent actual platform counts and detail dialogs',async()=>{
@@ -95,4 +95,45 @@ test('news and video detail dialogs retain separate titles and listing actions',
     assert.ok(video.some(n=>n.type==='DialogTitle'&&words(n).includes('Status Publikasi Video')));
     video.find(n=>n.type==='Button'&&n.props.children==='Daftar Video').props.onClick();
     assert.deepEqual(visits,['/admin/news','/admin/short-videos']);
+});
+
+test('ready draft shows the existing toast immediately after persistence and polls no media',async()=>{
+    const app=panel();
+    app.receive('draft',{id:4,title:'Draf Siap',revision:'r1',status:'ready',thumbnail_url:'/cover.jpg'});
+    let view=app.render();view=app.render();
+    assert.equal(view.find(n=>n.type==='FeedbackToast').props.feedback.message,'Draf berhasil disimpan');
+    await app.tick();app.render();
+    assert.equal(app.draftRequests.length,0);
+    view.find(n=>n.type==='FeedbackToast').props.onDismiss();
+    assert.equal(app.render().find(n=>n.type==='FeedbackToast').props.feedback,null);
+});
+
+test('queued draft completes after navigation and polling never repeats its success toast',async()=>{
+    const storage=new Map();const editor=panel(storage);
+    editor.receive('draft',{id:5,title:'Draf Tertunda',revision:'r1',status:'queued'});
+    assert.match(words(editor.render()),/Menunggu pemrosesan/);
+    assert.equal(editor.render().find(n=>n.type==='FeedbackToast').props.feedback,null);
+    const listing=panel(storage);
+    assert.match(words(listing.render()),/Draf Tertunda/);
+    listing.draftResponse({video:{title:'Draf Tertunda',thumbnail_url:'/ready.jpg',metadata:{processing:{revision:'r1',status:'ready'}}}});
+    await listing.tick();let view=listing.render();view=listing.render();
+    assert.deepEqual(listing.draftRequests,['/admin/short-videos/5/processing']);
+    assert.equal(view.find(n=>n.type==='FeedbackToast').props.feedback.message,'Draf berhasil disimpan');
+    view.find(n=>n.type==='FeedbackToast').props.onDismiss();listing.render();
+    await listing.tick();view=listing.render();
+    assert.equal(view.find(n=>n.type==='FeedbackToast').props.feedback,null);
+    assert.equal(listing.draftRequests.length,1);
+});
+
+test('failed processing keeps the draft and reports that saved data remains',async()=>{
+    const app=panel();
+    app.receive('draft',{id:6,title:'Draf Gagal',revision:'r1',status:'processing'});
+    app.render();assert.match(words(app.render()),/Memproses video/);
+    app.draftResponse({video:{title:'Draf Gagal',thumbnail_url:null,metadata:{processing:{revision:'r1',status:'failed',error:'Video gagal diproses. Video asli dan pengaturan tetap tersimpan.'}}}});
+    await app.tick();let view=app.render();view=app.render();
+    assert.equal(view.find(n=>n.type==='FeedbackToast').props.feedback.variant,'error');
+    assert.match(view.find(n=>n.type==='FeedbackToast').props.feedback.message,/tetap tersimpan/);
+    assert.match(words(view),/Draf Gagal/);
+    assert.equal(app.draftRequests.length,1);
+    await app.tick();assert.equal(app.draftRequests.length,1);
 });

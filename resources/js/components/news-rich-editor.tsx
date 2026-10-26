@@ -3,6 +3,7 @@ import {
     AlignLeft,
     AlignRight,
     Bold,
+    Grip,
     Italic,
     List,
     ListOrdered,
@@ -11,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { richTextLength } from '@/lib/rich-text';
 
 const tools = [
     { command: 'bold', label: 'Tebal', icon: Bold },
@@ -39,12 +41,22 @@ export function NewsRichEditor({
     invalid,
     disabled,
     characterCount,
+    id = 'content',
+    label = 'Isi berita',
+    placeholder = 'Mulai tulis cerita Anda di sini...',
+    maxLength,
+    required = true,
 }: {
     value: string;
     onChange: (html: string) => void;
     invalid: boolean;
     disabled: boolean;
     characterCount: number;
+    id?: string;
+    label?: string;
+    placeholder?: string;
+    maxLength?: number;
+    required?: boolean;
 }) {
     const editor = useRef<HTMLDivElement>(null);
     const selection = useRef<Range | null>(null);
@@ -91,8 +103,32 @@ export function NewsRichEditor({
             document.queryCommandValue('formatBlock') === 'blockquote'
                 ? 'p'
                 : argument;
-        document.execCommand(name, false, value);
-        onChange(editor.current?.innerHTML ?? '');
+        if (name === 'insertText' && maxLength !== undefined) {
+            const current = window.getSelection();
+            const selected = editor.current?.contains(
+                current?.anchorNode ?? null,
+            )
+                ? Array.from(current?.toString() ?? '').length
+                : 0;
+            const remaining =
+                maxLength -
+                richTextLength(editor.current?.innerHTML ?? '') +
+                selected;
+            if (remaining <= 0) return;
+            document.execCommand(
+                name,
+                false,
+                Array.from(value ?? '')
+                    .slice(0, remaining)
+                    .join(''),
+            );
+        } else {
+            document.execCommand(name, false, value);
+        }
+        const html = editor.current?.innerHTML ?? '';
+        if (maxLength === undefined || richTextLength(html) <= maxLength) {
+            onChange(html);
+        }
         rememberSelection();
     }
 
@@ -102,7 +138,7 @@ export function NewsRichEditor({
         >
             <div
                 role="group"
-                aria-label="Format isi berita"
+                aria-label={`Format ${label.toLowerCase()}`}
                 className="flex flex-wrap items-center gap-1 border-b bg-muted/40 px-3 py-2"
             >
                 {tools.map(
@@ -139,37 +175,65 @@ export function NewsRichEditor({
                     Minimal 20 karakter
                 </span>
             </div>
-            <div
-                ref={editor}
-                id="content"
-                role="textbox"
-                aria-label="Isi berita"
-                aria-multiline="true"
-                aria-required="true"
-                aria-invalid={invalid}
-                aria-describedby="content-error"
-                contentEditable={!disabled}
-                suppressContentEditableWarning
-                data-placeholder="Mulai tulis cerita Anda di sini..."
-                className="min-h-[360px] px-4 py-5 text-sm leading-7 break-words outline-none empty:before:pointer-events-none empty:before:text-muted-foreground empty:before:content-[attr(data-placeholder)] sm:min-h-[440px] sm:px-5 [&_blockquote]:my-3 [&_blockquote]:border-l-4 [&_blockquote]:border-primary/40 [&_blockquote]:pl-4 [&_blockquote]:text-muted-foreground [&_ol]:list-decimal [&_ol]:pl-6 [&_p]:mb-3 [&_ul]:list-disc [&_ul]:pl-6"
-                onInput={() => {
-                    onChange(editor.current?.innerHTML ?? '');
-                    rememberSelection();
-                }}
-                onMouseUp={rememberSelection}
-                onKeyUp={rememberSelection}
-                onBlur={rememberSelection}
-                onPaste={(event) => {
-                    event.preventDefault();
-                    command(
-                        'insertText',
-                        event.clipboardData.getData('text/plain'),
-                    );
-                }}
-                onDrop={(event) => event.preventDefault()}
-            />
-            <div className="px-4 pb-3 text-right text-xs text-muted-foreground sm:px-5">
-                {characterCount} karakter
+            <div className="relative flex h-72 min-h-40 resize-y flex-col overflow-auto sm:h-80">
+                <div
+                    ref={editor}
+                    id={id}
+                    role="textbox"
+                    aria-label={label}
+                    aria-multiline="true"
+                    aria-required={required}
+                    aria-invalid={invalid}
+                    aria-describedby={`${id}-error`}
+                    contentEditable={!disabled}
+                    suppressContentEditableWarning
+                    data-placeholder={placeholder}
+                    className="min-h-0 flex-1 overflow-y-auto px-4 py-5 text-sm leading-7 break-words outline-none empty:before:pointer-events-none empty:before:text-muted-foreground empty:before:content-[attr(data-placeholder)] sm:px-5 [&_blockquote]:my-3 [&_blockquote]:border-l-4 [&_blockquote]:border-primary/40 [&_blockquote]:pl-4 [&_blockquote]:text-muted-foreground [&_ol]:list-decimal [&_ol]:pl-6 [&_p]:mb-3 [&_ul]:list-disc [&_ul]:pl-6"
+                    onInput={() => {
+                        const html = editor.current?.innerHTML ?? '';
+                        if (
+                            maxLength !== undefined &&
+                            richTextLength(html) > maxLength
+                        ) {
+                            editor.current!.innerHTML = value;
+                            return;
+                        }
+                        onChange(html);
+                        rememberSelection();
+                    }}
+                    onBeforeInput={(event) => {
+                        if (maxLength === undefined || !event.data) return;
+                        const selected =
+                            window.getSelection()?.toString() ?? '';
+                        if (
+                            characterCount -
+                                Array.from(selected).length +
+                                Array.from(event.data).length >
+                            maxLength
+                        ) {
+                            event.preventDefault();
+                        }
+                    }}
+                    onMouseUp={rememberSelection}
+                    onKeyUp={rememberSelection}
+                    onBlur={rememberSelection}
+                    onPaste={(event) => {
+                        event.preventDefault();
+                        command(
+                            'insertText',
+                            event.clipboardData.getData('text/plain'),
+                        );
+                    }}
+                    onDrop={(event) => event.preventDefault()}
+                />
+                <div className="pointer-events-none shrink-0 px-4 pr-6 pb-3 text-right text-xs text-muted-foreground sm:px-5 sm:pr-6">
+                    {characterCount}
+                    {maxLength === undefined ? '' : `/${maxLength}`} karakter
+                </div>
+                <Grip
+                    aria-hidden="true"
+                    className="pointer-events-none absolute right-1 bottom-1 size-3 text-muted-foreground/50"
+                />
             </div>
         </div>
     );

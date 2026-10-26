@@ -15,7 +15,7 @@ class ReelCaption
     public static function format(ShortVideo $video): string
     {
         $title = trim((string) $video->title);
-        $description = trim((string) $video->description);
+        $description = ShortContent::text($video->description);
 
         if ($description === '') {
             return $title;

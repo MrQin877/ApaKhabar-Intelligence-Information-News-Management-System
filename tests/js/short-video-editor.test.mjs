@@ -6,19 +6,23 @@ import { test } from 'node:test';
 import ts from 'typescript';
 const require = createRequire(import.meta.url);
 const compiled = ts.transpileModule(readFileSync('resources/js/pages/admin/short-videos.tsx', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-const draft = { id:1, title:'Draft', description:'Description', video_url:'https://res.cloudinary.com/demo/video/upload/old.mp4', thumbnail_url:'/saved.jpg', frame_offset:2, metadata:{duration:20}, status:'draft' };
+const richText = {};
+vm.runInNewContext(ts.transpileModule(readFileSync('resources/js/lib/rich-text.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports: richText });
+const validDescription = 'Description of the village event';
+const draft = { id:1, title:'Draft', description:validDescription, video_url:'https://res.cloudinary.com/demo/video/upload/old.mp4', thumbnail_url:'/saved.jpg', frame_offset:2, metadata:{duration:20}, status:'draft' };
 function mount(initialDraft = draft, options = {}) {
     const effects=[], pendingEffects=[], timers=new Map(); let effectIndex=0, timerId=0;
     const state = [], refs = [], requests = [], paths = [], apiRequests = [], visits = [], visitOptions = [], events = []; let index = 0, refIndex = 0, tree, dirty = false;
     const context = { exports:{}, FormData, setTimeout(fn){const id=++timerId;timers.set(id,fn);return id;},clearTimeout(id){timers.delete(id);},fetch:async()=>({ok:true,json:async()=>({video:options.latest})}), CustomEvent:class {constructor(type,options){this.type=type;this.detail=options?.detail;}}, document:{cookie:'',querySelector:()=>null}, XMLHttpRequest:class {
         upload = {}; status = 201;
         open(_method,path) {this.path=path;} setRequestHeader() {}
-        send(body) { requests.push(body);paths.push(this.path); const uploaded={...draft,metadata:{duration:20,cover_source:'frame'},id:Number(body.get('short_video_id')??2),title:'',description:'',video_url:'/new.mp4',thumbnail_url:'/new-cover.jpg',frame_offset:0}; const video=this.path.endsWith('/crop')?{...draft,video_url:'/cropped.mp4',thumbnail_url:'/cropped-cover.jpg',metadata:{duration:12,video_crop:{x:0.5,y:0.5,zoom:1,start:0,end:12},crop_source:{url:'/new.mp4'}}}:this.path.endsWith('/upload')?uploaded:{...uploaded,id:Number(this.path.split('/').at(-1)),title:body.get('title'),description:body.get('description'),frame_offset:Number(body.get('frame_offset'))}; this.responseText=JSON.stringify({video:options.respond?.(this.path,body)??video}); if(options.progress)this.upload.onprogress?.({lengthComputable:true,loaded:1,total:2}); queueMicrotask(()=>this.onload()); }
+        send(body) { requests.push(body);paths.push(this.path); if(options.failSave){this.status=422;this.responseText=JSON.stringify({message:typeof options.failSave==='string'?options.failSave:'Draf gagal disimpan.'});queueMicrotask(()=>this.onload());return;} const uploaded={...draft,metadata:{duration:20,cover_source:'frame'},id:Number(body.get('short_video_id')??2),title:'',description:'',video_url:'/new.mp4',thumbnail_url:'/new-cover.jpg',frame_offset:0}; const video=this.path.endsWith('/crop')?{...draft,video_url:'/cropped.mp4',thumbnail_url:'/cropped-cover.jpg',metadata:{duration:12,video_crop:{x:0.5,y:0.5,zoom:1,start:0,end:12},crop_source:{url:'/new.mp4'}}}:this.path.endsWith('/upload')?uploaded:{...uploaded,id:Number(this.path.split('/').at(-1)),title:body.get('title'),description:body.get('description'),frame_offset:Number(body.get('frame_offset'))}; this.responseText=JSON.stringify({video:options.respond?.(this.path,body)??video}); if(options.progress)this.upload.onprogress?.({lengthComputable:true,loaded:1,total:2}); queueMicrotask(()=>this.onload()); }
     }, URL:{createObjectURL: file => `blob:${file.name}`, revokeObjectURL(){}}, window:{scrollTo(){},dispatchEvent(event){events.push(event)}}, require(name) {
         if (name === 'react') return { useState(initial) { const i=index++; if (!(i in state)) state[i]=typeof initial==='function'?initial():initial; return [state[i], v => { state[i]=typeof v==='function'?v(state[i]):v; }]; }, useRef() { const i=refIndex++; return refs[i] ??= {current:null}; }, useEffect(fn,deps){if(!options.effects)return;const i=effectIndex++;const old=effects[i];if(!old||deps.some((v,j)=>v!==old.deps[j])){old?.cleanup?.();pendingEffects.push(()=>{effects[i]={deps,cleanup:fn()};});}} };
         if (name === '@inertiajs/react') return {Head:'Head',router:{reload(){},replace(){},visit(path, options){visits.push(path);visitOptions.push(options)}},usePoll(){}};
         if (name === '@/hooks/use-unsaved-news') return {useUnsavedNews:(isDirty)=>{dirty=isDirty;return{open:false,requestLeave:fn=>fn(),allowLeave(){},leave(){},continueEditing(){}}}};
         if (name === '@/lib/editor-snapshot') return {editorSnapshot:JSON.stringify};
+        if (name === '@/lib/rich-text') return richText;
         if (name === '@/lib/meta-auth') return {metaRequest:async (path,body)=>{apiRequests.push({path,body});return path.endsWith('/preview')?{token:'server-token'}:{video:{...draft,id:2,title:'New title',description:'Description',status:'published'},result:{pending:false,results:{}}};}};
         if (name === '@/components/video-frame-timeline') return {VideoFrameTimeline:'VideoFrameTimeline',formatFrameTime:t=>`${String(Math.floor(t/60)).padStart(2,'0')}:${(t%60).toFixed(1).padStart(4,'0')}`};
         if (name === '@/components/short-cover-dialog') return {CoverPreview:'CoverPreview',ShortCoverDialog:'ShortCoverDialog',defaultCoverCrop:{mode:'fit',x:0.5,y:0.5,zoom:1},coverPoster:async(source)=>source};
@@ -65,7 +69,7 @@ test('video replacement stays local and resets the old cover and frame', async (
 test('new local media preserves fields and requires saving before publishing', () => {
     const v=mount(null);
     v.input('short-title').props.onChange({target:{value:'Kegiatan Desa'}});
-    v.input('short-description').props.onChange({target:{value:'Warga bergotong-royong.'}});
+    v.input('short-description').props.onChange('Warga bergotong-royong.');
     v.render();
     const file=new File(['video'],'new.mp4',{type:'video/mp4'});
     v.input('short-video').props.onChange({target:{files:[file],value:''}});
@@ -88,19 +92,69 @@ test('missing publication fields do not block drafts; invalid video never report
     assert.equal(v.find('Publikasikan').props.disabled,true);
     assert.equal(v.all().find(n=>n.type==='FeedbackToast').props.feedback.variant,'error');
 });
-test('an existing draft saves empty title and description to the same ID', async () => {
+test('explicit draft save rejects whitespace title, focuses it, and does not upload', async () => {
     const v=mount();
-    v.input('short-title').props.onChange({target:{value:''}});
-    v.input('short-description').props.onChange({target:{value:''}});
+    let focused=false;v.input('short-title').props.ref.current={focus(){focused=true;}};
+    v.input('short-title').props.onChange({target:{value:'   '}});
+    v.input('short-description').props.onChange('');
     v.render();
-    assert.equal(v.find('Publikasikan').props.disabled,true);
     v.find('Simpan Draf').props.onClick();
-    await new Promise(resolve=>setImmediate(resolve)); v.render();
+    v.render();
+    assert.equal(focused,true);
+    assert.match(v.text(),/Judul video wajib diisi/);
+    assert.equal(v.requests.length,0);
+    assert.equal(v.events.filter(e=>e.type==='short-draft').length,0);
+    assert.equal(v.find('Publikasikan').props.disabled,false);
+    focused=false;v.find('Publikasikan').props.onClick();v.render();
+    assert.equal(focused,true);
+    assert.equal(v.all().find(n=>n.type==='PublishNewsDialog').props.open,false);
+});
+test('a titled draft saves without description but publishing requires 20 characters', async () => {
+    const v=mount();
+    v.input('short-description').props.onChange('');v.render();
+    v.find('Simpan Draf').props.onClick();
+    await new Promise(resolve=>setImmediate(resolve));v.render();
     assert.equal(v.paths.at(-1),'/admin/short-videos/1');
-    assert.equal(v.requests.at(-1).get('title'),'');
+    assert.equal(v.requests.at(-1).get('title'),'Draft');
     assert.equal(v.requests.at(-1).get('description'),'');
-    assert.equal(v.all().find(n=>n.type==='FeedbackToast').props.feedback.message,'Draf berhasil disimpan');
-    assert.equal(v.visits.length,0);
+    assert.equal(v.events.find(e=>e.type==='short-draft').detail.status,'ready');
+    assert.equal(v.find('Publikasikan').props.disabled,false);
+    v.find('Publikasikan').props.onClick();v.render();
+    assert.match(v.text(),/Konten minimal 20 karakter/);
+    assert.equal(v.all().find(n=>n.type==='PublishNewsDialog').props.open,false);
+});
+test('title counter stays aligned and rich content counts text instead of markup', () => {
+    const v=mount({...draft,description:'<p><strong>Konten berita desa hari ini</strong></p>'});
+    let row=v.all().find(n=>n.props?.className?.includes?.('justify-between gap-3 text-xs'));
+    assert.match(v.text(),/5\s*\/200/);
+    assert.equal(v.input('short-title').props.maxLength,200);
+    assert.equal(v.input('short-description').props.characterCount,27);
+    assert.equal(v.input('short-description').props.maxLength,2000);
+    assert.equal(v.input('short-description').props.value,'<p><strong>Konten berita desa hari ini</strong></p>');
+    v.input('short-title').props.onChange({target:{value:' '.repeat(205)}});v.render();
+    assert.equal(v.input('short-title').props.value.length,200);
+    v.find('Simpan Draf').props.onClick();v.render();
+    row=v.all().find(n=>n.props?.className?.includes?.('justify-between gap-3 text-xs'));
+    assert.match(v.text(),/Judul video wajib diisi/);
+    assert.match(v.text(),/200\s*\/200/);
+    assert.equal(v.requests.length,0);
+});
+test('failed persistence reports an error and never registers a completion workload', async () => {
+    const v=mount(draft,{failSave:true});
+    v.input('short-title').props.onChange({target:{value:'Changed'}});v.render();
+    v.find('Simpan Draf').props.onClick();
+    await new Promise(resolve=>setImmediate(resolve));v.render();
+    assert.equal(v.all().find(n=>n.type==='FeedbackToast').props.feedback.variant,'error');
+    assert.equal(v.events.filter(e=>e.type==='short-draft').length,0);
+});
+test('database exceptions are not shown in the draft error toast', async () => {
+    const v=mount(draft,{failSave:'SQLSTATE[23000]: Integrity constraint violation'});
+    v.input('short-title').props.onChange({target:{value:'Changed'}});v.render();
+    v.find('Simpan Draf').props.onClick();
+    await new Promise(resolve=>setImmediate(resolve));v.render();
+    const message=v.all().find(n=>n.type==='FeedbackToast').props.feedback.message;
+    assert.match(message,/Server belum dapat menyimpan video/);
+    assert.doesNotMatch(message,/SQLSTATE/);
 });
 test('explicit Save Draft uploads once then saves metadata and clears dirty state', async () => {
     const v=mount(null);
@@ -110,7 +164,7 @@ test('explicit Save Draft uploads once then saves metadata and clears dirty stat
     assert.equal(v.dirty,true);
     assert.equal(v.requests.length,0);
     v.input('short-title').props.onChange({target:{value:'New title'}});
-    v.input('short-description').props.onChange({target:{value:'Description'}}); v.render();
+    v.input('short-description').props.onChange(validDescription); v.render();
     v.find('Simpan Draf').props.onClick();
     await new Promise(resolve=>setImmediate(resolve)); v.render();
     assert.deepEqual(v.paths,['/admin/short-videos/upload','/admin/short-videos/2']);
@@ -121,7 +175,7 @@ test('explicit Save Draft uploads once then saves metadata and clears dirty stat
 test('final Publish confirmation uploads once, saves, previews on server and publishes', async () => {
     const v=mount(null);
     v.input('short-title').props.onChange({target:{value:'New title'}});
-    v.input('short-description').props.onChange({target:{value:'Description'}});
+    v.input('short-description').props.onChange(validDescription);
     v.input('short-video').props.onChange({target:{files:[new File(['video'],'new.mp4',{type:'video/mp4'})],value:''}});
     v.render();
     v.all().find(n=>n.type==='video' && n.props.controls).props.onLoadedMetadata({currentTarget:{duration:20}});v.render();
@@ -156,7 +210,7 @@ test('local custom thumbnail is uploaded only when saving the draft', async () =
     const v=mount(null);
     v.input('short-video').props.onChange({target:{files:[new File(['video'],'new.mp4',{type:'video/mp4'})],value:''}});v.render();
     v.input('short-title').props.onChange({target:{value:'New title'}});
-    v.input('short-description').props.onChange({target:{value:'Description'}});
+    v.input('short-description').props.onChange(validDescription);
     v.all().find(n => n.type === 'Tabs').props.onValueChange('photo'); v.render();
     v.all().find(n=>n.type==='input' && n.props['aria-label']==='Unggah sampul').props.onChange({target:{files:[new File(['image'],'cover.png',{type:'image/png'})],value:''}});v.render();
     assert.equal(v.requests.length,0);
@@ -169,7 +223,7 @@ test('selected local frame offset is persisted after the explicit upload', async
     const v=mount(null);
     v.input('short-video').props.onChange({target:{files:[new File(['video'],'new.mp4',{type:'video/mp4'})],value:''}});v.render();
     v.input('short-title').props.onChange({target:{value:'New title'}});
-    v.input('short-description').props.onChange({target:{value:'Description'}});
+    v.input('short-description').props.onChange(validDescription);
     v.all().find(n => n.type === 'VideoFrameTimeline').props.onSelect(4.5);v.render();
     assert.equal(v.requests.length,0);
     v.find('Simpan Draf').props.onClick();
@@ -233,7 +287,7 @@ test('confirmed crop uploads once and updates the upload player before draft sav
     await new Promise(resolve => setImmediate(resolve)); v.render();
     assert.deepEqual(v.paths, ['/admin/short-videos/upload', '/admin/short-videos/1']);
     assert.equal(v.requests[1].get('title'), 'Draft');
-    assert.equal(v.requests[1].get('description'), 'Description');
+    assert.equal(v.requests[1].get('description'), validDescription);
 });
 
 
@@ -314,7 +368,7 @@ test('saving draft shows its own spinner and stays on editor; publishing navigat
     const v=mount(null);
     v.input('short-video').props.onChange({target:{files:[new File(['video'],'new.mp4',{type:'video/mp4'})],value:''}});
     v.input('short-title').props.onChange({target:{value:'New title'}});
-    v.input('short-description').props.onChange({target:{value:'Description'}});
+    v.input('short-description').props.onChange(validDescription);
     v.render();
     v.find('Simpan Draf').props.onClick(); v.render();
     assert.equal(v.find('Publikasikan').props.disabled,true);
@@ -323,7 +377,7 @@ test('saving draft shows its own spinner and stays on editor; publishing navigat
     assert.equal(v.find('Simpan Draf').props.children.flat().some(n=>n?.type==='LoaderCircle'),true);
     await new Promise(resolve=>setImmediate(resolve));v.render();
     assert.deepEqual(v.visits,[]);
-    assert.equal(v.all().find(n=>n.type==='FeedbackToast').props.feedback.message,'Draf berhasil disimpan');
+    assert.equal(v.events.find(e=>e.type==='short-draft').detail.status,'ready');
     assert.equal(v.find('Simpan Draf').props.disabled,false);
     v.all().find(n=>n.type==='PublishNewsDialog').props.onPublish('local-preview');
     assert.deepEqual(Object.keys(v.events.at(-1).detail.result.results),['website']);
@@ -345,7 +399,7 @@ for (const status of ['queued','processing','failed','ready']) {
         assert.equal(v.find('Simpan Draf').props.disabled,false);
         assert.equal(v.find('Publikasikan').props.disabled,status !== 'ready');
         assert.equal(v.input('short-title').props.disabled,false);
-        assert.match(v.text(),status === 'failed' ? /Gagal memproses/ : status === 'ready' ? /Video siap/ : /Memproses video/);
+        assert.match(v.text(),status === 'failed' ? /Gagal memproses/ : status === 'ready' ? /Video siap/ : status === 'queued' ? /Menunggu pemrosesan/ : /Memproses video/);
         assert.equal(Boolean(v.find('Coba lagi')),status === 'failed');
         assert.equal(v.dirty,false);
     });
@@ -384,9 +438,10 @@ test('processing completion keeps a saved draft clean and stops polling', async 
     assert.equal(v.find('Simpan Draf').props.disabled,false);
 });
 
-test('save reports success and stops loading while background processing continues', async () => {
+test('save stops loading without a success toast while background processing continues', async () => {
     const pending={...draft,id:2,frame_offset:0,video_url:'/original.mp4',thumbnail_url:'',metadata:{duration:20,cover_source:'frame',processing:{revision:'v1',status:'queued'}}};
     const v=mount(null,{progress:true,respond:(_path,body)=>({...pending,title:body.get('title')??'',description:body.get('description')??''})});
+    v.input('short-title').props.onChange({target:{value:'Draf baru'}});v.render();
     v.input('short-video').props.onChange({target:{files:[new File(['video'],'new.mp4',{type:'video/mp4'})],value:''}});v.render();
     v.find('Simpan Draf').props.onClick();v.render();
     assert.match(v.text(),/Mengunggah video/);
@@ -394,8 +449,9 @@ test('save reports success and stops loading while background processing continu
     await new Promise(resolve=>setImmediate(resolve));v.render();
     assert.equal(v.find('Simpan Draf').props.disabled,false);
     assert.equal(v.find('Publikasikan').props.disabled,true);
-    assert.equal(v.all().find(n=>n.type==='FeedbackToast').props.feedback.message,'Draf berhasil disimpan');
-    assert.match(v.text(),/Memproses video/);
+    assert.equal(v.all().find(n=>n.type==='FeedbackToast').props.feedback,null);
+    assert.equal(v.events.find(e=>e.type==='short-draft').detail.status,'queued');
+    assert.match(v.text(),/Menunggu pemrosesan/);
     assert.equal(v.dirty,false);
     assert.equal(v.visits.length,0);
 });
@@ -406,7 +462,8 @@ test('retry restores pending processing without uploading saved media', async ()
     const v=mount(failed,{respond:()=>pending});
     await v.find('Coba lagi').props.onClick();v.render();
     assert.deepEqual(v.paths,['/admin/short-videos/1/processing/retry']);
-    assert.match(v.text(),/Memproses video/);
+    assert.match(v.text(),/Menunggu pemrosesan/);
+    assert.equal(v.events.find(e=>e.type==='short-draft').detail.revision,'v2');
     assert.equal(v.find('Simpan Draf').props.disabled,false);
     assert.equal(v.find('Publikasikan').props.disabled,true);
 });

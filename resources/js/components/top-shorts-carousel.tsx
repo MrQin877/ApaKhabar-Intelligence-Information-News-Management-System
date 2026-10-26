@@ -2,6 +2,7 @@ import '../../css/top-shorts-carousel.css';
 import { Link } from '@inertiajs/react';
 import { Eye, Play } from 'lucide-react';
 import { compactViews } from '@/components/home-shorts';
+import { richTextPlain } from '@/lib/rich-text';
 
 export type VideoPreview = {
     id: number;
@@ -78,7 +79,7 @@ export function TopShortsCarousel({ shorts }: { shorts: VideoPreview[] }) {
                                         {short.title}
                                     </h3>
                                     <p className="line-clamp-2 text-sm leading-relaxed text-white/85">
-                                        {short.description}
+                                        {richTextPlain(short.description)}
                                     </p>
                                 </div>
                                 <span

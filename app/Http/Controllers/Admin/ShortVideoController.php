@@ -11,6 +11,7 @@ use App\Services\News\MetaConnections;
 use App\Services\Shorts\CloudinaryVideoService;
 use App\Services\Shorts\LocalShortMedia;
 use App\Services\Shorts\ReelCaption;
+use App\Services\Shorts\ShortContent;
 use App\Services\Shorts\VideoCropper;
 use App\Services\Shorts\VideoInspector;
 use Illuminate\Http\Request;
@@ -66,7 +67,8 @@ class ShortVideoController extends Controller
 
     public function upload(Request $r, VideoInspector $inspector, LocalShortMedia $local)
     {
-        $r->validate(['title' => 'nullable|string|max:255', 'description' => 'nullable|string|max:10000', 'frame_offset' => 'sometimes|numeric|min:0', 'edit' => 'sometimes|array:mode,x,y,zoom,start,end|min:6', 'edit.mode' => ['required_with:edit', Rule::in(['fit', 'crop'])], 'edit.x' => 'required_with:edit|numeric|between:0,1', 'edit.y' => 'required_with:edit|numeric|between:0,1', 'edit.zoom' => 'required_with:edit|numeric|between:1,4', 'edit.start' => 'required_with:edit|numeric|min:0', 'edit.end' => 'required_with:edit|numeric|gt:edit.start', 'video' => ['required', 'file', 'mimetypes:video/mp4', 'extensions:mp4', 'max:'.config('shorts.max_upload_kb')], 'short_video_id' => 'nullable|integer|exists:short_videos,id']);
+        $r->validate(['title' => 'nullable|string|max:200', 'description' => 'nullable|string|max:30000', 'frame_offset' => 'sometimes|numeric|min:0', 'edit' => 'sometimes|array:mode,x,y,zoom,start,end|min:6', 'edit.mode' => ['required_with:edit', Rule::in(['fit', 'crop'])], 'edit.x' => 'required_with:edit|numeric|between:0,1', 'edit.y' => 'required_with:edit|numeric|between:0,1', 'edit.zoom' => 'required_with:edit|numeric|between:1,4', 'edit.start' => 'required_with:edit|numeric|min:0', 'edit.end' => 'required_with:edit|numeric|gt:edit.start', 'video' => ['required', 'file', 'mimetypes:video/mp4', 'extensions:mp4', 'max:'.config('shorts.max_upload_kb')], 'short_video_id' => 'nullable|integer|exists:short_videos,id'], ['title.max' => 'Judul maksimal 200 karakter.', 'description.max' => 'Konten maksimal 2.000 karakter.']);
+        $this->validateContentLength(ShortContent::clean($r->input('description')));
         $existing = $r->filled('short_video_id') ? ShortVideo::findOrFail($r->integer('short_video_id')) : null;
         if ($existing) {
             $this->own($r, $existing);
@@ -90,7 +92,7 @@ class ShortVideoController extends Controller
                     abort_if($edit['end'] > $metadata['duration'] + 0.05 || $edit['end'] - $edit['start'] < 0.1, 422, 'Rentang waktu video tidak valid.');
                 }
                 $frameOffset = max(0, min((float) $r->input('frame_offset', 0) - ($edit['start'] ?? 0), max(0, ($edit ? $edit['end'] - $edit['start'] : $metadata['duration']) - 0.05)));
-                $attributes = ['title' => $r->input('title', $existing?->title ?? ''), 'description' => $r->input('description', $existing?->description ?? ''), 'video_url' => $asset['url'], 'video_public_id' => '', 'thumbnail_url' => '', 'thumbnail_public_id' => null, 'frame_offset' => $frameOffset,
+                $attributes = ['title' => $r->exists('title') ? $r->input('title') : $existing?->title, 'description' => $r->exists('description') ? ShortContent::clean($r->input('description')) : ($existing?->description ?? ''), 'video_url' => $asset['url'], 'video_public_id' => '', 'thumbnail_url' => '', 'thumbnail_public_id' => null, 'frame_offset' => $frameOffset,
                     'metadata' => [...$metadata, 'local_path' => $asset['path'], 'cover_source' => 'frame',
                         'crop_source' => [...$original, 'public_id' => '', 'metadata' => $metadata],
                         'video_crop' => $edit, 'processing' => ProcessShortVideo::pending($edit)]];
@@ -184,12 +186,20 @@ class ShortVideoController extends Controller
     public function update(Request $r, ShortVideo $shortVideo, CloudinaryVideoService $cloud, LocalShortMedia $local)
     {
         $this->own($r, $shortVideo);
-        $data = $r->validate(['cover_crop' => 'sometimes|array:mode,x,y,zoom|min:4', 'cover_crop.mode' => ['required_with:cover_crop', Rule::in(['fit', 'crop'])], 'cover_crop.x' => 'required_with:cover_crop|numeric|between:0,1', 'cover_crop.y' => 'required_with:cover_crop|numeric|between:0,1', 'cover_crop.zoom' => 'required_with:cover_crop|numeric|between:1,4', 'title' => 'nullable|string|max:255', 'description' => 'nullable|string|max:10000', 'frame_offset' => 'required|numeric|min:0', 'cover' => ['nullable', 'image', 'mimes:jpg,jpeg,png', 'max:5120', 'dimensions:max_width=4096,max_height=4096'], 'cover_mode' => ['required', Rule::in(['keep', 'frame', 'upload', 'photo'])]]);
+        $data = $r->validate(['cover_crop' => 'sometimes|array:mode,x,y,zoom|min:4', 'cover_crop.mode' => ['required_with:cover_crop', Rule::in(['fit', 'crop'])], 'cover_crop.x' => 'required_with:cover_crop|numeric|between:0,1', 'cover_crop.y' => 'required_with:cover_crop|numeric|between:0,1', 'cover_crop.zoom' => 'required_with:cover_crop|numeric|between:1,4', 'title' => 'nullable|string|max:200', 'description' => 'nullable|string|max:30000', 'frame_offset' => 'required|numeric|min:0', 'cover' => ['nullable', 'image', 'mimes:jpg,jpeg,png', 'max:5120', 'dimensions:max_width=4096,max_height=4096'], 'cover_mode' => ['required', Rule::in(['keep', 'frame', 'upload', 'photo'])]], ['title.max' => 'Judul maksimal 200 karakter.', 'description.max' => 'Konten maksimal 2.000 karakter.']);
+        if (array_key_exists('description', $data)) {
+            $data['description'] = ShortContent::clean($data['description']);
+            $this->validateContentLength($data['description']);
+        }
         $lock = Cache::lock('short-crop:'.$shortVideo->id, 900);
         abort_unless($lock->get(), 409, 'Video sedang diproses. Tunggu sampai selesai.');
         try {
             $shortVideo->refresh();
             abort_unless($shortVideo->status === 'draft', 422, 'Hanya draf dapat diedit.');
+            $title = array_key_exists('title', $data) ? $data['title'] : $shortVideo->title;
+            if (! trim($title ?? '')) {
+                throw ValidationException::withMessages(['title' => 'Judul video wajib diisi.']);
+            }
             if ($data['frame_offset'] >= $shortVideo->metadata['duration']) {
                 throw ValidationException::withMessages(['frame_offset' => 'Pilih bingkai sebelum video berakhir.']);
             }
@@ -241,7 +251,7 @@ class ShortVideoController extends Controller
                     } else {
                         $queueFrame = false;
                     }
-                    $v->update(['title' => $data['title'] ?? '', 'description' => $data['description'] ?? '', 'frame_offset' => $data['frame_offset'], 'thumbnail_url' => $cover['url'], 'thumbnail_public_id' => $cover['public_id'], 'metadata' => $metadata]);
+                    $v->update(['title' => array_key_exists('title', $data) ? $data['title'] : $v->title, 'description' => array_key_exists('description', $data) ? $data['description'] : $v->description, 'frame_offset' => $data['frame_offset'], 'thumbnail_url' => $cover['url'], 'thumbnail_public_id' => $cover['public_id'], 'metadata' => $metadata]);
                     if ($queueFrame) {
                         ProcessShortVideo::enqueue($v);
                     }
@@ -313,6 +323,7 @@ class ShortVideoController extends Controller
         $this->own($r, $shortVideo);
         abort_unless(($shortVideo->metadata['processing']['status'] ?? 'ready') === 'ready', 422, 'Tunggu sampai video siap sebelum menerbitkan.');
         $platforms = $this->targets($r);
+        $this->validatePublicationText($shortVideo);
         $inspector->validate($shortVideo->metadata, $platforms);
         $caption = ReelCaption::format($shortVideo);
         if (in_array('instagram', $platforms) && mb_strlen($caption) > ReelCaption::INSTAGRAM_MAX) {
@@ -321,17 +332,17 @@ class ShortVideoController extends Controller
         if (in_array('facebook', $platforms) && mb_strlen($caption) > ReelCaption::FACEBOOK_MAX) {
             throw ValidationException::withMessages(['description' => 'Judul dan deskripsi Facebook maksimal 10000 karakter.']);
         }
-        abort_unless(trim($shortVideo->title) && trim($shortVideo->description ?? ''), 422, 'Judul dan deskripsi wajib diisi.');
         $token = Str::random(48);
         Cache::put('short-preview:'.$token, ['user' => $r->user()->getKey(), 'video' => $shortVideo->id, 'fingerprint' => $this->fingerprint($shortVideo, $platforms)], now()->addMinutes(15));
 
-        return response()->json(['token' => $token, 'title' => $shortVideo->title, 'content' => $shortVideo->description, 'caption' => $caption, 'category' => null, 'images' => array_fill_keys(['website', 'instagram', 'facebook'], null), 'issues' => [], 'video_url' => $shortVideo->video_url, 'thumbnail_url' => $shortVideo->thumbnail_url]);
+        return response()->json(['token' => $token, 'title' => $shortVideo->title, 'content' => ShortContent::clean($shortVideo->description), 'caption' => $caption, 'category' => null, 'images' => array_fill_keys(['website', 'instagram', 'facebook'], null), 'issues' => [], 'video_url' => $shortVideo->video_url, 'thumbnail_url' => $shortVideo->thumbnail_url]);
     }
 
     public function publish(Request $r, ShortVideo $shortVideo, VideoInspector $inspector, CloudinaryVideoService $cloud, LocalShortMedia $local)
     {
         $this->own($r, $shortVideo);
         abort_unless(($shortVideo->metadata['processing']['status'] ?? 'ready') === 'ready', 422, 'Tunggu sampai video siap sebelum menerbitkan.');
+        $this->validatePublicationText($shortVideo);
         $platforms = $this->targets($r);
         $r->validate(['preview_token' => 'required|string']);
         $preview = Cache::get('short-preview:'.$r->input('preview_token'));
@@ -416,6 +427,33 @@ class ShortVideoController extends Controller
         }
 
         return $this->status($r, $shortVideo->fresh());
+    }
+
+    private function validatePublicationText(ShortVideo $video): void
+    {
+        $errors = [];
+        if (! trim($video->title ?? '')) {
+            $errors['title'] = 'Judul video wajib diisi.';
+        }
+        if (mb_strlen($video->title ?? '') > 200) {
+            $errors['title'] = 'Judul maksimal 200 karakter.';
+        }
+        $length = ShortContent::length($video->description);
+        if ($length < 20 || $length > 2000) {
+            $errors['description'] = $length < 20
+                ? 'Konten minimal 20 karakter untuk diterbitkan.'
+                : 'Konten maksimal 2.000 karakter.';
+        }
+        if ($errors) {
+            throw ValidationException::withMessages($errors);
+        }
+    }
+
+    private function validateContentLength(?string $content): void
+    {
+        if (ShortContent::length($content) > 2000) {
+            throw ValidationException::withMessages(['description' => 'Konten maksimal 2.000 karakter.']);
+        }
     }
 
     public function status(Request $r, ShortVideo $shortVideo)

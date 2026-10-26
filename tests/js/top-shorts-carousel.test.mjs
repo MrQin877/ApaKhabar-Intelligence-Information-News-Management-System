@@ -6,6 +6,8 @@ import vm from 'node:vm';
 import ts from 'typescript';
 
 const require = createRequire(import.meta.url);
+const richText = {};
+vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../../resources/js/lib/rich-text.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports: richText });
 const source = readFileSync(
     new URL(
         '../../resources/js/components/top-shorts-carousel.tsx',
@@ -32,6 +34,7 @@ function render(shorts) {
             if (name.endsWith('.css')) return {};
             if (name === '@/components/home-shorts')
                 return { compactViews: String };
+            if (name === '@/lib/rich-text') return richText;
             if (name === 'react/jsx-runtime') return require(name);
             return new Proxy({}, { get: (_, key) => String(key) });
         },

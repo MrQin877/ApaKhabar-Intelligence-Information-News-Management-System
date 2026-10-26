@@ -1,4 +1,4 @@
-import { Head, Link, router, usePage } from '@inertiajs/react';
+﻿import { Head, Link, router, usePage } from '@inertiajs/react';
 import {
     ArrowDown,
     ArrowLeft,
@@ -30,6 +30,7 @@ import {
     TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { metaRequest } from '@/lib/meta-auth';
+import { richTextPlain } from '@/lib/rich-text';
 import type { SharedData } from '@/types';
 
 type Short = {
@@ -590,7 +591,7 @@ function ShortViewerContent({
             <p className="text-sm text-muted-foreground">
                 Terbit {new Intl.DateTimeFormat('id-ID', { dateStyle: 'long' }).format(new Date(short.published_at))}
             </p>
-            <p className="text-sm leading-relaxed whitespace-pre-wrap">{short.description}</p>
+            <p className="text-sm leading-relaxed whitespace-pre-wrap">{richTextPlain(short.description)}</p>
         </div>
     );
 
@@ -622,7 +623,7 @@ function ShortViewerContent({
                                     {short.title}
                                 </button>
                             </h1>
-                            {short.description && <button type="button" onClick={() => setPanel('details')} className="mt-2 line-clamp-3 max-w-full break-words text-left text-sm leading-relaxed text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">{short.description}</button>}
+                            {short.description && <button type="button" onClick={() => setPanel('details')} className="mt-2 line-clamp-3 max-w-full break-words text-left text-sm leading-relaxed text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">{richTextPlain(short.description)}</button>}
                             {short.description && (
                                 <button type="button" onClick={() => setPanel('details')} className="mt-1 text-left text-xs font-medium text-primary hover:underline focus-visible:outline-2 focus-visible:outline-ring">
                                     Lihat selengkapnya

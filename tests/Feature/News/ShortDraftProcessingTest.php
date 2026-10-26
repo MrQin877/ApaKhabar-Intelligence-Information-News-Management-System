@@ -48,6 +48,79 @@ function fakeShortExport(): array
         'metadata' => ['width' => 1080, 'height' => 1920, 'duration' => 20]];
 }
 
+test('untitled temporary upload stays local but explicit draft save requires a title', function () {
+    $this->mock(\App\Services\Shorts\CloudinaryVideoService::class)->shouldNotReceive('upload');
+    $response = $this->postJson('/admin/short-videos/upload', [
+        'video' => UploadedFile::fake()->create('untitled.mp4', 10, 'video/mp4'),
+        'title' => '',
+    ])->assertCreated()->assertJsonPath('video.title', null);
+    $id = $response->json('video.id');
+    $path = $response->json('video.metadata.local_path');
+    foreach (['', '   '] as $invalidTitle) {
+        $this->postJson('/admin/short-videos/'.$id, [
+            'title' => $invalidTitle, 'frame_offset' => 0, 'cover_mode' => 'keep',
+        ])->assertUnprocessable()->assertJsonPath('errors.title.0', 'Judul video wajib diisi.');
+    }
+    $video = ShortVideo::findOrFail($id);
+    expect($video->title)->toBeNull();
+    expect($video->metadata['processing']['status'])->toBe('queued');
+    Storage::disk('public')->assertExists($path);
+    $this->get('/admin/short-videos/create?draft='.$id)
+        ->assertInertia(fn (Assert $page) => $page->where('draft.title', null));
+    $this->postJson('/admin/short-videos/'.$id, [
+        'title' => 'Draf lengkap', 'frame_offset' => 0, 'cover_mode' => 'keep',
+    ])->assertOk()->assertJsonPath('video.title', 'Draf lengkap');
+    Storage::disk('public')->assertExists($path);
+});
+
+test('temporary upload rejects titles over 200 and visible content over 2000 characters', function () {
+    $file = fn () => UploadedFile::fake()->create('source.mp4', 10, 'video/mp4');
+    $this->postJson('/admin/short-videos/upload', [
+        'video' => $file(), 'title' => str_repeat('J', 201),
+    ])->assertUnprocessable()->assertJsonPath('errors.title.0', 'Judul maksimal 200 karakter.');
+    $this->postJson('/admin/short-videos/upload', [
+        'video' => $file(), 'title' => 'Draf sementara',
+        'description' => '<p>'.str_repeat('a', 2001).'</p>',
+    ])->assertUnprocessable()->assertJsonPath('errors.description.0', 'Konten maksimal 2.000 karakter.');
+    expect(ShortVideo::count())->toBe(0);
+});
+
+test('omitted titles preserve existing values on replacement and draft update', function () {
+    $video = queuedShortDraft();
+    $this->postJson('/admin/short-videos/upload', [
+        'short_video_id' => $video->id,
+        'video' => UploadedFile::fake()->create('replacement.mp4', 10, 'video/mp4'),
+    ])->assertOk()->assertJsonPath('video.title', 'Saved title');
+    $this->postJson('/admin/short-videos/'.$video->id, [
+        'frame_offset' => 0, 'cover_mode' => 'keep',
+    ])->assertOk()->assertJsonPath('video.title', 'Saved title');
+});
+
+test('untitled ready draft cannot be previewed or published until titled', function () {
+    app(VideoInspector::class)->shouldReceive('validate')->once();
+    $video = queuedShortDraft();
+    $video->update(['title' => null]);
+    $metadata = $video->metadata;
+    $metadata['processing']['status'] = 'ready';
+    $video->update(['metadata' => $metadata]);
+
+    $this->postJson('/admin/short-videos/'.$video->id.'/preview', [
+        'platforms' => ['website'],
+    ])->assertUnprocessable()->assertJsonPath('errors.title.0', 'Judul video wajib diisi.');
+    $this->postJson('/admin/short-videos/'.$video->id.'/publish', [
+        'platforms' => ['website'], 'preview_token' => 'unused',
+    ])->assertUnprocessable()->assertJsonPath('errors.title.0', 'Judul video wajib diisi.');
+    expect($video->fresh()->status)->toBe('draft');
+
+    $this->postJson('/admin/short-videos/'.$video->id, [
+        'title' => 'Judul lengkap', 'description' => 'Deskripsi lengkap untuk diterbitkan',
+        'frame_offset' => 0, 'cover_mode' => 'keep',
+    ])->assertOk()->assertJsonPath('video.title', 'Judul lengkap');
+    $this->postJson('/admin/short-videos/'.$video->id.'/preview', [
+        'platforms' => ['website'],
+    ])->assertOk()->assertJsonPath('caption', "Judul lengkap\n\nDeskripsi lengkap untuk diterbitkan");
+});
+
 test('saving persists the original and text without running FFmpeg and restores pending status', function () {
     $this->mock(VideoCropper::class)->shouldNotReceive('export');
     $this->mock(LocalShortMedia::class)->makePartial()->shouldNotReceive('frame');

@@ -11,6 +11,7 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import { FeedbackToast } from '@/components/feedback-toast';
 import type { Feedback } from '@/components/feedback-toast';
+import { NewsRichEditor } from '@/components/news-rich-editor';
 import type { PublicationPreviewData } from '@/components/publication-preview';
 import { PublishNewsDialog } from '@/components/publish-news-dialog';
 import type {
@@ -41,7 +42,6 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Textarea } from '@/components/ui/textarea';
 import {
     Tooltip,
     TooltipContent,
@@ -55,6 +55,7 @@ import {
 import { useUnsavedNews } from '@/hooks/use-unsaved-news';
 import AppLayout from '@/layouts/app-layout';
 import { editorSnapshot } from '@/lib/editor-snapshot';
+import { richTextLength, richTextPlain } from '@/lib/rich-text';
 import type { PublishResult } from '@/lib/manual-publish';
 import { metaRequest } from '@/lib/meta-auth';
 import type { MetaAuthConfig } from '@/lib/meta-auth';
@@ -62,7 +63,7 @@ import type { VideoCrop } from '@/lib/video-crop';
 
 type ShortVideo = {
     id: number;
-    title: string;
+    title: string | null;
     description: string;
     video_url: string;
     thumbnail_url: string;
@@ -203,11 +204,13 @@ function upload(
                 } else {
                     reject(
                         new UploadError(
-                            Object.values(data.errors ?? {})
-                                .flat()
-                                .join(' ') ||
-                                data.message ||
-                                'Permintaan gagal.',
+                            xhr.status >= 500
+                                ? 'Server belum dapat menyimpan video. Coba lagi nanti.'
+                                : Object.values(data.errors ?? {})
+                                      .flat()
+                                      .join(' ') ||
+                                      data.message ||
+                                      'Permintaan gagal.',
                             data.errors ?? {},
                         ),
                     );
@@ -274,6 +277,7 @@ export function ShortVideos({
         description: false,
     });
     const [attempted, setAttempted] = useState(false);
+    const [publishAttempted, setPublishAttempted] = useState(false);
     const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
     const [dialog, setDialog] = useState(false);
     const [selected, setSelected] = useState<PublishPlatformId[]>(['website']);
@@ -304,6 +308,7 @@ export function ShortVideos({
         : (current?.metadata.cover_original ?? photoUrl);
     const [cropOpen, setCropOpen] = useState(false);
     const coverInput = useRef<HTMLInputElement>(null);
+    const titleInput = useRef<HTMLInputElement>(null);
     const [playbackTime, setPlaybackTime] = useState(0);
     const requestedFrame = useRef<number | null>(null);
     const framePlayer = useRef<HTMLVideoElement>(null);
@@ -336,16 +341,17 @@ export function ShortVideos({
         touched.title || attempted
             ? attempted && !title.trim()
                 ? 'Judul video wajib diisi.'
-                : title.length > 255
-                  ? 'Judul maksimal 255 karakter.'
+                : title.length > 200
+                  ? 'Judul maksimal 200 karakter.'
                   : fieldErrors.title
             : undefined;
+    const descriptionLength = richTextLength(description);
     const descriptionError =
-        touched.description || attempted
-            ? attempted && !description.trim()
-                ? 'Deskripsi video wajib diisi.'
-                : description.length > 10000
-                  ? 'Deskripsi maksimal 10000 karakter.'
+        touched.description || publishAttempted
+            ? descriptionLength > 2000
+                ? 'Konten maksimal 2.000 karakter.'
+                : publishAttempted && descriptionLength < 20
+                  ? 'Konten minimal 20 karakter untuk diterbitkan.'
                   : fieldErrors.description
             : undefined;
     const selectedFramePreview =
@@ -379,14 +385,26 @@ export function ShortVideos({
                         ? 'Durasi video harus maksimal 15 menit.'
                         : current && current.status !== 'draft'
                           ? 'Video ini tidak tersedia sebagai draf.'
-                          : !title.trim() || !description.trim()
-                            ? 'Lengkapi judul dan deskripsi video.'
-                            : !localFile && !current?.thumbnail_url
-                              ? 'Sampul video belum tersedia.'
-                              : '';
+                          : !title.trim()
+                            ? 'Judul video wajib diisi.'
+                            : descriptionLength < 20
+                              ? 'Konten minimal 20 karakter untuk diterbitkan.'
+                              : !localFile && !current?.thumbnail_url
+                                ? 'Sampul video belum tersedia.'
+                                : '';
     const canPublish = !publishHint;
+    function requireTitle(): boolean {
+        if (title.trim()) return true;
+        setAttempted(true);
+        titleInput.current?.focus();
+        return false;
+    }
     function showFailure(failure: unknown, fallback: string) {
-        const message = failure instanceof Error ? failure.message : fallback;
+        const raw = failure instanceof Error ? failure.message : fallback;
+        const message =
+            /SQLSTATE|QueryException|Integrity constraint|Exception:/i.test(raw)
+                ? 'Server belum dapat menyimpan video. Coba lagi nanti.'
+                : raw;
         setError(message);
 
         if (failure instanceof UploadError) {
@@ -844,7 +862,7 @@ export function ShortVideos({
             preserveState: true,
             preserveScroll: true,
         });
-        setTitle(data.video.title);
+        setTitle(data.video.title ?? '');
         setDescription(data.video.description ?? '');
         setFieldErrors({});
         requestedFrame.current = data.video.frame_offset;
@@ -869,7 +887,7 @@ export function ShortVideos({
         return data.video;
     }
     async function saveDraft() {
-        if (guard.current) {
+        if (guard.current || !requireTitle()) {
             return;
         }
 
@@ -877,16 +895,28 @@ export function ShortVideos({
         setBusy(true);
         setSavingAction('draft');
         setError('');
+        setFeedback(null);
 
         try {
-            if (localFile || snapshot !== savedSnapshot) {
-                await save();
+            const video =
+                localFile || snapshot !== savedSnapshot
+                    ? await save()
+                    : current;
+            if (!video) {
+                throw new Error('Pilih video terlebih dahulu.');
             }
-
-            setFeedback({
-                variant: 'success',
-                message: 'Draf berhasil disimpan',
-            });
+            window.dispatchEvent(
+                new CustomEvent('short-draft', {
+                    detail: {
+                        id: video.id,
+                        title: video.title,
+                        thumbnail_url: video.thumbnail_url,
+                        revision: video.metadata.processing?.revision ?? null,
+                        status: video.metadata.processing?.status ?? 'ready',
+                        error: video.metadata.processing?.error ?? null,
+                    },
+                }),
+            );
 
             if (unsaved.open) {
                 unsaved.continueEditing();
@@ -904,18 +934,31 @@ export function ShortVideos({
             throw new Error('Pilih foto sampul atau gunakan tab Dari Video.');
         }
 
-        if (!source || !title.trim() || !description.trim()) {
-            throw new Error('Lengkapi video, judul, dan deskripsi.');
+        setPublishAttempted(true);
+        if (!requireTitle()) {
+            throw new Error('Judul video wajib diisi.');
+        }
+        if (descriptionLength < 20 || descriptionLength > 2000) {
+            throw new Error(
+                'Konten harus berisi 20–2.000 karakter untuk diterbitkan.',
+            );
+        }
+        if (!source) {
+            throw new Error('Pilih video terlebih dahulu.');
         }
 
         const heading = title.trim();
-        const text = description.trim();
+        const text = richTextPlain(description);
         const following = text.slice(heading.length, heading.length + 1);
         const alreadyStartsWithTitle =
             text.slice(0, heading.length).toLocaleLowerCase() ===
                 heading.toLocaleLowerCase() &&
             (!following || /^[\s\p{P}]$/u.test(following));
-        const caption = alreadyStartsWithTitle ? text : `${heading}\n\n${text}`;
+        const caption = !text
+            ? heading
+            : alreadyStartsWithTitle
+              ? text
+              : `${heading}\n\n${text}`;
         const captionLength = Array.from(caption).length;
 
         if (selected.includes('instagram') && captionLength > 2200) {
@@ -943,9 +986,11 @@ export function ShortVideos({
         };
     }
     async function publish() {
-        if (guard.current) {
+        if (guard.current || !requireTitle()) {
             return;
         }
+        setPublishAttempted(true);
+        if (descriptionLength < 20 || descriptionLength > 2000) return;
 
         guard.current = true;
         setBusy(true);
@@ -1104,7 +1149,9 @@ export function ShortVideos({
                                   ? 'Gagal memproses'
                                   : processingStatus === 'ready'
                                     ? 'Video siap'
-                                    : 'Memproses video...'}
+                                    : processingStatus === 'queued'
+                                      ? 'Menunggu pemrosesan...'
+                                      : 'Memproses video...'}
                         </span>
                         {!busy && processingStatus === 'failed' && (
                             <Button
@@ -1124,6 +1171,29 @@ export function ShortVideos({
                                             new FormData(),
                                         );
                                         setCurrent(data.video);
+                                        window.dispatchEvent(
+                                            new CustomEvent('short-draft', {
+                                                detail: {
+                                                    id: data.video.id,
+                                                    title: data.video.title,
+                                                    thumbnail_url:
+                                                        data.video
+                                                            .thumbnail_url,
+                                                    revision:
+                                                        data.video.metadata
+                                                            .processing
+                                                            ?.revision ?? null,
+                                                    status:
+                                                        data.video.metadata
+                                                            .processing
+                                                            ?.status ?? 'ready',
+                                                    error:
+                                                        data.video.metadata
+                                                            .processing
+                                                            ?.error ?? null,
+                                                },
+                                            }),
+                                        );
                                     } catch (failure) {
                                         showFailure(
                                             failure,
@@ -1438,6 +1508,7 @@ export function ShortVideos({
                                 <Label htmlFor="short-title">Judul Video</Label>
                                 <Input
                                     id="short-title"
+                                    ref={titleInput}
                                     aria-invalid={!!titleError}
                                     aria-describedby={
                                         titleError
@@ -1446,7 +1517,7 @@ export function ShortVideos({
                                     }
                                     placeholder="Masukkan judul yang jelas"
                                     value={title}
-                                    maxLength={255}
+                                    maxLength={200}
                                     disabled={
                                         busy || current?.status === 'published'
                                     }
@@ -1457,61 +1528,51 @@ export function ShortVideos({
                                         }))
                                     }
                                     onChange={(event) => {
-                                        setTitle(event.target.value);
+                                        setTitle(
+                                            event.target.value.slice(0, 200),
+                                        );
                                         setFieldErrors((value) => ({
                                             ...value,
                                             title: '',
                                         }));
                                     }}
                                 />
-                                <p className="text-right text-xs text-muted-foreground">
-                                    {title.length}/255
-                                </p>
-                                {titleError && (
+                                <div className="flex items-start justify-between gap-3 text-xs">
                                     <p
                                         id="short-title-error"
-                                        className="text-xs text-destructive"
+                                        className="text-destructive"
                                     >
-                                        {titleError}
+                                        {titleError ?? '\u00a0'}
                                     </p>
-                                )}
+                                    <p className="shrink-0 text-muted-foreground">
+                                        {title.length}/200
+                                    </p>
+                                </div>
                             </div>
                             <div className="space-y-2">
                                 <Label htmlFor="short-description">
                                     Isi / Deskripsi
                                 </Label>
-                                <Textarea
+                                <NewsRichEditor
                                     id="short-description"
-                                    aria-invalid={!!descriptionError}
-                                    aria-describedby={
-                                        descriptionError
-                                            ? 'short-description-error'
-                                            : undefined
-                                    }
-                                    placeholder="Tulis deskripsi video"
-                                    rows={5}
+                                    label="Konten / Deskripsi"
+                                    placeholder="Tulis konten video di sini..."
                                     value={description}
-                                    maxLength={10000}
+                                    characterCount={descriptionLength}
+                                    maxLength={2000}
+                                    required={publishAttempted}
+                                    invalid={!!descriptionError}
                                     disabled={
                                         busy || current?.status === 'published'
                                     }
-                                    onBlur={() =>
-                                        setTouched((value) => ({
-                                            ...value,
-                                            description: true,
-                                        }))
-                                    }
-                                    onChange={(event) => {
-                                        setDescription(event.target.value);
+                                    onChange={(html) => {
+                                        setDescription(html);
                                         setFieldErrors((value) => ({
                                             ...value,
                                             description: '',
                                         }));
                                     }}
                                 />
-                                <p className="text-right text-xs text-muted-foreground">
-                                    {description.length}/10000
-                                </p>
                                 {descriptionError && (
                                     <p
                                         id="short-description-error"
@@ -1521,8 +1582,7 @@ export function ShortVideos({
                                     </p>
                                 )}
                                 <p className="text-xs text-muted-foreground">
-                                    Deskripsi digunakan sebagai caption.
-                                    Instagram maksimal 2200 karakter.
+                                    Konten digunakan sebagai caption.
                                 </p>
                             </div>
                             <section
@@ -1704,10 +1764,10 @@ export function ShortVideos({
                                     </TabsContent>
                                 </Tabs>
                                 <p className="rounded-lg bg-emerald-500/10 p-3 text-xs leading-relaxed text-emerald-800 dark:text-emerald-300">
-                                    Tab aktif menentukan sampul yang disimpan
-                                    saat menyimpan draf atau menerbitkan.
-                                    Instagram menggunakan sampul ini; Facebook
-                                    memilih sampul secara otomatis.
+                                    Sampul yang dipilih akan digunakan untuk
+                                    ApaKhabar dan Instagram.
+                                    <br />
+                                    Facebook memilih sampul secara otomatis.
                                 </p>
                             </section>
                             <div className="flex flex-wrap justify-end gap-3">
@@ -1727,13 +1787,22 @@ export function ShortVideos({
                                 </Button>
                                 <Button
                                     className="bg-brand-600 text-white hover:bg-brand-700"
-                                    disabled={!canPublish}
+                                    disabled={
+                                        !canPublish &&
+                                        publishHint !==
+                                            'Judul video wajib diisi.' &&
+                                        publishHint !==
+                                            'Konten minimal 20 karakter untuk diterbitkan.'
+                                    }
                                     onClick={() => {
                                         if (guard.current) {
                                             return;
                                         }
 
+                                        if (!requireTitle()) return;
                                         setAttempted(true);
+                                        setPublishAttempted(true);
+                                        if (descriptionLength < 20) return;
 
                                         setDialog(true);
                                     }}

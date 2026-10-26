@@ -6,6 +6,8 @@ import vm from 'node:vm';
 import ts from 'typescript';
 
 const require = createRequire(import.meta.url);
+const richText = {};
+vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../../resources/js/lib/rich-text.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports: richText });
 const compiled = ts.transpileModule(
     readFileSync(
         new URL('../../resources/js/pages/short-viewer.tsx', import.meta.url),
@@ -72,6 +74,7 @@ function mount({ authenticated = true, likedByUser = false, width = 1280, reduce
             },
         },
         require(name) {
+            if (name === '@/lib/rich-text') return richText;
             if (name === 'react') {
                 return {
                     useState(initial) {

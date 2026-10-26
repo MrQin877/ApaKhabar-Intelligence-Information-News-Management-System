@@ -30,10 +30,11 @@ import {
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { metaRequest } from '@/lib/meta-auth';
+import { richTextPlain } from '@/lib/rich-text';
 
 export type ListedVideo = {
     id: number;
-    title: string;
+    title: string | null;
     description: string;
     video_url: string;
     thumbnail_url: string;
@@ -256,10 +257,11 @@ export function ShortVideoList({
                         <div className="min-w-0 flex-1 space-y-3">
                             <div className="space-y-1 pr-8">
                                 <h2 className="font-semibold break-words">
-                                    {item.title || 'Draf tanpa judul'}
+                                    {item.title || 'Belum ada judul'}
                                 </h2>
                                 <p className="line-clamp-2 text-sm break-words text-muted-foreground">
-                                    {item.description || 'Belum ada deskripsi.'}
+                                    {richTextPlain(item.description || '') ||
+                                        'Belum ada deskripsi.'}
                                 </p>
                             </div>
                             <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -302,12 +304,18 @@ export function ShortVideoList({
                                     </Button>
                                 )}
                                 {item.status === 'processing' && (
-                                    <Button size="sm" onClick={() => onStatus(item)}>
+                                    <Button
+                                        size="sm"
+                                        onClick={() => onStatus(item)}
+                                    >
                                         Lihat Progres
                                     </Button>
                                 )}
                                 {item.status === 'failed' && (
-                                    <Button size="sm" onClick={() => setDetail(item.id)}>
+                                    <Button
+                                        size="sm"
+                                        onClick={() => setDetail(item.id)}
+                                    >
                                         Lihat Status
                                     </Button>
                                 )}
@@ -640,7 +648,7 @@ export function ShortVideoList({
                                 />
                                 <div className="min-w-0">
                                     <h3 className="font-semibold break-words">
-                                        {video.title || 'Draf tanpa judul'}
+                                        {video.title || 'Belum ada judul'}
                                     </h3>
                                     <p className="text-xs text-muted-foreground">
                                         Dibuat: {date(video.created_at)}
@@ -653,7 +661,8 @@ export function ShortVideoList({
                                 </div>
                             </div>
                             <p className="text-sm break-words whitespace-pre-wrap">
-                                {video.description || 'Belum ada deskripsi.'}
+                                {richTextPlain(video.description || '') ||
+                                    'Belum ada deskripsi.'}
                             </p>
                             {platforms.map((platform) => {
                                 const p = video.publications?.find(

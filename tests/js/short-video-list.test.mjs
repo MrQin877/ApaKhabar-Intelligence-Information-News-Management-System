@@ -6,12 +6,15 @@ import { test } from 'node:test';
 import ts from 'typescript';
 const require = createRequire(import.meta.url);
 const compiled = ts.transpileModule(readFileSync('resources/js/components/short-video-list.tsx', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
+const richText = {};
+vm.runInNewContext(ts.transpileModule(readFileSync('resources/js/lib/rich-text.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText, { exports: richText });
 function mount(data = []) {
     const state = []; let cursor = 0; const visits = []; const actions = [];
     const context = { exports: {}, URL, require(name) {
         if (name === 'react') return { useState(initial) { const i = cursor++; if (!(i in state)) state[i] = initial; return [state[i], value => { state[i] = typeof value === 'function' ? value(state[i]) : value; }]; } };
         if (name === '@inertiajs/react') return { Link: 'Link', router: { get: (...args) => visits.push(args) } };
         if (name === 'react/jsx-runtime') return require(name);
+        if (name === '@/lib/rich-text') return richText;
         return new Proxy({}, { get: (_, key) => String(key) });
     } };
     vm.runInNewContext(compiled, context);
@@ -42,6 +45,12 @@ test('published cards show thumbnail description and playable details without pu
     view = app.render();
     assert.equal(view.nodes.find(n => n.type === 'video').props.src, video.video_url);
     assert.equal(app.visits.length, 0); assert.equal(app.actions.length, 0);
+});
+test('untitled drafts show a placeholder without changing the saved title', () => {
+    const app = mount([{ ...video, title: null, status: 'draft' }]);
+    const view = app.render();
+    assert.match(view.text, /Belum ada judul/);
+    assert.equal(view.nodes.find(n => n.type === 'Link').props.href, '/admin/short-videos/create?draft=1');
 });
 test('draft primary action preserves draft ID and archived cards remain accessible', () => {
     const app = mount([{ ...video, status: 'draft' }, { ...video, id: 2, status: 'archived' }]); const view = app.render();

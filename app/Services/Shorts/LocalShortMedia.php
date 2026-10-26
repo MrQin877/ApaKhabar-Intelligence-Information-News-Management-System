@@ -24,7 +24,7 @@ class LocalShortMedia
             throw ValidationException::withMessages(['video' => 'Video tidak dapat disimpan.']);
         }
 
-        return ['path' => $path, 'url' => Storage::disk('public')->url($path)];
+        return ['path' => $path, 'url' => url('/short-media/'.substr($path, strlen('shorts/')))];
     }
 
     public function file(string $path): UploadedFile

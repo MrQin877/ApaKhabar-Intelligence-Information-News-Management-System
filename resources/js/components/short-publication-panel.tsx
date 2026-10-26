@@ -8,6 +8,8 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { PlatformIcon } from '@/components/publication-preview';
+import { FeedbackToast } from '@/components/feedback-toast';
+import type { Feedback } from '@/components/feedback-toast';
 import { PublishResultDialog } from '@/components/publish-result-dialog';
 import { Button } from '@/components/ui/button';
 import { VideoPublicationIndicator } from '@/components/video-publication-indicator';
@@ -26,6 +28,15 @@ type Job = {
     destinations: Platform[];
     ready: boolean;
     result?: PublishResult;
+};
+type DraftJob = {
+    id: number;
+    title: string | null;
+    thumbnail_url?: string | null;
+    revision: string | null;
+    status: 'queued' | 'processing' | 'ready' | 'failed';
+    error?: string | null;
+    notified: boolean;
 };
 const platforms: Platform[] = ['website', 'instagram', 'facebook'];
 const names = {
@@ -79,7 +90,24 @@ function readJobs(key: string): Job[] {
         return [];
     }
 }
-function persist(key: string, jobs: Job[]) {
+function readDrafts(key: string): DraftJob[] {
+    try {
+        const value = JSON.parse(sessionStorage.getItem(key) ?? '[]');
+        return Array.isArray(value)
+            ? value.filter(
+                  (draft) =>
+                      typeof draft?.id === 'number' &&
+                      (draft.title === null || typeof draft.title === 'string') &&
+                      ['queued', 'processing', 'ready', 'failed'].includes(
+                          draft.status,
+                      ),
+              )
+            : [];
+    } catch {
+        return [];
+    }
+}
+function persist(key: string, jobs: Job[] | DraftJob[]) {
     try {
         sessionStorage.setItem(key, JSON.stringify(jobs));
     } catch {
@@ -90,15 +118,23 @@ function persist(key: string, jobs: Job[]) {
 export function ShortPublicationPanel() {
     const { auth } = usePage<{ auth: { user: { id: number } | null } }>().props;
     const storageKey = `publication-workloads:${auth.user?.id}`;
+    const draftStorageKey = `draft-workloads:${auth.user?.id}`;
     const [jobs, setJobs] = useState<Job[]>(() => readJobs(storageKey));
+    const [drafts, setDrafts] = useState<DraftJob[]>(() =>
+        readDrafts(draftStorageKey),
+    );
+    const [draftToasts, setDraftToasts] = useState<Feedback[]>([]);
     const [selected, setSelected] = useState<string | null>(null);
     const [minimized, setMinimized] = useState(false);
     const [error, setError] = useState('');
     const [retrying, setRetrying] = useState(false);
     const [refresh, setRefresh] = useState(0);
     const inFlight = useRef(new Set<string>());
+    const draftInFlight = useRef(new Set<number>());
     const dismissTimers = useRef(new Map<string, number>());
     const latest = useRef<Job[]>(jobs);
+    const latestDrafts = useRef<DraftJob[]>(drafts);
+    const announcedDrafts = useRef(new Set<DraftJob>());
     const update = (apply: (previous: Job[]) => Job[]) => {
         setJobs((previous) => {
             const next = apply(previous);
@@ -110,6 +146,17 @@ export function ShortPublicationPanel() {
     const remove = (key: string) => {
         update((previous) => previous.filter((job) => job.key !== key));
         setSelected((current) => (current === key ? null : current));
+    };
+    const updateDrafts = (apply: (previous: DraftJob[]) => DraftJob[]) => {
+        setDrafts((previous) => {
+            const next = apply(previous);
+            latestDrafts.current = next;
+            persist(draftStorageKey, next);
+            return next;
+        });
+    };
+    const removeDraft = (id: number) => {
+        updateDrafts((previous) => previous.filter((draft) => draft.id !== id));
     };
     useEffect(() => {
         const video = (event: Event) => {
@@ -192,14 +239,31 @@ export function ShortPublicationPanel() {
             ]);
             if (detail.open) setSelected(key);
         };
+        const draftSaved = (event: Event) => {
+            const detail = (event as CustomEvent<Omit<DraftJob, 'notified'>>)
+                .detail;
+            if (!detail || typeof detail.id !== 'number') return;
+            updateDrafts((previous) => {
+                return [
+                    ...previous.filter((draft) => draft.id !== detail.id),
+                    {
+                        ...detail,
+                        notified: false,
+                    },
+                ];
+            });
+        };
         window.addEventListener('short-publication', video);
         window.addEventListener('news-publication', news);
+        window.addEventListener('short-draft', draftSaved);
         return () => {
             window.removeEventListener('short-publication', video);
             window.removeEventListener('news-publication', news);
+            window.removeEventListener('short-draft', draftSaved);
         };
-    }, [storageKey]);
+    }, [storageKey, draftStorageKey]);
     useEffect(() => {
+        let mounted = true;
         const poll = () => {
             latest.current
                 .filter(
@@ -245,11 +309,117 @@ export function ShortPublicationPanel() {
                         .catch(() => setError('Status belum dapat diperbarui.'))
                         .finally(() => inFlight.current.delete(job.key));
                 });
+            latestDrafts.current
+                .filter(
+                    (draft) =>
+                        ['queued', 'processing'].includes(draft.status) &&
+                        !draftInFlight.current.has(draft.id),
+                )
+                .forEach((draft) => {
+                    draftInFlight.current.add(draft.id);
+                    void fetch(`/admin/short-videos/${draft.id}/processing`, {
+                        headers: { Accept: 'application/json' },
+                    })
+                        .then((response) => {
+                            if (!response.ok)
+                                throw new Error('Status draf gagal dimuat.');
+                            return response.json() as Promise<{
+                                video: {
+                                    title: string | null;
+                                    thumbnail_url: string | null;
+                                    metadata: {
+                                        processing?: {
+                                            revision: string;
+                                            status: DraftJob['status'];
+                                            error?: string | null;
+                                        };
+                                    };
+                                };
+                            }>;
+                        })
+                        .then(({ video }) => {
+                            if (!mounted) return;
+                            const processing = video.metadata.processing;
+                            updateDrafts((previous) =>
+                                previous.map((current) => {
+                                    if (current.id !== draft.id) return current;
+                                    // An older response must not replace a newer save or retry.
+                                    if (current.revision !== draft.revision)
+                                        return current;
+                                    const revision =
+                                        processing?.revision ?? null;
+                                    const nextStatus =
+                                        processing?.status ?? 'ready';
+                                    return {
+                                        ...current,
+                                        title: video.title,
+                                        thumbnail_url: video.thumbnail_url,
+                                        revision,
+                                        status: nextStatus,
+                                        error: processing?.error ?? null,
+                                        notified:
+                                            revision === current.revision &&
+                                            nextStatus === current.status
+                                                ? current.notified
+                                                : false,
+                                    };
+                                }),
+                            );
+                            setError('');
+                        })
+                        .catch(() => {
+                            if (mounted)
+                                setError('Status draf belum dapat diperbarui.');
+                        })
+                        .finally(() => draftInFlight.current.delete(draft.id));
+                });
         };
         const timer = window.setInterval(poll, 2000);
         poll();
-        return () => window.clearInterval(timer);
+        return () => {
+            mounted = false;
+            window.clearInterval(timer);
+        };
     }, [refresh]);
+    useEffect(() => {
+        const completedDrafts = drafts.filter(
+            (draft) =>
+                ['ready', 'failed'].includes(draft.status) &&
+                !draft.notified &&
+                !announcedDrafts.current.has(draft),
+        );
+        if (!completedDrafts.length) return;
+        completedDrafts.forEach((draft) => announcedDrafts.current.add(draft));
+        updateDrafts((previous) =>
+            previous.map((draft) =>
+                completedDrafts.some(
+                    (completed) =>
+                        completed.id === draft.id &&
+                        completed.revision === draft.revision &&
+                        completed.status === draft.status,
+                )
+                    ? { ...draft, notified: true }
+                    : draft,
+            ),
+        );
+        setDraftToasts((previous) => [
+            ...previous,
+            ...completedDrafts.map(
+                (draft): Feedback =>
+                    draft.status === 'ready'
+                        ? {
+                              variant: 'success',
+                              message: 'Draf berhasil disimpan',
+                          }
+                        : {
+                              variant: 'error',
+                              message:
+                                  draft.error ??
+                                  'Video gagal diproses. Draf dan video asli tetap tersimpan.',
+                          },
+            ),
+        ]);
+    }, [drafts]);
     useEffect(() => {
         for (const job of jobs) {
             if (successful(job) && !dismissTimers.current.has(job.key)) {
@@ -262,13 +432,37 @@ export function ShortPublicationPanel() {
                 );
             }
         }
+        for (const draft of drafts) {
+            const key = `draft:${draft.id}`;
+            if (
+                draft.status === 'ready' &&
+                draft.notified &&
+                !dismissTimers.current.has(key)
+            ) {
+                dismissTimers.current.set(
+                    key,
+                    window.setTimeout(() => {
+                        dismissTimers.current.delete(key);
+                        removeDraft(draft.id);
+                    }, 5000),
+                );
+            }
+        }
         for (const [key, timer] of dismissTimers.current) {
-            if (!jobs.some((job) => job.key === key && successful(job))) {
+            const stillComplete = key.startsWith('draft:')
+                ? drafts.some(
+                      (draft) =>
+                          `draft:${draft.id}` === key &&
+                          draft.status === 'ready' &&
+                          draft.notified,
+                  )
+                : jobs.some((job) => job.key === key && successful(job));
+            if (!stillComplete) {
                 window.clearTimeout(timer);
                 dismissTimers.current.delete(key);
             }
         }
-    }, [jobs]);
+    }, [jobs, drafts]);
     useEffect(
         () => () => {
             for (const timer of dismissTimers.current.values())
@@ -277,20 +471,37 @@ export function ShortPublicationPanel() {
         [],
     );
 
-    if (!jobs.length) return null;
+    if (!jobs.length && !drafts.length) {
+        return draftToasts.length ? (
+            <FeedbackToast
+                feedback={draftToasts[0]}
+                onDismiss={() =>
+                    setDraftToasts((previous) => previous.slice(1))
+                }
+            />
+        ) : null;
+    }
     const chosen = jobs.find((job) => job.key === selected);
-    const activeCount = jobs.filter(active).length;
+    const activeCount =
+        jobs.filter(active).length +
+        drafts.filter((draft) =>
+            ['queued', 'processing'].includes(draft.status),
+        ).length;
     return (
         <>
+            <FeedbackToast
+                feedback={draftToasts[0] ?? null}
+                onDismiss={() =>
+                    setDraftToasts((previous) => previous.slice(1))
+                }
+            />
             <aside
-                aria-label="Aktivitas Publikasi"
+                aria-label="Aktivitas"
                 hidden={selected !== null}
                 className="fixed right-4 bottom-4 z-40 max-h-[min(36rem,calc(100dvh-2rem))] w-[min(30rem,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-border/80 bg-card p-4 shadow-2xl"
             >
                 <div className="flex items-center justify-between gap-2">
-                    <h2 className="font-semibold text-foreground">
-                        Aktivitas Publikasi
-                    </h2>
+                    <h2 className="font-semibold text-foreground">Aktivitas</h2>
                     <div className="flex items-center gap-2">
                         <span className="rounded-full bg-muted px-2 py-0.5 text-xs">
                             {activeCount} proses
@@ -316,6 +527,64 @@ export function ShortPublicationPanel() {
                 </div>
                 {!minimized && (
                     <div className="mt-3 divide-y divide-border/70 border-t border-border/70">
+                        {drafts.map((draft) => (
+                            <div
+                                key={`draft:${draft.id}`}
+                                className="flex gap-3 py-3"
+                            >
+                                {draft.thumbnail_url ? (
+                                    <img
+                                        src={draft.thumbnail_url}
+                                        alt=""
+                                        className="h-16 w-12 shrink-0 rounded-md object-cover"
+                                    />
+                                ) : (
+                                    <span className="flex h-16 w-12 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                                        <Clapperboard className="size-5" />
+                                    </span>
+                                )}
+                                <div className="min-w-0 flex-1 space-y-2">
+                                    <p className="line-clamp-2 text-sm font-semibold">
+                                        Draf Video: {draft.title || 'Belum ada judul'}
+                                    </p>
+                                    <p
+                                        role={
+                                            draft.status === 'failed'
+                                                ? 'alert'
+                                                : 'status'
+                                        }
+                                        className="text-xs text-muted-foreground"
+                                    >
+                                        {draft.status === 'queued'
+                                            ? 'Menunggu pemrosesan...'
+                                            : draft.status === 'processing'
+                                              ? 'Memproses video...'
+                                              : draft.status === 'failed'
+                                                ? (draft.error ??
+                                                  'Video gagal diproses. Draf dan video asli tetap tersimpan.')
+                                                : 'Draf berhasil disimpan'}
+                                    </p>
+                                    <div className="flex items-center gap-2">
+                                        <Link
+                                            href={`/admin/short-videos/create?draft=${draft.id}`}
+                                            className="text-xs text-primary"
+                                        >
+                                            Edit Draf
+                                        </Link>
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            aria-label={`Tutup status draf ${draft.title || 'Belum ada judul'}`}
+                                            onClick={() =>
+                                                removeDraft(draft.id)
+                                            }
+                                        >
+                                            <X className="size-3.5" />
+                                        </Button>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
                         {jobs.map((job) => (
                             <div key={job.key} className="flex gap-3 py-3">
                                 {job.thumbnail_url ? (

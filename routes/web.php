@@ -21,6 +21,7 @@ use App\Http\Controllers\Village\NotificationController;
 use App\Http\Controllers\WebsiteTranslationController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Storage;
 
 Route::get('/mobile/email/verify/{id}/{hash}', [MobileEmailVerificationController::class, 'verify'])
     ->middleware('throttle:30,1')->name('mobile.verification.verify');
@@ -47,6 +48,18 @@ Route::post('/website/translate', WebsiteTranslationController::class)
 
 Route::get('/', [WelcomeController::class, 'index'])->name('home');
 Route::get('/videos', [VideoPageController::class, 'index'])->name('videos.index');
+Route::get('/short-media/{kind}/{file}', function (string $kind, string $file) {
+    abort_unless(in_array($kind, ['original', 'edits'], true)
+        && preg_match('/^[a-f0-9-]{36}\.mp4$/i', $file), 404);
+    $path = "shorts/{$kind}/{$file}";
+    abort_unless(Storage::disk('public')->exists($path), 404);
+
+    return response()->file(Storage::disk('public')->path($path), [
+        'Content-Type' => 'video/mp4',
+        'Cache-Control' => 'public, max-age=86400',
+        'X-Content-Type-Options' => 'nosniff',
+    ]);
+})->name('short-media.show');
 Route::get('/shorts/{id}', [ShortViewerController::class, 'show'])->whereNumber('id')->name('shorts.show');
 Route::get('/shorts/{id}/view-token', [ShortViewerController::class, 'token'])->whereNumber('id')->middleware('throttle:30,1');
 Route::post('/shorts/{id}/view', [ShortViewerController::class, 'view'])->whereNumber('id')->middleware('throttle:30,1');

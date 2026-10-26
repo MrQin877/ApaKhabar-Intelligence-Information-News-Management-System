@@ -72,11 +72,16 @@ class VideoCropper
                 throw ValidationException::withMessages(['video' => 'Dimensi sumber tidak didukung untuk crop (maksimal 8192 px).']);
             }
             $rect = self::rectangle($width, $height, $edit);
+            // Avoid upscaling every edit to 1080p. Keep a Reels-compatible minimum.
+            $sourceWidth = ($edit['mode'] ?? 'crop') === 'fit' ? min($width, $height) : $rect['width'];
+            $outputWidth = min(1080, max(540, (int) floor($sourceWidth / 18) * 18));
+            $outputHeight = (int) ($outputWidth * 16 / 9);
+            $size = "{$outputWidth}:{$outputHeight}";
             // FFmpeg autorotates exactly once, before this graph. Geometry uses display dimensions.
             $filters = "[0:v:0]scale={$width}:{$height},setsar=1,";
             $filters .= ($edit['mode'] ?? 'crop') === 'fit'
-                ? 'split=2[bg][fg];[bg]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,gblur=sigma=30[blur];[fg]scale=1080:1920:force_original_aspect_ratio=decrease:force_divisible_by=2[front];[blur][front]overlay=(W-w)/2:(H-h)/2,setsar=1[out]'
-                : "crop={$rect['width']}:{$rect['height']}:{$rect['x']}:{$rect['y']},scale=1080:1920,setsar=1[out]";
+                ? "split=2[bg][fg];[bg]scale={$size}:force_original_aspect_ratio=increase,crop={$size},gblur=sigma=30[blur];[fg]scale={$size}:force_original_aspect_ratio=decrease:force_divisible_by=2[front];[blur][front]overlay=(W-w)/2:(H-h)/2,setsar=1[out]"
+                : "crop={$rect['width']}:{$rect['height']}:{$rect['x']}:{$rect['y']},scale={$size},setsar=1[out]";
             $binary = config('shorts.ffmpeg');
             if (! $binary) {
                 $probe = config('shorts.ffprobe');
@@ -94,7 +99,7 @@ class VideoCropper
             Log::info('Short FFmpeg export timing', ['duration_ms' => (int) ((hrtime(true) - $started) / 1_000_000)]);
             $file = new UploadedFile($output, 'cropped.mp4', 'video/mp4', null, true);
             $result = $inspector->inspect($file);
-            if ($result['width'] !== 1080 || $result['height'] !== 1920 || ($result['rotation'] ?? 0) % 360 !== 0 || abs(($result['sample_aspect_ratio'] ?? 1) - 1) > 0.0001) {
+            if ($result['width'] !== $outputWidth || $result['height'] !== $outputHeight || ($result['rotation'] ?? 0) % 360 !== 0 || abs(($result['sample_aspect_ratio'] ?? 1) - 1) > 0.0001) {
                 throw new \RuntimeException('Orientasi hasil ekspor tidak valid.');
             }
 

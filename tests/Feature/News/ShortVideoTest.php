@@ -38,7 +38,7 @@ function shortUser(string $role = 'admin'): User
 }
 function shortDraft(User $user): ShortVideo
 {
-    return ShortVideo::create(['created_by' => $user->getKey(), 'title' => 'Video desa', 'description' => 'Kegiatan warga', 'video_url' => 'https://res.cloudinary.com/demo/video/upload/short.mp4', 'video_public_id' => 'short', 'thumbnail_url' => 'https://res.cloudinary.com/demo/video/upload/so_0/short.jpg', 'metadata' => shortMetadata()]);
+    return ShortVideo::create(['created_by' => $user->getKey(), 'title' => 'Video desa', 'description' => 'Kegiatan warga di desa', 'video_url' => 'https://res.cloudinary.com/demo/video/upload/short.mp4', 'video_public_id' => 'short', 'thumbnail_url' => 'https://res.cloudinary.com/demo/video/upload/so_0/short.jpg', 'metadata' => shortMetadata()]);
 }
 function shortConnection(User $u, string $platform): SocialConnection
 {
@@ -83,7 +83,7 @@ test('landscape upload crop save draft publish sends cropped URL to both platfor
     finishShortDraft($id);
     expect(ShortVideo::findOrFail($id)->video_url)->toBe($croppedUrl);
     Storage::disk('public')->assertExists($originalPath);
-    $this->postJson('/admin/short-videos/'.$id, ['title' => 'Confirmed crop', 'description' => 'Preserved caption', 'frame_offset' => 0, 'cover_mode' => 'keep'])->assertOk();
+    $this->postJson('/admin/short-videos/'.$id, ['title' => 'Confirmed crop', 'description' => 'Preserved caption for publishing', 'frame_offset' => 0, 'cover_mode' => 'keep'])->assertOk();
     $video = ShortVideo::findOrFail($id);
     shortPublish($this, $video, ['website', 'instagram', 'facebook'])->assertOk();
     expect($video->fresh()->video_url)->toBe($croppedUrl);
@@ -125,7 +125,7 @@ test('local edited drafts survive reload and website publishing never uploads to
             'crop_source' => ['url' => 'https://res.cloudinary.com/demo/video/upload/original.mp4', 'metadata' => shortMetadata()],
             'video_crop' => ['x' => .5, 'y' => .5, 'zoom' => 2, 'start' => 1, 'end' => 21]]]);
     $this->mock(CloudinaryVideoService::class)->shouldNotReceive('upload');
-    $this->postJson('/admin/short-videos/'.$video->id, ['title' => 'Local edit', 'description' => 'Persisted', 'frame_offset' => 0, 'cover_mode' => 'keep'])->assertOk();
+    $this->postJson('/admin/short-videos/'.$video->id, ['title' => 'Local edit', 'description' => 'Persisted content for publishing', 'frame_offset' => 0, 'cover_mode' => 'keep'])->assertOk();
     $this->get('/admin/short-videos/create?draft='.$video->id)->assertInertia(fn (Assert $page) => $page
         ->where('draft.video_url', Storage::disk('public')->url($path))
         ->where('draft.metadata.video_crop.start', 1));
@@ -425,7 +425,7 @@ test('upload persists a local draft without Cloudinary', function () {
     $this->mock(CloudinaryVideoService::class)->shouldNotReceive('upload');
     $response = $this->postJson('/admin/short-videos/upload', ['video' => UploadedFile::fake()->create('short.mp4', 100, 'video/mp4')])->assertCreated()->assertJsonPath('video.metadata.codec', 'h264')->assertJsonPath('video.status', 'draft');
     Storage::disk('public')->assertExists($response->json('video.metadata.local_path'));
-    expect($response->json('video.video_url'))->toContain('/storage/shorts/original/');
+    expect($response->json('video.video_url'))->toContain('/short-media/original/');
 });
 test('uploading a replacement updates the owned draft instead of creating another record', function () {
     $user = shortUser();
@@ -555,26 +555,64 @@ test('stale previews and invalid covers cannot publish or change a draft', funct
     expect($v->fresh()->status)->toBe('draft');
 });
 
-test('a draft keeps its video and cover when title and description are empty, but cannot publish', function () {
+test('rejecting an empty title leaves the saved draft and media unchanged', function () {
     $user = shortUser();
     $video = shortDraft($user);
     $this->actingAs($user);
 
     $this->postJson('/admin/short-videos/'.$video->id, [
         'title' => '', 'description' => '', 'frame_offset' => 0, 'cover_mode' => 'keep',
-    ])->assertOk()->assertJsonPath('video.id', $video->id)->assertJsonPath('video.title', '')->assertJsonPath('video.description', '');
+    ])->assertUnprocessable()->assertJsonPath('errors.title.0', 'Judul video wajib diisi.');
 
     expect(ShortVideo::count())->toBe(1);
     expect($video->fresh()->video_url)->toBe($video->video_url);
     expect($video->fresh()->thumbnail_url)->toBe($video->thumbnail_url);
     $this->get('/admin/short-videos/create?draft='.$video->id)->assertInertia(fn (Assert $page) => $page
         ->where('draft.id', $video->id)
-        ->where('draft.title', '')
-        ->where('draft.description', '')
+        ->where('draft.title', 'Video desa')
+        ->where('draft.description', 'Kegiatan warga di desa')
         ->where('draft.video_url', $video->video_url)
         ->where('draft.thumbnail_url', $video->thumbnail_url));
-    $this->postJson('/admin/short-videos/'.$video->id.'/preview', ['platforms' => ['website']])->assertUnprocessable();
     expect($video->fresh()->status)->toBe('draft');
+});
+
+test('a titled draft with no description can be saved but not published', function () {
+    $user = shortUser();
+    $video = shortDraft($user);
+    $this->actingAs($user);
+    $this->postJson('/admin/short-videos/'.$video->id, [
+        'title' => 'Video desa', 'description' => '', 'frame_offset' => 0, 'cover_mode' => 'keep',
+    ])->assertOk();
+    $this->postJson('/admin/short-videos/'.$video->id.'/preview', [
+        'platforms' => ['website'],
+    ])->assertUnprocessable()->assertJsonPath('errors.description.0', 'Konten minimal 20 karakter untuk diterbitkan.');
+    expect($video->fresh()->status)->toBe('draft');
+});
+
+test('short title and rich content limits count visible text and preserve safe formatting', function () {
+    $user = shortUser();
+    $video = shortDraft($user);
+    $this->actingAs($user);
+    $url = '/admin/short-videos/'.$video->id;
+
+    $this->postJson($url, ['title' => str_repeat('J', 201), 'description' => 'Konten yang cukup panjang', 'frame_offset' => 0, 'cover_mode' => 'keep'])
+        ->assertUnprocessable()->assertJsonPath('errors.title.0', 'Judul maksimal 200 karakter.');
+    $this->postJson($url, ['title' => 'Judul aman', 'description' => '<p>'.str_repeat('a', 2001).'</p>', 'frame_offset' => 0, 'cover_mode' => 'keep'])
+        ->assertUnprocessable()->assertJsonPath('errors.description.0', 'Konten maksimal 2.000 karakter.');
+    $this->postJson($url, ['title' => 'Judul aman', 'description' => '<p><strong>Singkat</strong></p>', 'frame_offset' => 0, 'cover_mode' => 'keep'])
+        ->assertOk();
+    $this->postJson($url.'/preview', ['platforms' => ['website']])
+        ->assertUnprocessable()->assertJsonPath('errors.description.0', 'Konten minimal 20 karakter untuk diterbitkan.');
+    $this->postJson($url, ['title' => str_repeat('J', 200), 'description' => '<p><strong>Konten berita desa hari ini</strong></p><script>alert(1)</script>', 'frame_offset' => 0, 'cover_mode' => 'keep'])
+        ->assertOk();
+    expect($video->fresh()->description)->toContain('<strong>Konten berita desa hari ini</strong>')->not->toContain('<script>');
+    $this->get('/admin/short-videos/create?draft='.$video->id)->assertInertia(fn (Assert $page) => $page
+        ->where('draft.title', str_repeat('J', 200))
+        ->where('draft.description', $video->fresh()->description));
+    $this->postJson($url.'/preview', ['platforms' => ['website']])
+        ->assertOk()->assertJsonPath('caption', str_repeat('J', 200)."\n\nKonten berita desa hari ini");
+    $this->postJson($url, ['frame_offset' => 0, 'cover_mode' => 'keep'])
+        ->assertOk()->assertJsonPath('video.description', $video->fresh()->description);
 });
 
 test('a definite Meta rejection preserves its safe error and can be retried', function () {
@@ -745,9 +783,9 @@ test('selected frame and custom cover persist through draft reload and website p
     $this->actingAs($user);
     $cloud = $this->mock(CloudinaryVideoService::class);
     $cloud->shouldReceive('cover')->once()->with(null, $video->video_public_id, 4.5)->andReturn(['url' => 'https://res.cloudinary.com/demo/video/upload/so_4.500/short.jpg', 'public_id' => null]);
-    $this->postJson('/admin/short-videos/'.$video->id, ['title' => 'New title', 'description' => 'Description', 'frame_offset' => 4.5, 'cover_mode' => 'frame'])->assertOk()->assertJsonPath('video.frame_offset', 4.5);
+    $this->postJson('/admin/short-videos/'.$video->id, ['title' => 'New title', 'description' => 'Description for publication', 'frame_offset' => 4.5, 'cover_mode' => 'frame'])->assertOk()->assertJsonPath('video.frame_offset', 4.5);
     $this->get('/admin/short-videos')->assertInertia(fn (Assert $page) => $page->where('videos.data.0.frame_offset', 4.5)->where('videos.data.0.thumbnail_url', 'https://res.cloudinary.com/demo/video/upload/so_4.500/short.jpg'));
-    $this->postJson('/admin/short-videos/'.$video->id, ['title' => 'New title', 'description' => 'Description', 'frame_offset' => 4.5, 'cover_mode' => 'upload', 'cover' => UploadedFile::fake()->image('cover.jpg')])->assertOk();
+    $this->postJson('/admin/short-videos/'.$video->id, ['title' => 'New title', 'description' => 'Description for publication', 'frame_offset' => 4.5, 'cover_mode' => 'upload', 'cover' => UploadedFile::fake()->image('cover.jpg')])->assertOk();
     shortPublish($this, $video->fresh(), ['website'])->assertOk();
     $this->get('/')->assertInertia(fn (Assert $page) => $page->where('shorts.0.thumbnail_url', $video->fresh()->thumbnail_url));
 });
