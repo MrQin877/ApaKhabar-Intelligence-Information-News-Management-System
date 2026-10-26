@@ -1,0 +1,228 @@
+name: apakhabar-docker
+
+x-laravel: &laravel
+  build:
+    context: ..
+    dockerfile: deployment/docker/laravel.Dockerfile
+    target: app
+  env_file: ./laravel.env
+  environment: &laravel-env
+    APP_URL: http://localhost:${WEB_PORT:-8088}
+    DB_CONNECTION: mysql
+    DB_HOST: db
+    DB_PORT: "3306"
+    DB_DATABASE: ${DB_DATABASE:-apakhabar_docker}
+    DB_USERNAME: ${DB_USERNAME:-apakhabar}
+    DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in deployment/.env}
+    QUEUE_CONNECTION: database
+    DB_QUEUE_RETRY_AFTER: "1500"
+    APAKHABAR_AI_URL: http://ai:8001
+    APAKHABAR_AI_API_PREFIX: ""
+    APAKHABAR_AI_SERVICE_TOKEN: ${APAKHABAR_AI_SERVICE_TOKEN:?Set a shared service token in deployment/.env}
+    LIBRETRANSLATE_URL: http://libretranslate:5000
+    FFMPEG_BINARY: ffmpeg
+    FFPROBE_BINARY: ffprobe
+  volumes: &laravel-volumes
+    - laravel_storage:/var/www/html/storage
+  depends_on: &laravel-depends
+    db:
+      condition: service_healthy
+    ai:
+      condition: service_healthy
+  restart: unless-stopped
+  stop_grace_period: 1400s
+
+services:
+  db:
+    image: mariadb:11.4
+    environment:
+      MARIADB_DATABASE: ${DB_DATABASE:-apakhabar_docker}
+      MARIADB_USER: ${DB_USERNAME:-apakhabar}
+      MARIADB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in deployment/.env}
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?Set DB_ROOT_PASSWORD in deployment/.env}
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    healthcheck:
+      test: [CMD, healthcheck.sh, --connect, --innodb_initialized]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 40s
+    restart: unless-stopped
+    networks: [internal]
+
+  ai:
+    build:
+      context: ${AI_REPO_PATH:-../../PROJECT/ApaKhabar-AI-Service}
+      dockerfile: ${AI_DOCKERFILE:-../../ApaKhabar-Intelligence-Information-News-Management-System/deployment/docker/ai.Dockerfile}
+    env_file: ./ai.env
+    environment:
+      AI_PROVIDER: llama_cpp
+      LLAMA_CPP_BASE_URL: http://llama-writer:8080/v1
+      LLAMA_CPP_MODEL: apakhabar-gemma
+      EVALUATOR_BASE_URL: http://llama-judge:8082/v1
+      EVALUATOR_MODEL: apakhabar-judge
+      OLLAMA_BASE_URL: http://ollama:11434
+      CHROMA_PATH: /app/data/chroma
+      UPLOAD_PATH: /app/data/uploads
+      AGENT_DB_PATH: /app/data/agent/checkpoints.sqlite
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      APAKHABAR_AI_SERVICE_TOKEN: ${APAKHABAR_AI_SERVICE_TOKEN:?Set a shared service token in deployment/.env}
+    volumes:
+      - ai_chroma:/app/data/chroma
+      - ai_uploads:/app/data/uploads
+      - ai_checkpoints:/app/data/agent
+    depends_on:
+      llama-writer:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    networks: [internal]
+
+  llama-writer:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    command: ["-m", "/models/writer.gguf", "--alias", "apakhabar-gemma", "--host", "0.0.0.0", "--port", "8080", "--ctx-size", "8192", "--parallel", "1", "--jinja", "--reasoning", "off", "--n-gpu-layers", "${WRITER_GPU_LAYERS:-0}"]
+    volumes:
+      - type: bind
+        source: ${WRITER_GGUF_PATH:-./models/writer.gguf}
+        target: /models/writer.gguf
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: [CMD, /bin/sh, -c, "curl -fsS http://127.0.0.1:8080/health >/dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 180s
+    restart: unless-stopped
+    networks: [internal]
+
+  llama-judge:
+    profiles: [judge]
+    image: ghcr.io/ggml-org/llama.cpp:server
+    command: ["-m", "/models/judge.gguf", "--alias", "apakhabar-judge", "--host", "0.0.0.0", "--port", "8082", "--ctx-size", "16384", "--parallel", "1", "--jinja", "--reasoning", "off", "--n-gpu-layers", "${JUDGE_GPU_LAYERS:-0}"]
+    volumes:
+      - type: bind
+        source: ${JUDGE_GGUF_PATH:-./models/judge.gguf}
+        target: /models/judge.gguf
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: [CMD, /bin/sh, -c, "curl -fsS http://127.0.0.1:8082/health >/dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 180s
+    restart: unless-stopped
+    networks: [internal]
+
+  ollama:
+    image: ollama/ollama:0.12.10
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+      OLLAMA_MODELS: /root/.ollama/models
+    volumes:
+      - type: bind
+        source: ${OLLAMA_MODELS_PATH:-./models/ollama}
+        target: /root/.ollama/models
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: [CMD, ollama, list]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    networks: [internal]
+
+  app:
+    <<: *laravel
+    healthcheck:
+      test: [CMD, php, -r, "exit(@fsockopen('127.0.0.1', 9000) ? 0 : 1);"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks: [internal]
+
+  web:
+    build:
+      context: ..
+      dockerfile: deployment/docker/laravel.Dockerfile
+      target: web
+    ports:
+      - "127.0.0.1:${WEB_PORT:-8088}:80"
+    volumes:
+      - laravel_storage:/var/www/html/storage:ro
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1/healthz]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    networks: [internal]
+
+  worker-documents:
+    <<: *laravel
+    command: [php, artisan, queue:work, "--queue=documents,default", "--tries=5", "--timeout=1250"]
+    networks: [internal]
+
+  worker-generation:
+    <<: *laravel
+    command: [php, artisan, queue:work, "--queue=generation", "--tries=1", "--timeout=1250"]
+    networks: [internal]
+
+  worker-video:
+    <<: *laravel
+    command: [php, artisan, queue:work, "--queue=video-publishing", "--tries=1", "--timeout=90"]
+    networks: [internal]
+
+  scheduler:
+    <<: *laravel
+    command: [php, artisan, schedule:work]
+    networks: [internal]
+
+  libretranslate:
+    profiles: [translation]
+    image: libretranslate/libretranslate:v1.9.6
+    environment:
+      LT_LOAD_ONLY: en,id,ms
+      LT_CHAR_LIMIT: "12000"
+      LT_BATCH_LIMIT: "20"
+    volumes:
+      - translation_models:/home/libretranslate/.local
+    healthcheck:
+      test: [CMD-SHELL, "./venv/bin/python scripts/healthcheck.py"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    restart: unless-stopped
+    networks: [internal]
+
+networks:
+  internal:
+    internal: false # Outbound HTTPS is required for Meta, Cloudinary, mail, and optional model APIs.
+
+volumes:
+  mariadb_data:
+  laravel_storage:
+  ai_chroma:
+  ai_uploads:
+  ai_checkpoints:
+  translation_models:

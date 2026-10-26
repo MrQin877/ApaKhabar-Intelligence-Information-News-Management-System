@@ -133,19 +133,19 @@ test('admin decisions reports and history are protected and enforce transitions'
     expect(DB::table('comment_reports')->count())->toBe(1);
     $decision = '/admin/comments/'.$comment->getKey().'/decision';
     $this->get('/admin/comments')->assertRedirect('/');
-    $this->postJson($decision, ['action' => 'remove', 'reason' => 'review'])->assertRedirect('/');
+    $this->postJson($decision, ['action' => 'hide', 'reason' => 'review'])->assertRedirect('/');
     $admin = User::factory()->create(['roleID' => UserRole::firstOrCreate(['name' => 'admin'])->getKey()]);
     $this->actingAs($admin)->get('/admin/comments?status=reported')->assertOk();
-    $this->postJson($decision, ['action' => 'remove', 'reason' => 'Violation'])->assertOk();
+    $this->postJson($decision, ['action' => 'hide', 'reason' => 'Violation'])->assertOk();
     $this->getJson($this->url)->assertJsonPath('data.comments', 0);
-    $this->postJson($decision, ['action' => 'approve', 'reason' => 'Invalid transition'])->assertConflict();
-    $this->postJson($decision, ['action' => 'restore', 'reason' => 'Appeal accepted'])->assertOk();
+    $this->postJson($decision, ['action' => 'hide', 'reason' => 'Invalid transition'])->assertConflict();
+    $this->postJson($decision, ['action' => 'allow', 'reason' => 'Appeal accepted'])->assertOk();
     expect($comment->fresh()->status)->toBe('published')->and(DB::table('comment_moderation_history')->count())->toBe(3);
     $comment->refresh()->update(['status' => 'pending_review']);
-    $this->postJson($decision, ['action' => 'reject', 'reason' => 'Not acceptable'])->assertOk();
-    $this->postJson($decision, ['action' => 'restore', 'reason' => 'Appeal accepted after rejection'])->assertOk();
+    $this->postJson($decision, ['action' => 'hide', 'reason' => 'Not acceptable'])->assertOk();
+    $this->postJson($decision, ['action' => 'allow', 'reason' => 'Appeal accepted after rejection'])->assertOk();
     $comment->refresh()->update(['status' => 'pending_review']);
-    $this->postJson($decision, ['action' => 'approve', 'reason' => 'Reviewed'])->assertOk();
+    $this->postJson($decision, ['action' => 'allow', 'reason' => 'Reviewed'])->assertOk();
 });
 
 test('unpublished articles cannot receive engagement', function () {
@@ -201,7 +201,8 @@ test('report categories reach moderation and duplicate reports preserve the orig
     $this->postJson($endpoint, ['category' => 'Spam', 'details' => 'Pesan berulang'])->assertOk();
     $this->postJson($endpoint, ['category' => 'Lainnya'])->assertOk();
     expect(DB::table('comment_reports')->count())->toBe(1)
-        ->and(DB::table('comment_reports')->value('reason'))->toBe('Spam: Pesan berulang');
+        ->and(DB::table('comment_reports')->value('category'))->toBe('Spam')
+        ->and(DB::table('comment_reports')->value('explanation'))->toBe('Pesan berulang');
     $this->getJson($this->url)->assertJsonPath('data.comments_list.0.reported_by_user', true);
 });
 

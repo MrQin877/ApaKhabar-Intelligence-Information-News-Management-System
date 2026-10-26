@@ -14,14 +14,14 @@ class Comment extends Model
         'userID',
         'content',
         'parentID', 'guest_name', 'status', 'ai_flagged', 'moderation_categories',
-        'moderation_reason', 'moderator_id', 'moderated_at', 'submission_hash',
+        'moderation_reason', 'moderated_at', 'submission_hash',
     ];
 
     protected $attributes = [
         'parentID' => null,
     ];
 
-    protected $hidden = ['moderation_categories', 'moderation_reason', 'ai_flagged', 'submission_hash', 'moderator_id'];
+    protected $hidden = ['moderation_categories', 'moderation_reason', 'ai_flagged', 'submission_hash'];
 
     protected $casts = ['moderation_revision' => 'integer', 'moderation_categories' => 'array', 'ai_flagged' => 'boolean'];
 
@@ -29,23 +29,8 @@ class Comment extends Model
     {
         return $query->where(function ($pending) {
             $pending->where('status', 'pending_review')
-                ->orWhere(function ($reported) {
-                    $reported->where('status', 'published')->whereIn('commentID',
-                        DB::table('comment_reports')->whereNull('resolved_at')->select('comment_id'));
-                })
-                ->orWhere(function ($flagged) {
-                    // An article-side admin correction hides immediately, then awaits queue review.
-                    $flagged->where('status', 'removed')->whereExists(function ($feedback) {
-                        $feedback->selectRaw('1')->from('comment_moderation_feedback as feedback')
-                            ->whereColumn('feedback.comment_id', 'comments.commentID')
-                            ->where('feedback.classification', 'inappropriate')
-                            ->whereNotExists(function ($newer) {
-                                $newer->selectRaw('1')->from('comment_moderation_history as newer')
-                                    ->whereColumn('newer.comment_id', 'comments.commentID')
-                                    ->whereColumn('newer.id', '>', 'feedback.history_id');
-                            });
-                    });
-                });
+                ->orWhereIn('commentID', DB::table('comment_reports')->whereNull('resolved_at')->select('comment_id'))
+                ->orWhereIn('commentID', DB::table('comment_flags')->whereNull('resolved_at')->select('comment_id'));
         });
     }
 

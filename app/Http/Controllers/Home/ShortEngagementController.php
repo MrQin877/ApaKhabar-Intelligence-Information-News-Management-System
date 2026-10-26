@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\ShortVideo;
 use App\Models\ShortVideoComment;
 use App\Services\GuestCommentIdentity;
-use App\Services\News\ModerationFeedbackService;
 use App\Services\Shorts\ShortCommentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
@@ -188,7 +187,8 @@ class ShortEngagementController extends Controller
         DB::table('short_video_comment_reports')->insertOrIgnore([
             'comment_id' => $item->id,
             'user_id' => $request->user()->getKey(),
-            'reason' => $data['category'].(! empty($data['details']) ? ': '.trim($data['details']) : ''),
+            'category' => $data['category'],
+            'explanation' => trim($data['details'] ?? '') ?: null,
             'created_at' => now(),
         ]);
 
@@ -199,10 +199,10 @@ class ShortEngagementController extends Controller
     {
         abort_unless($request->user()->hasVerifiedEmail() && ($request->user()->isAdmin() || $request->user()->isModerator()), 403);
         $video = $this->video($id);
-        $item = $this->comment($video, $comment);
-        $reasons = array_diff(array_keys(ModerationFeedbackService::REASONS), ['harmless_criticism']);
+        $item = ShortVideoComment::where('short_video_id', $video->id)
+            ->whereIn('status', ['published', 'pending_review'])->findOrFail($comment);
         $data = $request->validate([
-            'category' => ['required', Rule::in($reasons)],
+            'category' => ['required', Rule::in(config('engagement.admin_flag_categories'))],
             'explanation' => 'nullable|string|max:1000',
         ]);
         DB::transaction(function () use ($item, $request, $data) {

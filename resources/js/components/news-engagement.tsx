@@ -1,7 +1,7 @@
 import { Link, router } from '@inertiajs/react';
 import { Eye, Flag, Heart, Share2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import AdminCommentFeedback from '@/components/admin-comment-feedback';
+import AdminCommentFlag from '@/components/admin-comment-flag';
 import { GuestCommentLimitDialog } from '@/components/guest-comment-limit-dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -553,7 +553,11 @@ export default function NewsEngagement({
                                 type="submit"
                                 size="sm"
                                 className={primaryButton}
-                                disabled={replyBusy || !replyContent.trim() || (!authenticated && !challenge)}
+                                disabled={
+                                    replyBusy ||
+                                    !replyContent.trim() ||
+                                    (!authenticated && !challenge)
+                                }
                             >
                                 {replyBusy ? 'Mengirim...' : 'Kirim Balasan'}
                             </Button>
@@ -654,7 +658,7 @@ export default function NewsEngagement({
                 </p>
             )}
             {canCorrectModeration && (
-                <AdminCommentFeedback
+                <AdminCommentFlag
                     newsId={news.id}
                     selectedId={moderationCommentId}
                     onSelect={setModerationCommentId}

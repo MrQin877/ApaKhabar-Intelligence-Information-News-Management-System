@@ -22,10 +22,8 @@ class ShortCommentService
             throw ValidationException::withMessages(['content' => 'Komentar yang sama sudah dikirim.']);
         }
         $moderation = app(CommentModeration::class)->check($content);
-        $assessment = $moderation['_assessment'] ?? [];
-        unset($moderation['_assessment']);
 
-        return DB::transaction(function () use ($video, $userId, $content, $parent, $guestName, $hash, $moderation, $assessment) {
+        return DB::transaction(function () use ($video, $userId, $content, $parent, $guestName, $hash, $moderation) {
             ShortVideo::whereKey($video->id)->where('status', 'published')->lockForUpdate()->firstOrFail();
             if (ShortVideoComment::where('submission_hash', $hash)->exists()) {
                 throw ValidationException::withMessages(['content' => 'Komentar yang sama sudah dikirim.']);
@@ -38,7 +36,6 @@ class ShortCommentService
                 'guest_name' => $userId ? null : ($guestName ?? 'Guest'.random_int(10000, 99999)),
                 'content' => $content,
                 'submission_hash' => $hash,
-                'moderation_assessment' => $assessment,
                 ...$moderation,
             ]);
             DB::table('short_video_comment_history')->insert([

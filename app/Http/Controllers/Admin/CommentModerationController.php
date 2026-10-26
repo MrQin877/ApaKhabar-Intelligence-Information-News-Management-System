@@ -42,11 +42,13 @@ class CommentModerationController extends Controller
                 ->whereIn('commentID', DB::table('comment_moderation_history')->whereNotNull('moderator_id')->select('comment_id'));
             $decisions = DB::table('comment_moderation_history')->whereIn('id', $latestHistory);
             if ($decision === 'restored') {
-                $decisions->where('reason', 'like', 'restore:%');
+                $decisions->where(fn ($q) => $q->where('reason', 'like', 'restore:%')
+                    ->orWhere(fn ($q) => $q->where('action', 'allow')->whereIn('from_status', ['hidden', 'removed', 'rejected'])));
             } elseif ($decision === 'rejected') {
-                $decisions->whereIn('to_status', ['removed', 'rejected']);
+                $decisions->whereIn('to_status', ['hidden', 'removed', 'rejected']);
             } elseif ($decision === 'approved') {
-                $decisions->where('to_status', 'published')->where('reason', 'not like', 'restore:%');
+                $decisions->where('to_status', 'published')->whereNotIn('from_status', ['hidden', 'removed', 'rejected'])
+                    ->where('reason', 'not like', 'restore:%');
             }
             if (! empty($data['from'])) {
                 $decisions->whereDate('created_at', '>=', $data['from']);
@@ -66,8 +68,11 @@ class CommentModerationController extends Controller
                 }
                 $query->whereIn('commentID', $reports);
             } elseif ($source === 'admin') {
-                $query->whereIn('commentID', DB::table('comment_moderation_feedback')
-                    ->where('classification', 'inappropriate')->select('comment_id'));
+                $flags = DB::table('comment_flags')->select('comment_id');
+                if ($pendingOnly) {
+                    $flags->whereNull('resolved_at');
+                }
+                $query->whereIn('commentID', $flags);
             }
         };
         $applySource($query, $source, $tab === 'pending');
@@ -100,11 +105,18 @@ class CommentModerationController extends Controller
             ->get()
             ->groupBy('comment_id');
 
-        $feedback = DB::table('comment_moderation_feedback')
-            ->leftJoin('users', 'comment_moderation_feedback.administrator_id', '=', 'users.userID')
+        $feedback = DB::table('archived_comment_moderation_feedback')
             ->whereIn('comment_id', $ids)
-            ->select('comment_moderation_feedback.*', 'users.name as administrator_name')
-            ->orderByDesc('comment_moderation_feedback.id')->get()->groupBy('comment_id');
+            ->orderByDesc('id')->get()
+            ->map(function ($row) {
+                $administrator = json_decode($row->administrator_snapshot ?? 'null', true);
+                $row->administrator_name = $administrator['name'] ?? null;
+
+                return $row;
+            })->groupBy('comment_id');
+        $flags = DB::table('comment_flags')->leftJoin('users', 'comment_flags.moderator_id', '=', 'users.userID')
+            ->whereIn('comment_id', $ids)->select('comment_flags.*', 'users.name as moderator_name')
+            ->orderByDesc('comment_flags.id')->get()->groupBy('comment_id');
 
         $comments->through(fn ($comment) => [
             'id' => $comment->getKey(),
@@ -129,6 +141,7 @@ class CommentModerationController extends Controller
             'created_at' => $comment->created_at?->toISOString() ?? (string) $comment->created_at,
             'reports' => $reports->get($comment->getKey(), []),
             'history' => $history->get($comment->getKey(), []),
+            'flags' => $flags->get($comment->getKey(), []),
             'feedback' => $feedback->get($comment->getKey(), []),
         ]);
 
@@ -166,11 +179,13 @@ class CommentModerationController extends Controller
             $latest = DB::table('short_video_comment_history')->selectRaw('MAX(id)')->groupBy('comment_id');
             $decisions = DB::table('short_video_comment_history')->whereIn('id', $latest);
             if ($decision === 'restored') {
-                $decisions->where('reason', 'like', 'restore:%');
+                $decisions->where(fn ($q) => $q->where('reason', 'like', 'restore:%')
+                    ->orWhere(fn ($q) => $q->where('action', 'allow')->whereIn('from_status', ['hidden', 'removed', 'rejected'])));
             } elseif ($decision === 'rejected') {
-                $decisions->whereIn('to_status', ['removed', 'rejected']);
+                $decisions->whereIn('to_status', ['hidden', 'removed', 'rejected']);
             } elseif ($decision === 'approved') {
-                $decisions->where('to_status', 'published')->where('reason', 'not like', 'restore:%');
+                $decisions->where('to_status', 'published')->whereNotIn('from_status', ['hidden', 'removed', 'rejected'])
+                    ->where('reason', 'not like', 'restore:%');
             }
             if (! empty($data['from'])) {
                 $decisions->whereDate('created_at', '>=', $data['from']);
@@ -215,7 +230,7 @@ class CommentModerationController extends Controller
             ->whereIn('comment_id', $ids)->select('short_video_comment_history.*', 'users.name as moderator_name')
             ->orderByDesc('short_video_comment_history.id')->get()->groupBy('comment_id');
         $flags = DB::table('short_video_comment_flags')->leftJoin('users', 'short_video_comment_flags.moderator_id', '=', 'users.userID')
-            ->whereIn('comment_id', $ids)->select('short_video_comment_flags.*', 'users.name as administrator_name')
+            ->whereIn('comment_id', $ids)->select('short_video_comment_flags.*', 'users.name as moderator_name')
             ->orderByDesc('short_video_comment_flags.id')->get()->groupBy('comment_id');
         $comments->through(fn ($comment) => [
             'id' => $comment->id,
@@ -234,16 +249,8 @@ class CommentModerationController extends Controller
             'created_at' => $comment->created_at?->toISOString(),
             'reports' => $reports->get($comment->id, []),
             'history' => $history->get($comment->id, []),
-            'feedback' => collect($flags->get($comment->id, []))->map(fn ($flag) => [
-                'id' => $flag->id,
-                'history_id' => null,
-                'classification' => 'inappropriate',
-                'category' => $flag->category,
-                'explanation' => $flag->explanation,
-                'administrator_name' => $flag->administrator_name,
-                'created_at' => $flag->created_at,
-                'resolved_at' => $flag->resolved_at,
-            ])->all(),
+            'flags' => $flags->get($comment->id, []),
+            'feedback' => [],
         ]);
         $counts = ['pending' => (clone $pending)->count()];
         foreach (['all', 'ai', 'reported', 'admin'] as $key) {
@@ -263,10 +270,42 @@ class CommentModerationController extends Controller
         ]);
     }
 
+    public function legacyHistory(Request $request)
+    {
+        $data = $request->validate(['comment_id' => 'nullable|integer|min:1']);
+        $query = DB::table('archived_comment_moderation_assessments')->orderByDesc('id');
+        if (! empty($data['comment_id'])) {
+            $query->where('comment_id', $data['comment_id']);
+        }
+        $assessments = $query->paginate(20)->withQueryString();
+        $feedback = DB::table('archived_comment_moderation_feedback')
+            ->whereIn('assessment_id', $assessments->pluck('id'))
+            ->orderBy('id')->get()->groupBy('assessment_id');
+        $assessments->through(function ($assessment) use ($feedback) {
+            $assessment->comment_snapshot = json_decode($assessment->comment_snapshot ?? 'null', true);
+            $assessment->categories = json_decode($assessment->categories ?? 'null', true);
+            $assessment->category_scores = json_decode($assessment->category_scores ?? 'null', true);
+            $assessment->feedback = collect($feedback->get($assessment->id, []))->map(function ($row) {
+                $row->comment_snapshot = json_decode($row->comment_snapshot ?? 'null', true);
+                $row->history_snapshot = json_decode($row->history_snapshot ?? 'null', true);
+                $row->administrator_snapshot = json_decode($row->administrator_snapshot ?? 'null', true);
+
+                return $row;
+            })->all();
+
+            return $assessment;
+        });
+
+        return Inertia::render('admin/comment-legacy-history', [
+            'assessments' => $assessments,
+            'filters' => ['comment_id' => $data['comment_id'] ?? ''],
+        ]);
+    }
+
     public function decide(Request $request, string $id)
     {
         $data = $request->validate([
-            'action' => ['required', Rule::in(['approve', 'reject', 'remove', 'restore', 'dismiss_reports'])],
+            'action' => ['required', Rule::in(['allow', 'hide'])],
             'reason' => 'nullable|string|max:500',
             'expected_revision' => 'sometimes|integer|min:0',
             'content_type' => ['sometimes', Rule::in(['news', 'shorts'])],

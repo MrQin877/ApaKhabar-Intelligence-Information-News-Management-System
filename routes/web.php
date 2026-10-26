@@ -108,9 +108,9 @@ Route::middleware(['auth', 'verified', 'role:villager'])->group(function () {
 
 // Article moderation data is never included in public article responses.
 Route::middleware(['auth', 'verified', 'throttle:30,1'])->prefix('admin/news/{news}/moderation-comments')->group(function () {
-    Route::get('/', [\App\Http\Controllers\Admin\ModerationFeedbackController::class, 'index']);
-    Route::get('/{comment}', [\App\Http\Controllers\Admin\ModerationFeedbackController::class, 'show']);
-    Route::post('/{comment}/feedback', [\App\Http\Controllers\Admin\ModerationFeedbackController::class, 'store']);
+    Route::get('/', [\App\Http\Controllers\Admin\CommentFlagController::class, 'index']);
+    Route::get('/{comment}', [\App\Http\Controllers\Admin\CommentFlagController::class, 'show']);
+    Route::post('/{comment}/flag', [\App\Http\Controllers\Admin\CommentFlagController::class, 'flag']);
 });
 
 // Admin portal — admin and moderator only
@@ -149,6 +149,7 @@ Route::prefix('admin')
         Route::post('/short-videos/{shortVideo}/archive', [ShortVideoController::class, 'archive']);
         Route::post('/short-videos/{shortVideo}/delete', [ShortVideoController::class, 'destroy']);
         Route::get('/comments', [CommentModerationController::class, 'index'])->name('comments.index');
+        Route::get('/comments/legacy-history', [CommentModerationController::class, 'legacyHistory'])->name('comments.legacy-history');
         Route::post('/comments/{id}/decision', [CommentModerationController::class, 'decide'])->middleware('throttle:30,1')->name('comments.decision');
 
         // Broadcasting — full CRUD + archive/restore

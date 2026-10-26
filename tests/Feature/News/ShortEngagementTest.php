@@ -112,6 +112,17 @@ test('pending moderation consumes guest quota while authenticated comments remai
     $this->actingAs(shortActor())->postJson($url, ['content' => 'Komentar pengguna masuk'])->assertCreated();
 });
 
+test('short comments await review when OpenAI moderation is unavailable', function () {
+    config(['engagement.openai_key' => null]);
+    $video = engagedShort();
+    $this->actingAs(shortActor())->postJson('/shorts/'.$video->id.'/comments', [
+        'content' => 'Komentar saat layanan mati',
+    ])->assertCreated()->assertJsonPath('status', 'pending_review');
+    expect(ShortVideoComment::first()->ai_flagged)->toBeNull();
+    $this->actingAs(shortActor('moderator'))->get('/admin/comments?content_type=shorts')
+        ->assertInertia(fn (Assert $page) => $page->where('counts.pending', 1));
+});
+
 test('Shorts likes and one-level reply pagination use separate persistent records', function () {
     $video = engagedShort();
     $user = shortActor();
@@ -149,10 +160,40 @@ test('user report and moderator flag enter the same admin queue with distinct co
     $this->postJson($url.'/flag', ['category' => 'spam'])->assertOk();
     expect(DB::table('short_video_comment_flags')->count())->toBe(1);
     $this->get('/admin/comments?content_type=shorts')->assertInertia(fn (Assert $page) => $page->where('comments.data.0.content_type', 'shorts')->where('counts.pending', 1)->where('comments.data.0.news.title', $video->title));
-    $this->postJson('/admin/comments/'.$root->id.'/decision', ['content_type' => 'shorts', 'action' => 'remove', 'expected_revision' => 0])->assertOk();
-    expect($root->fresh()->status)->toBe('removed');
+    $this->postJson('/admin/comments/'.$root->id.'/decision', ['content_type' => 'shorts', 'action' => 'hide', 'expected_revision' => 0])->assertOk();
+    expect($root->fresh()->status)->toBe('hidden');
     $this->getJson('/shorts/'.$video->id.'/comments')->assertJsonPath('count', 0);
-    $this->get('/admin/comments?content_type=shorts&tab=history')->assertInertia(fn (Assert $page) => $page->where('comments.data.0.status', 'removed')->where('comments.data.0.history.0.to_status', 'removed'));
-    $this->postJson('/admin/comments/'.$root->id.'/decision', ['content_type' => 'shorts', 'action' => 'restore', 'expected_revision' => 1])->assertOk();
+    $this->get('/admin/comments?content_type=shorts&tab=history')->assertInertia(fn (Assert $page) => $page->where('comments.data.0.status', 'hidden')->where('comments.data.0.history.0.to_status', 'hidden'));
+    $this->postJson('/admin/comments/'.$root->id.'/decision', ['content_type' => 'shorts', 'action' => 'allow', 'expected_revision' => 1])->assertOk();
     expect($root->fresh()->status)->toBe('published')->and(DB::table('short_video_comment_history')->where('comment_id', $root->id)->count())->toBe(2);
+});
+
+test('admin flag leaves a published video comment visible and allow resolves the flag', function () {
+    $video = engagedShort();
+    $reader = shortActor();
+    $admin = shortActor('admin');
+    $comment = ShortVideoComment::create([
+        'short_video_id' => $video->id, 'user_id' => $reader->getKey(),
+        'content' => 'Komentar video terlihat', 'status' => 'published',
+        'submission_hash' => hash('sha256', 'video-flag'),
+    ]);
+    $flag = '/shorts/'.$video->id.'/comments/'.$comment->id.'/flag';
+    $this->actingAs($reader)->postJson($flag, ['category' => 'spam'])->assertForbidden();
+    $this->actingAs($admin)->postJson($flag, ['category' => 'spam', 'explanation' => 'Periksa'])->assertOk();
+    $this->postJson($flag, ['category' => 'spam'])->assertOk();
+    expect($comment->fresh()->status)->toBe('published')
+        ->and(DB::table('short_video_comment_flags')->count())->toBe(1);
+    $this->getJson('/shorts/'.$video->id.'/comments')->assertJsonPath('count', 1);
+    $this->get('/admin/comments?content_type=shorts')->assertInertia(fn (Assert $page) => $page
+        ->has('comments.data', 1)->where('counts.pending', 1)
+        ->where('comments.data.0.flags.0.moderator_name', $admin->name));
+    $this->postJson('/admin/comments/'.$comment->id.'/decision', [
+        'content_type' => 'shorts', 'action' => 'allow', 'reason' => 'Aman', 'expected_revision' => 0,
+    ])->assertOk();
+    expect($comment->fresh()->status)->toBe('published')
+        ->and(DB::table('short_video_comment_flags')->whereNull('resolved_at')->count())->toBe(0);
+    $this->assertDatabaseHas('short_video_comment_history', [
+        'comment_id' => $comment->id, 'moderator_id' => $admin->getKey(),
+        'action' => 'allow', 'from_status' => 'published', 'to_status' => 'published',
+    ]);
 });

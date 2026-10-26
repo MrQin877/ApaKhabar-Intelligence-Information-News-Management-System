@@ -28,3 +28,7 @@ yarn-error.log
 /.nova
 /.vscode
 /.zed
+/deployment/.env
+/deployment/laravel.env
+/deployment/ai.env
+/deployment/models/

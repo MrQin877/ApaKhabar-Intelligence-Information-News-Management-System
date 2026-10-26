@@ -19,17 +19,13 @@ class ShortCommentDecisionService
             $hasReports = DB::table('short_video_comment_reports')->where('comment_id', $id)->whereNull('resolved_at')->exists();
             $hasFlags = DB::table('short_video_comment_flags')->where('comment_id', $id)->whereNull('resolved_at')->exists();
             $to = match ($action) {
-                'approve' => $from === 'pending_review' ? 'published' : null,
-                'reject' => in_array($from, ['pending_review', 'removed'], true) ? 'rejected' : null,
-                'remove' => $from === 'published' ? 'removed' : null,
-                'restore' => in_array($from, ['removed', 'rejected'], true) ? 'published' : null,
-                'dismiss_reports' => $from === 'published' && ($hasReports || $hasFlags) ? $from : null,
+                'allow' => $from === 'pending_review' || $hasReports || $hasFlags || in_array($from, ['hidden', 'removed', 'rejected'], true) ? 'published' : null,
+                'hide' => $from === 'pending_review' || $hasReports || $hasFlags || $from === 'published' ? 'hidden' : null,
                 default => null,
             };
             abort_if($to === null, 409, 'Status komentar telah berubah. Muat ulang halaman.');
             $comment->forceFill([
                 'status' => $to,
-                'moderator_id' => $actor->getKey(),
                 'moderated_at' => now(),
                 'moderation_revision' => $comment->moderation_revision + 1,
             ])->save();
@@ -38,7 +34,8 @@ class ShortCommentDecisionService
                 'moderator_id' => $actor->getKey(),
                 'from_status' => $from,
                 'to_status' => $to,
-                'reason' => $action.': '.$reason,
+                'action' => $action,
+                'reason' => $reason,
                 'created_at' => now(),
             ]);
             DB::table('short_video_comment_reports')->where('comment_id', $id)->whereNull('resolved_at')->update(['resolved_at' => now()]);

@@ -9,4 +9,7 @@ return [
         'Penipuan / Scam', 'Pelecehan / Penghinaan', 'Ujaran Kebencian',
         'Ancaman / Intimidasi', 'Spam', 'Konten Tidak Pantas', 'Lainnya',
     ],
+    'admin_flag_categories' => [
+        'harassment', 'indirect_insult', 'threat_intimidation', 'hate_speech', 'spam', 'other',
+    ],
 ];

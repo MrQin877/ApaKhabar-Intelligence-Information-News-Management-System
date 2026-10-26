@@ -9,18 +9,16 @@ class ShortVideoComment extends Model
 {
     protected $guarded = ['id'];
 
-    protected $hidden = ['submission_hash', 'moderation_assessment', 'moderation_categories', 'moderation_reason'];
+    protected $hidden = ['submission_hash', 'moderation_categories', 'moderation_reason'];
 
-    protected $casts = ['ai_flagged' => 'boolean', 'moderation_categories' => 'array', 'moderation_assessment' => 'array', 'moderation_revision' => 'integer'];
+    protected $casts = ['ai_flagged' => 'boolean', 'moderation_categories' => 'array', 'moderation_revision' => 'integer'];
 
     public function scopeAwaitingReview($query)
     {
         return $query->where(function ($pending) {
             $pending->where('status', 'pending_review')
-                ->orWhere(fn ($reported) => $reported->where('status', 'published')
-                    ->whereIn('id', DB::table('short_video_comment_reports')->whereNull('resolved_at')->select('comment_id')))
-                ->orWhere(fn ($flagged) => $flagged->where('status', 'published')
-                    ->whereIn('id', DB::table('short_video_comment_flags')->whereNull('resolved_at')->select('comment_id')));
+                ->orWhereIn('id', DB::table('short_video_comment_reports')->whereNull('resolved_at')->select('comment_id'))
+                ->orWhereIn('id', DB::table('short_video_comment_flags')->whereNull('resolved_at')->select('comment_id'));
         });
     }
 
