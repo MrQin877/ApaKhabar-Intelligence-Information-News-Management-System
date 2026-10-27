@@ -11,6 +11,7 @@ use App\Http\Controllers\News\CommentController;
 use App\Http\Controllers\News\EngagementController;
 use App\Http\Controllers\News\NewsController;
 use App\Http\Controllers\News\PostLikeController;
+use App\Http\Controllers\Village\ActivityController;
 use App\Http\Controllers\Village\NotificationController;
 use App\Http\Middleware\ApiAuth;
 use Illuminate\Support\Facades\Route;
@@ -49,6 +50,7 @@ Route::middleware(ApiAuth::class)->group(function () {
     Route::post('/phone/verification-notification', [MobilePhoneVerificationController::class, 'send']);
     Route::post('/phone/verify', [MobilePhoneVerificationController::class, 'verify'])->middleware('throttle:10,1');
 
+    Route::post('/activity', [ActivityController::class, 'store'])->middleware('throttle:30,1,villager-activity:');
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/profile', [AuthController::class, 'profile']);
     Route::patch('/profile', [AuthController::class, 'updateProfile']);

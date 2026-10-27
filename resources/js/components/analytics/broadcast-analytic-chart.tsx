@@ -24,13 +24,11 @@ const chartData = [
 const chartConfig = {
   pengumuman: {
     label: "Pengumuman",
-    // chart-1 dark: oklch(0.488 0.243 264.376) → blue/purple
-    color: "oklch(0.488 0.243 264.376)",
+    color: "var(--chart-5)",
   },
   darurat: {
     label: "Alert Darurat",
-    // chart-2 dark: oklch(0.696 0.17 162.48) → green/teal
-    color: "oklch(0.696 0.17 162.48)",
+    color: "var(--chart-2)",
   },
 } satisfies ChartConfig;
 
@@ -63,12 +61,12 @@ export function AnalyticsChart({ chartData }: ChartProps) {
                 <stop offset="95%" stopColor="var(--color-darurat)" stopOpacity={0.05} />
               </linearGradient>
             </defs>
-            <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="oklch(0.269 0 0)" />
+            <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--border)" />
             <XAxis
               dataKey="month"
               tickLine={false}
               axisLine={false}
-              tick={{ fontSize: 10, fill: "oklch(0.708 0 0)" }}
+              tick={{ fontSize: 10, fill: "var(--muted-foreground)" }}
             />
             <ChartTooltip content={<ChartTooltipContent />} />
             <Area

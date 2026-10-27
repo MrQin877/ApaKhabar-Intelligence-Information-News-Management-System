@@ -25,7 +25,7 @@ class HandleInertiaRequests extends Middleware
             'name' => config('app.name'),
             'publishResult' => fn () => $request->session()->get('publishResult'),
             'auth' => [
-                'user' => $request->user(),
+                'user' => $request->user() ? [...$request->user()->toArray(), ...$request->user()->demographicProfile()] : null,
             ],
             'moderationPendingCount' => function () use ($request) {
                 $user = $request->user();

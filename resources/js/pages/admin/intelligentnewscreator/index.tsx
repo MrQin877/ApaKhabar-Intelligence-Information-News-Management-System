@@ -242,7 +242,15 @@ function ItemActions({ item }: { item: WorkspaceItem }) {
 }
 
 export default function NewsWorkspace({ items, counts }: Props) {
-    const [status, setStatus] = useState<StatusFilter>('all');
+    const [status, setStatus] = useState<StatusFilter>(() => {
+        const value = new URLSearchParams(
+            typeof window === 'undefined' ? '' : window.location.search,
+        ).get('status');
+
+        return value === 'draft' || value === 'active' || value === 'archived'
+            ? value
+            : 'all';
+    });
     const [view, setView] = useState<ViewMode>('card');
     const [search, setSearch] = useState('');
     const filtered = useMemo(() => {

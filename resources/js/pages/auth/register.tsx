@@ -1,5 +1,6 @@
 import { Form, Head } from '@inertiajs/react';
 import { useState } from 'react';
+import DemographicFields from '@/components/demographic-fields';
 import InputError from '@/components/input-error';
 import PasswordInput from '@/components/password-input';
 import { PhoneNumberInput } from '@/components/phone-number-input';
@@ -52,6 +53,7 @@ export default function Register() {
                                 />
                             </div>
 
+                            <DemographicFields errors={errors} />
                             <Tabs
                                 value={method}
                                 onValueChange={(v) =>

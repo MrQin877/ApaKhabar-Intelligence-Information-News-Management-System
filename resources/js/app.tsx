@@ -9,6 +9,9 @@ import '../css/app.css';
 import { initializeTheme } from '@/hooks/use-appearance';
 import { installNavigationGuard } from '@/lib/navigation-guard';
 
+import { installVillagerActivity } from '@/lib/villager-activity';
+
+installVillagerActivity();
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 installNavigationGuard(window);
 

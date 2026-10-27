@@ -147,7 +147,7 @@ return !n.is_read
                     value={activeFilter}
                     onValueChange={v => setActiveFilter(v as FilterTab)}
                 >
-                    <TabsList className="w-full h-9 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 p-1">
+                    <TabsList className="w-full h-9 p-1">
                         {tabs.map(tab => (
                             <TabsTrigger
                                 key={tab.key}

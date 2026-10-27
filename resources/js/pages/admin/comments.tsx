@@ -35,7 +35,12 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+    Tabs,
+    TabsList,
+    TabsTrigger,
+    tabsListVariants,
+} from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import AppLayout from '@/layouts/app-layout';
 import { cn } from '@/lib/utils';
@@ -546,22 +551,22 @@ export default function Comments({ comments, filters, counts }: Props) {
                         </form>
                         {filters.tab === 'pending' && (
                             <div
-                                className="flex flex-wrap gap-2"
+                                className={cn(
+                                    tabsListVariants(),
+                                    'h-auto max-w-full flex-wrap justify-start gap-1',
+                                )}
+                                role="group"
                                 aria-label="Sumber moderasi"
                             >
                                 {sourceOptions.map((source) => (
                                     <Button
                                         key={source.value}
                                         size="sm"
-                                        variant={
-                                            filters.source === source.value
-                                                ? 'secondary'
-                                                : 'outline'
-                                        }
+                                        variant="ghost"
                                         aria-pressed={
                                             filters.source === source.value
                                         }
-                                        className="rounded-full"
+                                        className="h-8 rounded-md border border-transparent px-3 aria-pressed:border-neutral-300/70 aria-pressed:bg-card aria-pressed:text-foreground aria-pressed:shadow-xs dark:aria-pressed:border-neutral-600 dark:aria-pressed:bg-neutral-700"
                                         disabled={busy || loading}
                                         onClick={() =>
                                             visit({ source: source.value })

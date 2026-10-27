@@ -13,6 +13,7 @@ class SocialConnection extends Model
     protected $casts = [
         'access_token' => 'encrypted',
         'expires_at' => 'datetime',
+        'insights_synced_at' => 'datetime',
         'invalidated_at' => 'datetime',
     ];
 

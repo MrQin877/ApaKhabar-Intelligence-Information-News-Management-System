@@ -3,6 +3,10 @@ export type User = {
     name: string;
     email: string;
     role: 'admin' | 'moderator' | 'villager';
+    date_of_birth?: string | null;
+    citizenship?: string | null;
+    gender?: string | null;
+    ethnicity?: string | null;
     avatar?: string;
     email_verified_at: string | null;
     two_factor_enabled?: boolean;

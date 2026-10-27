@@ -3,6 +3,7 @@
 use App\Jobs\ProcessIntelligenceDocument;
 use App\Jobs\ProcessShortVideo;
 use App\Jobs\PublishShortVideo;
+use App\Jobs\SyncMetaInsights;
 use App\Models\IntelligenceDocument;
 use App\Models\IntelligenceInformation;
 use App\Models\ShortVideo;
@@ -157,6 +158,11 @@ Artisan::command(
 )->purpose(
     'Rebuild approved AI knowledge after an embedding model or agent collection migration',
 );
+
+Schedule::job(new SyncMetaInsights)->hourly()->withoutOverlapping();
+Schedule::call(function () {
+    DB::table('villager_activity_hours')->where('hour', '<', now('UTC')->subDays(config('analytics.activity_retention_days')))->delete();
+})->daily()->name('prune-villager-activity')->withoutOverlapping();
 
 Schedule::call(function () {
     DB::table('news_viewers')->where('expires_at', '<', now())->delete();

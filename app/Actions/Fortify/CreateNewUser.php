@@ -15,7 +15,7 @@ use Laravel\Fortify\Contracts\CreatesNewUsers;
 
 class CreateNewUser implements CreatesNewUsers
 {
-    use PasswordValidationRules;
+    use \App\Concerns\DemographicRules, PasswordValidationRules;
 
     /**
      * Validate and create a newly registered user.
@@ -25,6 +25,7 @@ class CreateNewUser implements CreatesNewUsers
     public function create(array $input): User
     {
         Validator::make($input, [
+            ...$this->demographicRules(true),
             'name' => ['required', 'string', 'max:255'],
             'email' => [
                 'nullable', 'required_without:phone', 'string', 'email', 'max:255',
@@ -43,14 +44,15 @@ class CreateNewUser implements CreatesNewUsers
 
         return DB::transaction(function () use ($input) {
             $user = User::create([
-                'name'     => $input['name'],
+                ...array_intersect_key($input, array_flip(['date_of_birth', 'citizenship', 'gender', 'ethnicity'])),
+                'name' => $input['name'],
                 'password' => $input['password'],
-                'roleID'   => UserRole::firstOrCreate(['name' => 'villager'])->getKey(),
+                'roleID' => UserRole::firstOrCreate(['name' => 'villager'])->getKey(),
             ]);
 
             if (! empty($input['email'])) {
                 Email::create([
-                    'email'  => $input['email'],
+                    'email' => $input['email'],
                     'userID' => $user->getKey(),
                 ]);
 
@@ -61,8 +63,8 @@ class CreateNewUser implements CreatesNewUsers
                 $otp = rand(100000, 999999);
 
                 $user->phoneRecord()->create([
-                    'phone'                => $input['phone'],
-                    'phone_otp'            => $otp,
+                    'phone' => $input['phone'],
+                    'phone_otp' => $otp,
                     'phone_otp_expires_at' => now()->addMinutes(10),
                 ]);
 

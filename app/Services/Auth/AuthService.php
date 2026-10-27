@@ -4,11 +4,11 @@ namespace App\Services\Auth;
 
 use App\Models\Email;
 use App\Models\PersonalAccessToken;
-use App\Models\Phone;
 use App\Models\User;
 use App\Models\UserRole;
 use App\Notifications\MobileVerifyEmail;
 use Illuminate\Auth\Events\PasswordReset;
+use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
@@ -41,14 +41,15 @@ class AuthService
         ];
     }
 
-    public function register(string $name, ?string $email, ?string $phone, string $password): array
+    public function register(string $name, ?string $email, ?string $phone, string $password, array $demographics = []): array
     {
         if (empty($email) && empty($phone)) {
             throw new \InvalidArgumentException('Either email or phone is required.');
         }
 
-        $user = DB::transaction(function () use ($name, $email, $phone, $password) {
+        $user = DB::transaction(function () use ($name, $email, $phone, $password, $demographics) {
             $user = User::create([
+                ...array_intersect_key($demographics, array_flip(['date_of_birth', 'citizenship', 'gender', 'ethnicity'])),
                 'name' => $name,
                 'password' => Hash::make($password),
                 'roleID' => UserRole::firstOrCreate(['name' => 'villager'])->getKey(),
@@ -100,6 +101,8 @@ class AuthService
         $user->load(['emailRecord', 'phoneRecord']);
 
         return [
+            ...$user->demographicProfile(),
+            'profile_completion_required' => ! $user->date_of_birth || ! $user->citizenship,
             'id' => (string) $user->getKey(),
             'name' => $user->name,
             'email' => $user->email,
@@ -122,7 +125,7 @@ class AuthService
 
     public function forgotPassword(string $email): bool
     {
-        \Illuminate\Auth\Notifications\ResetPassword::createUrlUsing(function ($user, string $token) {
+        ResetPassword::createUrlUsing(function ($user, string $token) {
             $email = urlencode($user->email);
 
             return url("/mobile/reset-password?token={$token}&email={$email}");

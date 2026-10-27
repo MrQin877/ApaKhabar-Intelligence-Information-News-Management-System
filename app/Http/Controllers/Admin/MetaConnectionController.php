@@ -91,14 +91,28 @@ class MetaConnectionController extends Controller
     private function start(Request $request, MetaConnections $meta, string $platform)
     {
         abort_unless($meta->configured($platform), 503, 'Login Meta belum dikonfigurasi.');
+        if ($request->boolean('insights')) {
+            abort_unless($request->user()->isAdmin(), 403);
+        }
+        // Establish authorization on the callback host so its browser session
+        // cookie is available when Meta returns (localhost != 127.0.0.1).
+        $callback = parse_url(config('meta.facebook.redirect_uri') ?: route('admin.social.facebook.callback'));
+        if (isset($callback['host']) && strcasecmp($callback['host'], $request->getHost()) !== 0) {
+            $origin = ($callback['scheme'] ?? 'https').'://'.$callback['host']
+                .(isset($callback['port']) ? ':'.$callback['port'] : '');
+
+            return redirect()->away($origin.'/admin/social/'.$platform.'/connect'
+                .($request->boolean('insights') ? '?insights=1' : ''))
+                ->header('Cache-Control', 'no-store');
+        }
         $this->clearSelection($request);
         $state = Str::random(64);
-        $request->session()->put('meta_oauth', [
+        Cache::put($this->oauthKey($request), [
             'platform' => $platform,
             'state' => $state, 'user_id' => $request->user()->getKey(), 'expires' => now()->addMinutes(10)->timestamp,
-        ]);
+        ], now()->addMinutes(10));
 
-        $meta->oauthDiagnostic('start', ['callback_reached' => false, 'intended_platform' => $platform, 'config_id_source' => config("meta.login_config_ids.{$platform}") ? ($platform === 'facebook' ? 'FACEBOOK_LOGIN_CONFIG_ID' : 'INSTAGRAM_FACEBOOK_LOGIN_CONFIG_ID') : 'scope_parameter']);
+        $meta->oauthDiagnostic('start', [...$this->oauthContext($request), 'callback_reached' => false, 'intended_platform' => $platform, 'config_id_source' => config("meta.login_config_ids.{$platform}") ? ($platform === 'facebook' ? 'FACEBOOK_LOGIN_CONFIG_ID' : 'INSTAGRAM_FACEBOOK_LOGIN_CONFIG_ID') : 'scope_parameter']);
 
         return redirect()->away('https://www.facebook.com/'.config('meta.graph_version').'/dialog/oauth?'.http_build_query([
             'client_id' => config('meta.facebook.app_id'),
@@ -106,17 +120,18 @@ class MetaConnectionController extends Controller
             'response_type' => 'code',
             ...(config("meta.login_config_ids.{$platform}")
                 ? ['config_id' => config("meta.login_config_ids.{$platform}")]
-                : ['scope' => implode(',', $meta->permissions($platform))]),
+                : ['scope' => implode(',', [...$meta->permissions($platform), ...($request->boolean('insights') ? [$platform === 'instagram' ? 'instagram_manage_insights' : 'read_insights'] : [])])]),
             'auth_type' => 'rerequest', 'state' => $state,
         ]));
     }
 
     public function facebookCallback(Request $request, MetaConnections $meta)
     {
-        $pending = $request->session()->get('meta_oauth');
+        $pending = Cache::get($this->oauthKey($request));
         $intended = in_array($pending['platform'] ?? null, ['facebook', 'instagram'], true) ? $pending['platform'] : 'unknown';
         $error = $request->query('error');
         $meta->oauthDiagnostic('callback', [
+            ...$this->oauthContext($request),
             'callback_reached' => true, 'has_code' => $request->has('code'), 'has_error' => $request->has('error'),
             'error_name' => in_array($error, ['access_denied', 'server_error', 'temporarily_unavailable', 'invalid_request', 'unauthorized_client', 'unsupported_response_type', 'invalid_scope'], true) ? $error : ($request->has('error') ? 'other' : null),
             'state_present' => $request->has('state'),
@@ -163,9 +178,29 @@ class MetaConnectionController extends Controller
             ->header('Cache-Control', 'no-store')->header('Referrer-Policy', 'no-referrer');
     }
 
+    private function oauthContext(Request $request): array
+    {
+        return [
+            'request_origin' => $request->getSchemeAndHttpHost(),
+            'session_driver' => config('session.driver'),
+            'cache_store' => config('cache.default'),
+            // Correlation only; never log cookies, session IDs, codes or state.
+            'browser_fingerprint' => substr(hash_hmac('sha256', $request->session()->getId(), config('app.key')), 0, 16),
+            'pending_authorization' => Cache::has($this->oauthKey($request)),
+        ];
+    }
+
+    private function oauthKey(Request $request): string
+    {
+        // Bind the authorization to both the current browser session and user.
+        return 'meta-oauth:'.hash('sha256', $request->session()->getId().':'.$request->user()->getKey());
+    }
+
     private function validateState(Request $request): string
     {
-        $pending = $request->session()->pull('meta_oauth');
+        // The route session lock serializes validation and consumption. A separate
+        // cache record cannot be overwritten by unrelated session responses.
+        $pending = Cache::pull($this->oauthKey($request));
         abort_unless(is_array($pending) && ($pending['user_id'] ?? null) === $request->user()->getKey()
             && in_array($pending['platform'] ?? null, ['facebook', 'instagram'], true)
             && ($pending['expires'] ?? 0) > now()->timestamp
@@ -178,6 +213,7 @@ class MetaConnectionController extends Controller
     {
         abort_unless(in_array($platform, ['facebook', 'instagram'], true), 404);
         $request->validate(['confirmed' => ['required', 'accepted']]);
+        Cache::forget($this->oauthKey($request));
         $request->session()->forget('meta_oauth');
         $this->clearSelection($request);
         // Keep a tombstone so legacy environment credentials cannot reactivate publishing.

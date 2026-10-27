@@ -14,7 +14,7 @@ use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable implements MustVerifyEmail
 {
-    use HasFactory, Notifiable, TwoFactorAuthenticatable, HasApiTokens;
+    use HasApiTokens, HasFactory, Notifiable, TwoFactorAuthenticatable;
 
     protected $primaryKey = 'userID';
 
@@ -23,10 +23,12 @@ class User extends Authenticatable implements MustVerifyEmail
         'password',
         'push_token',
         'roleID',
+        'date_of_birth', 'citizenship', 'gender', 'ethnicity',
     ];
 
     protected $hidden = [
         'password',
+        'date_of_birth', 'citizenship', 'gender', 'ethnicity',
         'two_factor_secret',
         'two_factor_recovery_codes',
         'remember_token',
@@ -43,10 +45,15 @@ class User extends Authenticatable implements MustVerifyEmail
         'role',
     ];
 
+    public function demographicProfile(): array
+    {
+        return ['date_of_birth' => $this->date_of_birth?->format('Y-m-d'), 'citizenship' => $this->citizenship, 'gender' => $this->gender, 'ethnicity' => $this->ethnicity];
+    }
+
     public function notifications()
     {
         return $this->morphMany(NotificationModel::class, 'notifiable', 'notifiable_type', 'notifiable_id', 'userID')
-                    ->orderBy('created_at', 'desc');
+            ->orderBy('created_at', 'desc');
     }
 
     public function emailRecord()
@@ -117,10 +124,11 @@ class User extends Authenticatable implements MustVerifyEmail
     protected function casts(): array
     {
         return [
-            'email_verified_at'       => 'datetime',
-            'phone_verified_at'       => 'datetime',
-            'phone_otp_expires_at'    => 'datetime',
-            'password'                => 'hashed',
+            'email_verified_at' => 'datetime',
+            'phone_verified_at' => 'datetime',
+            'phone_otp_expires_at' => 'datetime',
+            'password' => 'hashed',
+            'date_of_birth' => 'date:Y-m-d',
             'two_factor_confirmed_at' => 'datetime',
         ];
     }
@@ -170,8 +178,23 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->phone ?? '';
     }
 
-    public function isAdmin(): bool { return $this->role === 'admin'; }
-    public function isModerator(): bool { return $this->role === 'moderator'; }
-    public function isVillager(): bool { return $this->role === 'villager'; }
-    public function hasVerifiedPhone(): bool { return !is_null($this->phone_verified_at); }
+    public function isAdmin(): bool
+    {
+        return $this->role === 'admin';
+    }
+
+    public function isModerator(): bool
+    {
+        return $this->role === 'moderator';
+    }
+
+    public function isVillager(): bool
+    {
+        return $this->role === 'villager';
+    }
+
+    public function hasVerifiedPhone(): bool
+    {
+        return ! is_null($this->phone_verified_at);
+    }
 }

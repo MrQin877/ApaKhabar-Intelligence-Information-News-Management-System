@@ -48,7 +48,7 @@ function mount() {
         require(name) {
             if (name === 'react/jsx-runtime') return require(name);
             if (name === '@/components/video-frame-timeline')
-                return { useVideoFrames: () => Array(8).fill('/frame.jpg') };
+                return { useVideoFrames: () => ({ images: Array(8).fill('/frame.jpg') }) };
             if (name === 'react')
                 return {
                     useRef(initial) {

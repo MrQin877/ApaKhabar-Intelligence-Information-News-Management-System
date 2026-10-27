@@ -54,9 +54,10 @@ test('TC-REG-01: user can register with valid name email and password', function
     $this->skipUnlessFortifyFeature(Features::registration());
 
     $response = $this->post(route('register.store'), [
-        'name'                  => 'Ahmad Zaki',
-        'email'                 => 'ahmad@gmail.com',
-        'password'              => 'Password123!',
+        'date_of_birth' => '1990-01-01', 'citizenship' => 'wni',
+        'name' => 'Ahmad Zaki',
+        'email' => 'ahmad@gmail.com',
+        'password' => 'Password123!',
         'password_confirmation' => 'Password123!',
     ]);
 
@@ -76,9 +77,10 @@ test('TC-REG-02: registered user is stored in database with correct name and ema
     $this->skipUnlessFortifyFeature(Features::registration());
 
     $this->post(route('register.store'), [
-        'name'                  => 'Siti Aminah',
-        'email'                 => 'siti@gmail.com',
-        'password'              => 'Password123!',
+        'date_of_birth' => '1990-01-01', 'citizenship' => 'wni',
+        'name' => 'Siti Aminah',
+        'email' => 'siti@gmail.com',
+        'password' => 'Password123!',
         'password_confirmation' => 'Password123!',
     ]);
 
@@ -96,9 +98,10 @@ test('TC-REG-03: newly registered user is assigned villager role by default', fu
     $this->skipUnlessFortifyFeature(Features::registration());
 
     $this->post(route('register.store'), [
-        'name'                  => 'Ali Hassan',
-        'email'                 => 'ali@gmail.com',
-        'password'              => 'Password123!',
+        'date_of_birth' => '1990-01-01', 'citizenship' => 'wni',
+        'name' => 'Ali Hassan',
+        'email' => 'ali@gmail.com',
+        'password' => 'Password123!',
         'password_confirmation' => 'Password123!',
     ]);
 
@@ -121,9 +124,10 @@ test('TC-REG-04: password is stored as bcrypt hash not plain text in database', 
     $this->skipUnlessFortifyFeature(Features::registration());
 
     $this->post(route('register.store'), [
-        'name'                  => 'Zulkifli Rahman',
-        'email'                 => 'zul@gmail.com',
-        'password'              => 'Password123!',
+        'date_of_birth' => '1990-01-01', 'citizenship' => 'wni',
+        'name' => 'Zulkifli Rahman',
+        'email' => 'zul@gmail.com',
+        'password' => 'Password123!',
         'password_confirmation' => 'Password123!',
     ]);
 
@@ -158,9 +162,10 @@ test('TC-REG-06: verification email process is triggered after successful regist
     $this->skipUnlessFortifyFeature(Features::emailVerification());
 
     $this->post(route('register.store'), [
-        'name'                  => 'Farah Nadia',
-        'email'                 => 'farah@gmail.com',
-        'password'              => 'Password123!',
+        'date_of_birth' => '1990-01-01', 'citizenship' => 'wni',
+        'name' => 'Farah Nadia',
+        'email' => 'farah@gmail.com',
+        'password' => 'Password123!',
         'password_confirmation' => 'Password123!',
     ]);
 
@@ -187,9 +192,10 @@ test('TC-REG-07: registration fails when email is already registered by another 
     $existing->emailRecord()->update(['email' => 'taken@gmail.com']);
 
     $response = $this->post(route('register.store'), [
-        'name'                  => 'New User',
-        'email'                 => 'taken@gmail.com',
-        'password'              => 'Password123!',
+        'date_of_birth' => '1990-01-01', 'citizenship' => 'wni',
+        'name' => 'New User',
+        'email' => 'taken@gmail.com',
+        'password' => 'Password123!',
         'password_confirmation' => 'Password123!',
     ]);
 
@@ -204,9 +210,10 @@ test('TC-REG-08: registration fails when email format is invalid', function () {
     $this->skipUnlessFortifyFeature(Features::registration());
 
     $response = $this->post(route('register.store'), [
-        'name'                  => 'Ahmad Zaki',
-        'email'                 => 'not-an-email',
-        'password'              => 'Password123!',
+        'date_of_birth' => '1990-01-01', 'citizenship' => 'wni',
+        'name' => 'Ahmad Zaki',
+        'email' => 'not-an-email',
+        'password' => 'Password123!',
         'password_confirmation' => 'Password123!',
     ]);
 
@@ -221,9 +228,10 @@ test('TC-REG-09: registration fails when password is less than 8 characters', fu
     $this->skipUnlessFortifyFeature(Features::registration());
 
     $response = $this->post(route('register.store'), [
-        'name'                  => 'Ahmad Zaki',
-        'email'                 => 'ahmad@gmail.com',
-        'password'              => 'Pass1',
+        'date_of_birth' => '1990-01-01', 'citizenship' => 'wni',
+        'name' => 'Ahmad Zaki',
+        'email' => 'ahmad@gmail.com',
+        'password' => 'Pass1',
         'password_confirmation' => 'Pass1',
     ]);
 
@@ -238,9 +246,10 @@ test('TC-REG-10: registration fails when password confirmation does not match pa
     $this->skipUnlessFortifyFeature(Features::registration());
 
     $response = $this->post(route('register.store'), [
-        'name'                  => 'Ahmad Zaki',
-        'email'                 => 'ahmad@gmail.com',
-        'password'              => 'Password123!',
+        'date_of_birth' => '1990-01-01', 'citizenship' => 'wni',
+        'name' => 'Ahmad Zaki',
+        'email' => 'ahmad@gmail.com',
+        'password' => 'Password123!',
         'password_confirmation' => 'Password456!',
     ]);
 
@@ -255,9 +264,10 @@ test('TC-REG-11: registration fails when name field is empty', function () {
     $this->skipUnlessFortifyFeature(Features::registration());
 
     $response = $this->post(route('register.store'), [
-        'name'                  => '',
-        'email'                 => 'ahmad@gmail.com',
-        'password'              => 'Password123!',
+        'date_of_birth' => '1990-01-01', 'citizenship' => 'wni',
+        'name' => '',
+        'email' => 'ahmad@gmail.com',
+        'password' => 'Password123!',
         'password_confirmation' => 'Password123!',
     ]);
 
@@ -272,9 +282,10 @@ test('TC-REG-12: registration fails when email field is empty', function () {
     $this->skipUnlessFortifyFeature(Features::registration());
 
     $response = $this->post(route('register.store'), [
-        'name'                  => 'Ahmad Zaki',
-        'email'                 => '',
-        'password'              => 'Password123!',
+        'date_of_birth' => '1990-01-01', 'citizenship' => 'wni',
+        'name' => 'Ahmad Zaki',
+        'email' => '',
+        'password' => 'Password123!',
         'password_confirmation' => 'Password123!',
     ]);
 
@@ -289,9 +300,10 @@ test('TC-REG-13: registration fails when password field is empty', function () {
     $this->skipUnlessFortifyFeature(Features::registration());
 
     $response = $this->post(route('register.store'), [
-        'name'                  => 'Ahmad Zaki',
-        'email'                 => 'ahmad@gmail.com',
-        'password'              => '',
+        'date_of_birth' => '1990-01-01', 'citizenship' => 'wni',
+        'name' => 'Ahmad Zaki',
+        'email' => 'ahmad@gmail.com',
+        'password' => '',
         'password_confirmation' => '',
     ]);
 
@@ -337,7 +349,7 @@ test('TC-REG-15: email can be verified with valid signed verification url', func
 
     Event::assertDispatched(Verified::class);
     expect($user->fresh()->hasVerifiedEmail())->toBeTrue();
-    $response->assertRedirect(route('dashboard', absolute: false) . '?verified=1');
+    $response->assertRedirect(route('dashboard', absolute: false).'?verified=1');
 });
 
 // ── TC-REG-16 ───────────────────────────────────────────────────
@@ -369,7 +381,7 @@ test('TC-REG-17: already verified user visiting verification link is redirected 
     );
 
     $this->actingAs($user)->get($verificationUrl)
-        ->assertRedirect(route('dashboard', absolute: false) . '?verified=1');
+        ->assertRedirect(route('dashboard', absolute: false).'?verified=1');
 
     Event::assertNotDispatched(Verified::class);
     expect($user->fresh()->hasVerifiedEmail())->toBeTrue();

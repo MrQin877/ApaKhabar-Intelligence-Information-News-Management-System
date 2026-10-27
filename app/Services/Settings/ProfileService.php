@@ -4,7 +4,6 @@ namespace App\Services\Settings;
 
 use App\Models\Email;
 use App\Models\User;
-use Illuminate\Http\Request;
 
 class ProfileService
 {
@@ -22,7 +21,7 @@ class ProfileService
     {
         $emailChanged = $validated['email'] !== $user->email;
 
-        $user->fill(['name' => $validated['name']]);
+        $user->fill(array_intersect_key($validated, array_flip(['name', 'date_of_birth', 'citizenship', 'gender', 'ethnicity'])));
         $user->save();
 
         if ($emailChanged) {

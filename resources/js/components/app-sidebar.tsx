@@ -39,7 +39,7 @@ const mainNavItems: NavItem[] = [
     },
 
     {
-        title: 'Pesan',
+        title: 'Pesan Siaran',
         icon: Radio,
         items: [
             {
@@ -57,7 +57,7 @@ const mainNavItems: NavItem[] = [
 
     {
         title: 'Analisis',
-        href: dashboard(),
+        href: '/admin/analytics',
         icon: ChartNoAxesCombined,
     },
 ];
@@ -105,7 +105,7 @@ export function AppSidebar() {
               ]
             : []),
     ];
-    const visibleMainNavItems: NavItem[] = [
+    const allMainNavItems: NavItem[] = [
         mainNavItems[0],
         {
             title: 'Asisten AI',
@@ -144,8 +144,25 @@ export function AppSidebar() {
             attention: moderationPendingCount > 0,
             icon: MessageSquare,
         },
-        ...mainNavItems.slice(1),
+        ...mainNavItems
+            .slice(1)
+            .filter(
+                (item) =>
+                    item.title !== 'Analisis' || auth.user?.role === 'admin',
+            ),
     ];
+
+    const visibleMainNavItems =
+        auth.user?.role === 'moderator'
+            ? allMainNavItems.filter((item) =>
+                  [
+                      'Dasbor',
+                      'Berita',
+                      'Moderasi Komentar',
+                      'Pesan Siaran',
+                  ].includes(item.title),
+              )
+            : allMainNavItems;
 
     return (
         <>
