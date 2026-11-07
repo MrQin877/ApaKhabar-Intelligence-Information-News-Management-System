@@ -120,7 +120,7 @@ export function HeaderBar() {
                                         />
                                         {unreadNotifications > 0 && (
                                             // 5️⃣ Badge pulses to draw attention
-                                            <span className="absolute -top-1 -right-1 flex h-4 w-4 animate-pulse items-center justify-center rounded-full bg-brand-500 text-[9px] font-bold text-white ring-2 ring-background">
+                                            <span className="absolute -top-1 -right-1 flex h-4 w-4 animate-pulse items-center justify-center rounded-full bg-brand-700 text-[9px] font-bold text-white ring-2 ring-background">
                                                 {unreadNotifications > 9
                                                     ? '9+'
                                                     : unreadNotifications}
@@ -187,7 +187,7 @@ export function HeaderBar() {
                                 {/* 🔟 Daftar — scale press on click */}
                                 <Link
                                     href={register()}
-                                    className="rounded-sm bg-green-600 px-4 py-1.5 text-sm font-medium text-white transition-all duration-150 hover:bg-green-700 active:scale-95"
+                                    className="rounded-sm bg-green-700 px-4 py-1.5 text-sm font-medium text-white transition-all duration-150 hover:bg-green-800 active:scale-95"
                                 >
                                     Daftar
                                 </Link>
@@ -283,7 +283,7 @@ export function HeaderBar() {
                                                     Notifikasi
                                                 </span>
                                                 {unreadNotifications > 0 && (
-                                                    <span className="rounded-full bg-green-500 px-2 py-0.5 text-xs font-bold text-white">
+                                                    <span className="rounded-full bg-green-700 px-2 py-0.5 text-xs font-bold text-white">
                                                         {unreadNotifications > 9
                                                             ? '9+'
                                                             : unreadNotifications}
@@ -344,7 +344,7 @@ export function HeaderBar() {
                                         <SheetClose asChild>
                                             <Link
                                                 href={register()}
-                                                className="flex min-h-11 items-center gap-3 rounded-md bg-green-600 px-3 text-sm font-medium text-white hover:bg-green-700"
+                                                className="flex min-h-11 items-center gap-3 rounded-md bg-green-700 px-3 text-sm font-medium text-white hover:bg-green-800"
                                             >
                                                 <UserPlus className="size-4" />
                                                 Daftar

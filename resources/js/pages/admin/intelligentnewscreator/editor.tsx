@@ -838,7 +838,7 @@ export default function ManualEditor({
                                         : undefined
                                 }
                                 onClick={() => setConfirmPublish(true)}
-                                className="h-10 flex-1 rounded-lg bg-brand-600 text-white hover:bg-brand-700 sm:flex-none sm:px-5"
+                                className="h-10 flex-1 rounded-lg bg-brand-700 text-white hover:bg-brand-800 sm:flex-none sm:px-5"
                                 title="Simpan dan tinjau draf sebelum menerbitkan"
                             >
                                 {publishing || form.processing ? (
@@ -922,7 +922,7 @@ export default function ManualEditor({
                         </Button>
                         <Button
                             type="button"
-                            className="bg-brand-600 text-white hover:bg-brand-700"
+                            className="bg-brand-700 text-white hover:bg-brand-800"
                             disabled={savingDraft}
                             onClick={() => void persistDraft()}
                         >

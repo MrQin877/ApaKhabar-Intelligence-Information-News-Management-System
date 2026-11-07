@@ -774,7 +774,7 @@ export default function Comments({ comments, filters, counts }: Props) {
 }
 
 const greenButton =
-    'border border-green-600 bg-green-600 text-white enabled:hover:border-green-700 enabled:hover:bg-green-700 disabled:cursor-not-allowed disabled:border-gray-300 disabled:bg-gray-300 disabled:text-gray-500 dark:disabled:border-gray-700 dark:disabled:bg-gray-700 dark:disabled:text-gray-400';
+    'border border-green-600 bg-green-700 text-white enabled:hover:border-green-700 enabled:hover:bg-green-800 disabled:cursor-not-allowed disabled:border-gray-300 disabled:bg-gray-300 disabled:text-gray-500 dark:disabled:border-gray-700 dark:disabled:bg-gray-700 dark:disabled:text-gray-400';
 
 function CommentDetails({
     comment,

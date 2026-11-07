@@ -1786,23 +1786,37 @@ export function ShortVideos({
                                     Simpan Draf
                                 </Button>
                                 <Button
-                                    className="bg-brand-600 text-white hover:bg-brand-700"
+                                    className="bg-brand-700 text-white hover:bg-brand-800"
                                     disabled={
-                                        !canPublish &&
-                                        publishHint !==
-                                            'Judul video wajib diisi.' &&
-                                        publishHint !==
-                                            'Konten minimal 20 karakter untuk diterbitkan.'
+                                        busy ||
+                                        (!localFile &&
+                                            !pendingFrame &&
+                                            !canPublish &&
+                                            publishHint !==
+                                                'Judul video wajib diisi.' &&
+                                            publishHint !==
+                                                'Konten minimal 20 karakter untuk diterbitkan.')
                                     }
-                                    onClick={() => {
-                                        if (guard.current) {
-                                            return;
-                                        }
-
+                                    onClick={async () => {
+                                        if (guard.current) return;
                                         if (!requireTitle()) return;
                                         setAttempted(true);
                                         setPublishAttempted(true);
                                         if (descriptionLength < 20) return;
+                                        if (descriptionLength > 2000) {
+                                            setError(
+                                                'Konten maksimal 2.000 karakter.',
+                                            );
+                                            return;
+                                        }
+                                        if (localFile || pendingFrame) {
+                                            await saveDraft();
+                                            return;
+                                        }
+                                        if (!canPublish) {
+                                            setError(publishHint);
+                                            return;
+                                        }
 
                                         setDialog(true);
                                     }}
@@ -1904,7 +1918,7 @@ export function ShortVideos({
                         </Button>
                         <Button
                             disabled={busy}
-                            className="bg-brand-600 text-white hover:bg-brand-700"
+                            className="bg-brand-700 text-white hover:bg-brand-800"
                             onClick={() => void saveDraft()}
                         >
                             {savingAction === 'draft' && (

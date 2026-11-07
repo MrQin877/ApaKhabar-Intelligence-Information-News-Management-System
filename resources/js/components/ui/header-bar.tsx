@@ -66,7 +66,7 @@ export function HeaderBar() {
                             </Link>
                             <Link
                                 href={register()}
-                                className="rounded-sm bg-green-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-green-700"
+                                className="rounded-sm bg-green-700 px-4 py-1.5 text-sm font-medium text-white hover:bg-green-800"
                             >
                                 Daftar
                             </Link>

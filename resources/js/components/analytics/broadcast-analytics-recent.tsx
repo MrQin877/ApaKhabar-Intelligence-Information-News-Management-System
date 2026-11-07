@@ -36,7 +36,7 @@ export function AnalyticsRecent({ recent }: { recent: RecentItem[] }) {
                             </div>
                             <p className="text-xs text-muted-foreground pt-1">
                                 Dikirim {item.sent_at} ke {item.audience} ·{' '}
-                                <span className="text-brand-500">
+                                <span className="text-success-text">
                                     {item.read} dibuka {item.rate}%
                                 </span>
                             </p>

@@ -310,7 +310,7 @@ export function PhoneVerification({
                                 size="sm"
                                 onClick={handleVerify}
                                 disabled={processing || otp.length !== 6}
-                                className="h-9 shrink-0 gap-1.5 bg-green-600 text-sm text-white hover:bg-green-700"
+                                className="h-9 shrink-0 gap-1.5 bg-green-700 text-sm text-white hover:bg-green-800"
                             >
                                 <ShieldCheck className="h-3.5 w-3.5" />
                                 Verifikasi

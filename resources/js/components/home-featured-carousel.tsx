@@ -114,7 +114,7 @@ export function HomeFeaturedCarousel({ items }: { items: HomeNews[] }) {
                         >
                             <div className="w-full space-y-3 sm:max-w-[75%] lg:max-w-[60%]">
                                 <div className="flex flex-wrap items-center gap-3">
-                                    <Badge className="border-0 bg-green-600 text-white">
+                                    <Badge className="border-0 bg-green-700 text-white">
                                         {item.category}
                                     </Badge>
                                     <span className="text-xs text-white/80 sm:text-sm">

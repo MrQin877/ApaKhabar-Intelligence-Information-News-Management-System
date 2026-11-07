@@ -28,7 +28,7 @@ type ReplyPage = Page & { open: boolean; loading: boolean };
 const action =
     'inline-flex items-center gap-1 rounded text-xs text-muted-foreground no-underline transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50 [@media(pointer:coarse)]:min-h-11';
 const primary =
-    'border border-green-600 bg-green-600 text-white enabled:hover:border-green-700 enabled:hover:bg-green-700 disabled:opacity-50';
+    'border border-green-600 bg-green-700 text-white enabled:hover:border-green-700 enabled:hover:bg-green-800 disabled:opacity-50';
 
 export function ShortComments({
     shortId,

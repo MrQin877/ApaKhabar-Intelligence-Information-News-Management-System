@@ -42,7 +42,7 @@ export function NavFooter({
                                     <div className="relative">
                                         {item.icon && <item.icon className="h-5 w-5" />}
                                         {item.title === 'Notifications' && unreadNotifications > 0 && (
-                                            <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-green-500 text-[9px] font-bold text-white">
+                                            <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-green-700 text-[9px] font-bold text-white">
                                                 {unreadNotifications > 9 ? '9+' : unreadNotifications}
                                             </span>
                                         )}
