@@ -18,6 +18,7 @@ x-laravel: &laravel
     DB_QUEUE_RETRY_AFTER: "1500"
     APAKHABAR_AI_URL: http://ai:8001
     APAKHABAR_AI_API_PREFIX: ""
+    APAKHABAR_AI_PROVIDER: Google Gemini (OpenAI judge)
     APAKHABAR_AI_SERVICE_TOKEN: ${APAKHABAR_AI_SERVICE_TOKEN:?Set a shared service token in deployment/.env}
     LIBRETRANSLATE_URL: http://libretranslate:5000
     FFMPEG_BINARY: ffmpeg
@@ -57,89 +58,13 @@ services:
       dockerfile: ${AI_DOCKERFILE:-../../ApaKhabar-Intelligence-Information-News-Management-System/deployment/docker/ai.Dockerfile}
     env_file: ./ai.env
     environment:
-      AI_PROVIDER: llama_cpp
-      LLAMA_CPP_BASE_URL: http://llama-writer:8080/v1
-      LLAMA_CPP_MODEL: apakhabar-gemma
-      EVALUATOR_BASE_URL: http://llama-judge:8082/v1
-      EVALUATOR_MODEL: apakhabar-judge
-      OLLAMA_BASE_URL: http://ollama:11434
-      CHROMA_PATH: /app/data/chroma
-      UPLOAD_PATH: /app/data/uploads
-      AGENT_DB_PATH: /app/data/agent/checkpoints.sqlite
-      HF_HUB_OFFLINE: "1"
-      TRANSFORMERS_OFFLINE: "1"
       APAKHABAR_AI_SERVICE_TOKEN: ${APAKHABAR_AI_SERVICE_TOKEN:?Set a shared service token in deployment/.env}
     volumes:
       - ai_chroma:/app/data/chroma
       - ai_uploads:/app/data/uploads
       - ai_checkpoints:/app/data/agent
-    depends_on:
-      llama-writer:
-        condition: service_healthy
-      ollama:
-        condition: service_healthy
     healthcheck:
       test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=5)"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
-    restart: unless-stopped
-    networks: [internal]
-
-  llama-writer:
-    image: ghcr.io/ggml-org/llama.cpp:server
-    command: ["-m", "/models/writer.gguf", "--alias", "apakhabar-gemma", "--host", "0.0.0.0", "--port", "8080", "--ctx-size", "8192", "--parallel", "1", "--jinja", "--reasoning", "off", "--n-gpu-layers", "${WRITER_GPU_LAYERS:-0}"]
-    volumes:
-      - type: bind
-        source: ${WRITER_GGUF_PATH:-./models/writer.gguf}
-        target: /models/writer.gguf
-        read_only: true
-        bind:
-          create_host_path: false
-    healthcheck:
-      test: [CMD, /bin/sh, -c, "curl -fsS http://127.0.0.1:8080/health >/dev/null"]
-      interval: 30s
-      timeout: 10s
-      retries: 10
-      start_period: 180s
-    restart: unless-stopped
-    networks: [internal]
-
-  llama-judge:
-    profiles: [judge]
-    image: ghcr.io/ggml-org/llama.cpp:server
-    command: ["-m", "/models/judge.gguf", "--alias", "apakhabar-judge", "--host", "0.0.0.0", "--port", "8082", "--ctx-size", "16384", "--parallel", "1", "--jinja", "--reasoning", "off", "--n-gpu-layers", "${JUDGE_GPU_LAYERS:-0}"]
-    volumes:
-      - type: bind
-        source: ${JUDGE_GGUF_PATH:-./models/judge.gguf}
-        target: /models/judge.gguf
-        read_only: true
-        bind:
-          create_host_path: false
-    healthcheck:
-      test: [CMD, /bin/sh, -c, "curl -fsS http://127.0.0.1:8082/health >/dev/null"]
-      interval: 30s
-      timeout: 10s
-      retries: 10
-      start_period: 180s
-    restart: unless-stopped
-    networks: [internal]
-
-  ollama:
-    image: ollama/ollama:0.12.10
-    environment:
-      OLLAMA_HOST: 0.0.0.0:11434
-      OLLAMA_MODELS: /root/.ollama/models
-    volumes:
-      - type: bind
-        source: ${OLLAMA_MODELS_PATH:-./models/ollama}
-        target: /root/.ollama/models
-        read_only: true
-        bind:
-          create_host_path: false
-    healthcheck:
-      test: [CMD, ollama, list]
       interval: 30s
       timeout: 10s
       retries: 5

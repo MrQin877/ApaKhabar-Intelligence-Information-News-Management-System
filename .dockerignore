@@ -3,6 +3,7 @@
 .env.*
 !/.env.example
 vendor
+bootstrap/cache
 node_modules
 storage
 public/storage
