@@ -3,6 +3,7 @@
 .env.*
 !/.env.example
 vendor
+bootstrap/cache
 node_modules
 storage
 public/storage
@@ -12,4 +13,5 @@ deployment/.env
 deployment/laravel.env
 deployment/ai.env
 deployment/models
+deployment/runtime-test
 *.gguf

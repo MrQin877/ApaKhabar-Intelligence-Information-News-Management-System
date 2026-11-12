@@ -21,7 +21,8 @@ RUN composer install --no-dev --no-scripts --prefer-dist --no-interaction
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY . .
-RUN composer dump-autoload --no-dev --no-scripts --optimize \
+RUN mkdir -p bootstrap/cache storage/app/public storage/app/private storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs \
+    && composer dump-autoload --no-dev --no-scripts --optimize \
     && php artisan package:discover --ansi \
     && npm run build \
     && rm -rf node_modules \

@@ -94,7 +94,10 @@ export function WebsiteLanguage() {
                 <Globe />
                 {language.toUpperCase()}
             </Button>
-            <span role="status" className="sr-only">
+            <span
+                role="status"
+                className={state === 'error' ? 'max-w-56 self-center px-2 text-xs text-muted-foreground' : 'sr-only'}
+            >
                 {status}
             </span>
         </span>
