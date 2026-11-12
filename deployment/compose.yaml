@@ -1,3 +1,4 @@
+
 name: apakhabar-docker
 
 x-laravel: &laravel
@@ -65,11 +66,7 @@ services:
       - ai_chroma:/app/data/chroma
       - ai_uploads:/app/data/uploads
       - ai_checkpoints:/app/data/agent
-    depends_on:
-      llama-writer:
-        condition: service_healthy
-      ollama:
-        condition: service_healthy
+      - ai_model_cache:/app/data/huggingface
     healthcheck:
       test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=5)"]
       interval: 30s
@@ -149,7 +146,7 @@ services:
 
 networks:
   internal:
-    internal: false # Outbound HTTPS is required for Meta, Cloudinary, mail, and optional model APIs.
+    internal: false
 
 volumes:
   mariadb_data:
