@@ -41,7 +41,7 @@ return [];
     if (message.role === 'user') {
         return (
             <div className="ml-auto max-w-[78%]">
-                <div className="rounded-3xl bg-muted px-4 py-3 text-sm leading-6 text-foreground">
+                <div className="rounded-2xl rounded-tr-md border border-border bg-card px-4 py-3 text-sm leading-6 whitespace-pre-wrap text-card-foreground shadow-sm [overflow-wrap:anywhere]">
                     {message.content}
                 </div>
                 <InformationAttachments
@@ -82,7 +82,7 @@ export function PendingUserMessage({
 }) {
     return (
         <div className="ml-auto max-w-[78%]">
-            <div className="rounded-3xl bg-muted px-4 py-3 text-sm leading-6 text-foreground">
+            <div className="rounded-2xl rounded-tr-md border border-border bg-card px-4 py-3 text-sm leading-6 whitespace-pre-wrap text-card-foreground shadow-sm [overflow-wrap:anywhere]">
                 {children}
             </div>
             <InformationAttachments items={informationAttachments} />
