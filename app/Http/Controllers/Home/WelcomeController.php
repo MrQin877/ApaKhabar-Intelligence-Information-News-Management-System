@@ -36,13 +36,7 @@ class WelcomeController extends Controller
         // Latest includes featured stories too, so small collections never disappear.
         $remainingNews = $news->values();
 
-        // ── Darurat broadcast — only show if sent within last 24 hours ──
-        $daruratBroadcast = Broadcast::category('darurat')
-            ->where('status', 'dikirim')
-            ->where('sent_at', '>=', now()->subHours(24))
-            ->whereNull('archived_at')
-            ->latest('sent_at')
-            ->first();
+        $broadcasts = Broadcast::publicEmergency()->get();
 
         return Inertia::render('welcome', [
             'shorts' => \App\Models\ShortVideo::where('status', 'published')->whereNotNull('published_at')->latest('published_at')->latest('id')->take(6)->get(['id', 'title', 'description', 'thumbnail_url', 'video_url', 'published_at', 'view_count']),
@@ -51,9 +45,7 @@ class WelcomeController extends Controller
             'supportingNews' => $supportingNews,
             'remainingNews' => $remainingNews,
             'newsList' => $newsList,
-            'breakingNews' => $daruratBroadcast?->title,
-            'breakingMessage' => $daruratBroadcast?->message,
-            'breakingSentAt' => $daruratBroadcast?->sent_at?->toISOString(),
+            'emergencyBroadcasts' => $broadcasts->map->publicEmergencyData()->values(),
             'canRegister' => Features::enabled(Features::registration()),
         ]);
     }

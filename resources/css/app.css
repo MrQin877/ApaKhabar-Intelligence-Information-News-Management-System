@@ -856,3 +856,14 @@
         animation: none;
     }
 }
+
+@keyframes emergency-ticker {
+    to { transform: translateX(-50%); }
+}
+.emergency-ticker { animation: emergency-ticker 30s linear infinite; }
+.emergency-banner:hover .emergency-ticker,
+.emergency-banner:focus-within .emergency-ticker,
+.emergency-banner[data-paused='true'] .emergency-ticker { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) {
+    .emergency-ticker { animation: none; }
+}
