@@ -27,6 +27,9 @@ export function EmergencyBroadcastBanner({
     const items = updates ?? broadcasts;
     const [now, setNow] = useState(() => Date.now());
     const [open, setOpen] = useState(false);
+    const [currentId, setCurrentId] = useState<string | null>(null);
+    const [hovered, setHovered] = useState(false);
+    const [focused, setFocused] = useState(false);
 
     useEffect(() => {
         const controller = new AbortController();
@@ -85,7 +88,42 @@ export function EmergencyBroadcastBanner({
             Date.parse(item.publishedAt) <= now,
     );
 
-    if (!active.length) {
+    const current = active.find((item) => item.id === currentId) ?? active[0];
+    const activeIds = active.map((item) => item.id).join(',');
+    const paused = open || hovered || focused;
+    const duration = Math.max(20, (current?.message.length ?? 0) / 5);
+
+    // CSS iterations advance the title and message together after a full loop.
+    // Reduced-motion users get a stationary message and a timed rotation instead.
+    useEffect(() => {
+        const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+        let timer: number | undefined;
+        const configure = () => {
+            window.clearInterval(timer);
+
+            if (media.matches && !paused && activeIds) {
+                const ids = activeIds.split(',');
+                timer = window.setInterval(() => {
+                    setCurrentId(
+                        (id) =>
+                            ids[
+                                (Math.max(0, ids.indexOf(id ?? ids[0])) + 1) %
+                                    ids.length
+                            ],
+                    );
+                }, duration * 1000);
+            }
+        };
+        configure();
+        media.addEventListener('change', configure);
+
+        return () => {
+            window.clearInterval(timer);
+            media.removeEventListener('change', configure);
+        };
+    }, [activeIds, duration, paused]);
+
+    if (!current) {
         return null;
     }
 
@@ -93,36 +131,49 @@ export function EmergencyBroadcastBanner({
         <Dialog open={open} onOpenChange={setOpen}>
             <section
                 aria-label="Siaran Darurat"
-                className="emergency-banner flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-red-400/40 bg-red-700/90 p-3 text-white shadow-md shadow-red-950/15 backdrop-blur-sm sm:flex-nowrap sm:gap-4 sm:px-5"
-                data-paused={open}
+                className="emergency-banner grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 rounded-xl border border-red-400/40 bg-red-700/90 p-3 text-white shadow-md shadow-red-950/15 backdrop-blur-sm sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto] sm:gap-4 sm:px-5"
+                data-paused={paused}
+                onMouseEnter={() => setHovered(true)}
+                onMouseLeave={() => setHovered(false)}
+                onFocusCapture={() => setFocused(true)}
+                onBlurCapture={(event) => {
+                    if (!event.currentTarget.contains(event.relatedTarget)) {
+setFocused(false);
+}
+                }}
             >
-                <h2 className="flex shrink-0 items-center gap-2 text-sm font-bold sm:border-r sm:border-white/30 sm:pr-4 sm:text-base">
-                    <Siren aria-hidden="true" className="size-6" />
-                    Siaran Darurat
+                <h2 className="flex min-w-0 items-center gap-2 text-sm font-bold sm:border-r sm:border-white/30 sm:pr-4 sm:text-base">
+                    <Siren aria-hidden="true" className="size-6 shrink-0" />
+                    <span className="min-w-0 truncate" title={current.title}>
+                        {current.title}
+                    </span>
                 </h2>
-                <div className="order-3 w-full min-w-0 overflow-hidden sm:order-none sm:w-auto sm:flex-1">
+                <div className="[container-type:inline-size] col-span-2 row-start-2 min-w-0 overflow-hidden sm:col-span-1 sm:col-start-2 sm:row-start-1">
                     <div
+                        key={`${current.id}:${current.message}`}
                         className="emergency-ticker flex w-max"
-                        style={{
-                            animationDuration: `${Math.max(25, active.reduce((length, item) => length + item.title.length + item.message.length, 0) / 5)}s`,
+                        style={{ animationDuration: `${duration}s` }}
+                        onAnimationIteration={() => {
+                            if (!paused) {
+                                setCurrentId(
+                                    active[
+                                        (active.findIndex(
+                                            (item) => item.id === current.id,
+                                        ) +
+                                            1) %
+                                            active.length
+                                    ].id,
+                                );
+                            }
                         }}
                     >
                         {[0, 1].map((copy) => (
                             <div
                                 key={copy}
                                 aria-hidden={copy === 1 ? true : undefined}
-                                className="flex shrink-0 items-center"
+                                className="min-w-[100cqw] shrink-0 pr-10 text-sm whitespace-nowrap"
                             >
-                                {active.map((item) => (
-                                    <span
-                                        key={item.id}
-                                        className="inline-flex items-center gap-3 pr-10 text-sm whitespace-nowrap"
-                                    >
-                                        <span aria-hidden="true">•</span>
-                                        <strong>{item.title}:</strong>{' '}
-                                        {item.message.replace(/\s+/g, ' ')}
-                                    </span>
-                                ))}
+                                {current.message.replace(/\s+/g, ' ')}
                             </div>
                         ))}
                     </div>
@@ -130,7 +181,7 @@ export function EmergencyBroadcastBanner({
                 <DialogTrigger asChild>
                     <Button
                         size="sm"
-                        className="ml-auto shrink-0 bg-white text-red-800 shadow-sm hover:bg-red-50"
+                        className="col-start-2 row-start-1 shrink-0 bg-white text-red-800 shadow-sm hover:bg-red-50 sm:col-start-3"
                     >
                         Lihat Detail
                         <ChevronRight aria-hidden="true" className="size-4" />
@@ -139,41 +190,32 @@ export function EmergencyBroadcastBanner({
             </section>
             <DialogContent
                 closeLabel="Tutup"
-                className="max-h-[85dvh] overflow-y-auto sm:max-w-2xl"
+                className="max-h-[80vh] max-h-[80dvh] min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden sm:max-w-2xl"
             >
-                <DialogHeader>
-                    <DialogTitle className="flex items-center gap-2 pr-5 text-red-700">
-                        <Siren aria-hidden="true" className="size-5" />
-                        Siaran Darurat
+                <DialogHeader className="min-w-0 pr-6 [overflow-wrap:anywhere]">
+                    <DialogTitle className="leading-relaxed break-words text-red-700">
+                        {current.title}
                     </DialogTitle>
                     <DialogDescription>
-                        Informasi darurat terbaru untuk warga.
+                        Siaran Darurat. Dipublikasikan pada{' '}
+                        <time dateTime={current.publishedAt}>
+                            {new Intl.DateTimeFormat('id-ID', {
+                                dateStyle: 'long',
+                                timeStyle: 'short',
+                            }).format(new Date(current.publishedAt))}{' '}
+                            (waktu setempat)
+                        </time>
                     </DialogDescription>
                 </DialogHeader>
-                <div className="space-y-6">
-                    {active.map((item) => (
-                        <article
-                            key={item.id}
-                            className="space-y-3 border-t pt-4"
-                        >
-                            <h3 className="text-lg font-semibold break-words">
-                                {item.title}
-                            </h3>
-                            <p className="text-sm text-muted-foreground">
-                                Dipublikasikan pada{' '}
-                                <time dateTime={item.publishedAt}>
-                                    {new Intl.DateTimeFormat('id-ID', {
-                                        dateStyle: 'long',
-                                        timeStyle: 'short',
-                                    }).format(new Date(item.publishedAt))}{' '}
-                                    (waktu setempat)
-                                </time>
-                            </p>
-                            <p className="break-words whitespace-pre-wrap">
-                                {item.message}
-                            </p>
-                        </article>
-                    ))}
+                <div
+                    role="region"
+                    aria-label="Isi siaran darurat"
+                    tabIndex={0}
+                    className="min-h-0 min-w-0 overflow-x-hidden overflow-y-auto overscroll-contain pr-2 [overflow-wrap:anywhere]"
+                >
+                    <p className="min-w-0 break-words whitespace-pre-wrap [overflow-wrap:anywhere]">
+                        {current.message}
+                    </p>
                 </div>
             </DialogContent>
         </Dialog>
