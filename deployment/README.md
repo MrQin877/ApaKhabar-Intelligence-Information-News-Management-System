@@ -1,31 +1,264 @@
-﻿# Unified hosted AI Docker deployment
+﻿# ApaKhabar — Docker Deployment
 
-The single Compose project is `apakhabar-docker` in Repo A. Its `ai` image builds Repo B from `AI_REPO_PATH`; neither source tree is moved or copied into the other repository. Nginx is the only service with a host port. Laravel, MariaDB, queue workers, scheduler, FastAPI, persistent Chroma, uploads, and LangGraph checkpoints stay on the Compose network. PHP application and worker images include FFmpeg and ffprobe. Optional LibreTranslate remains under the `translation` profile.
+This guide explains how to set up and run ApaKhabar using Docker.
 
-## Request path
+Docker runs the Laravel website, FastAPI AI service, MariaDB database, and background workers together. You do not need XAMPP or `composer run dev`.
 
-`Laravel NewsGenerationService -> ai:8001/news/generate -> FastAPI AgentService -> LangGraph EditorialWorkflow -> Gemini writer -> independent OpenAI Reflection judge -> Laravel`.
+## 1. Project Overview
 
-FastAPI also serves document extraction and retrieval. The current Docker AI environment uses `gemini-embedding-001` at 768 dimensions for Chroma. Gemini writing and OpenAI judging use separate hosted Chat Completions endpoints and keys. The separate Laravel `OPENAI_API_KEY` config is for comment moderation at `/v1/moderations`.
+ApaKhabar uses two separate repositories:
 
-The current application code has an `AGENT_ENABLED=false` legacy generation branch and a writer self-review path when `EVALUATOR_ENABLED=false`. Keep both flags true in `ai.env` for the independent judge workflow. No llama.cpp or Ollama services are present. Outbound HTTPS from `ai` must reach `generativelanguage.googleapis.com` and `api.openai.com`; Laravel's existing integrations also need outbound access.
+- **Repo A — ApaKhabar Website:** Laravel backend, website, and Docker configuration.
+- **Repo B — ApaKhabar AI Service:** FastAPI, document extraction, RAG, and AI news generation.
 
-## Configure
+Docker Compose is managed in Repo A and connects to Repo B through `AI_REPO_PATH`.
 
-Copy `.env.example`, `laravel.env.example`, and `ai.env.example` to their untracked counterparts in `deployment/`. Keep distinct Docker database passwords and a shared Laravel/FastAPI service token in `.env`. Set `AI_API_KEY` to a Gemini writing key, `EVALUATOR_API_KEY` to an OpenAI judging key, and `EMBEDDING_API_KEY` to a Gemini embedding key in `ai.env`. The two Gemini keys may be the same if permitted by the account. AI secrets must not enter Vite variables, Docker build arguments, or tracked files.
+The Docker environment includes:
 
-`deployment/ai.env` owns the FastAPI provider, model, workflow, and Docker storage settings. Compose supplies the shared service token from `deployment/.env` to both Laravel and FastAPI. Hosted writing and judging need their respective API keys. Repo B's own `.env` is excluded from the image build and is not used by this Compose project.
+- **Laravel + Nginx** — Runs the website and backend APIs.
+- **MariaDB** — Stores news, users, comments, broadcasts, and other data.
+- **FastAPI** — Handles AI document extraction, retrieval, and news generation.
+- **Queue Workers** — Handle document processing, AI generation, and video publishing.
+- **Scheduler** — Runs scheduled Laravel tasks.
+- **Chroma** — Stores document embeddings for RAG.
+- **LibreTranslate** — Optional translation service.
 
-The embedding provider, model, and dimensions determine the Chroma collection fingerprint. Gemini and EmbeddingGemma have different fingerprints even at 768 dimensions. Preserve `ai_chroma`; existing approved vectors remain in their old collection. After the AI service is running, preview eligible information with `php artisan ai:reindex-approved-information` in the Docker Laravel container. Review the count and use `--execute` to index approved, active information from unarchived documents into the new Gemini collection. Add `--owner=ID` to limit a run. The command upserts in batches and can be resumed; it does not delete old collections. Each embedding request may incur provider charges.
+## 2. API Usage
 
-## Local EmbeddingGemma cache
+ApaKhabar uses the following external APIs:
 
-Local EmbeddingGemma remains optional. Build the AI image with `docker compose --env-file deployment/.env -f deployment/compose.yaml build --build-arg INSTALL_LOCAL_EMBEDDINGS=true ai` when selecting it. Compose mounts a separate persistent `ai_model_cache` volume at `/app/data/huggingface` and sets `HF_HOME` there. Repo B loads this model with `local_files_only=True`, so the model must already exist in that cache before local RAG indexing or search. Container recreation retains the cache volume.
+- **Google Gemini (Writer):** Generates news content from provided information.
+- **Google Gemini (Embeddings):** Converts approved document information into vectors for AI retrieval.
+- **OpenAI (Evaluator):** Reviews and evaluates AI-generated news.
+- **OpenAI Moderation:** Detects potentially harmful comments.
+- **Meta Graph API:** Publishes news to Facebook and Instagram.
+- **Cloudinary:** Handles media for social media publishing.
+- **Whapi:** Sends WhatsApp broadcasts.
+- **Bulk360 / Vonage:** Sends SMS broadcasts.
+- **Gmail SMTP:** Sends emails and password reset links.
 
-Accept the model's access terms on Hugging Face and create a read token with access to that model. Then run `powershell -ExecutionPolicy Bypass -File deployment/seed-embeddinggemma.ps1` from Repo A. The script prompts for the token without echo, downloads into the project-labeled cache volume, clears the process environment variable, and verifies an offline 768-dimensional query in a disposable container. Do not paste the token into chat or put it in a tracked file. Do not change `EMBEDDING_MODEL`, dimensions, or the Chroma volume to work around an empty cache. A successful image build verifies packages only; it does not populate or test the model cache.
+### AI News Generation Workflow
 
-## Verify and operate
+1. Laravel sends a request to FastAPI.
+2. FastAPI retrieves relevant approved information from Chroma.
+3. Gemini generates the news content.
+4. OpenAI evaluates the generated content.
+5. FastAPI returns the result to Laravel.
 
-Run `docker compose --env-file .env -f compose.yaml config --quiet` from `deployment/` after setting secrets. Build and start only after checking the Docker engine and the two provider accounts. `/health` verifies the FastAPI process, not provider credentials, quota, generation, or judging. Exercise a disposable generation and RAG indexing/query to verify those paths. No migration, seeder, model download, or XAMPP access runs in an image entrypoint. Avoid running Docker and XAMPP workers against the same database.
+Keep `AGENT_ENABLED=true` and `EVALUATOR_ENABLED=true` in `deployment/ai.env` to enable the LangGraph workflow and independent evaluation.
 
-Older `PHASE2*.md` reports and `compose.testing.yaml` describe the previous local-model testing setup; they are historical and should not be used as an override for this architecture.
+## 3. Requirements
+
+Install the following:
+
+- Docker Desktop with Linux containers enabled.
+- Git.
+- Repo A and Repo B.
+
+Make sure `AI_REPO_PATH` in `deployment/.env` points to the correct Repo B folder.
+
+## 4. Environment Setup
+
+Open a terminal in the **Repo A root folder**.
+
+Create the environment files from the provided examples:
+
+```powershell
+Copy-Item deployment/.env.example deployment/.env
+Copy-Item deployment/laravel.env.example deployment/laravel.env
+Copy-Item deployment/ai.env.example deployment/ai.env
+```
+
+Only copy these files during first-time setup. Do not overwrite existing configured files.
+
+### Environment Files
+
+- `deployment/.env` — Docker database credentials, port, and shared AI service token.
+- `deployment/laravel.env` — Laravel configuration and external API credentials.
+- `deployment/ai.env` — Gemini, OpenAI, embeddings, and FastAPI settings.
+
+Fill in the required API keys, passwords, and environment values.
+
+Important AI variables:
+
+- `AI_API_KEY` — Gemini API key for news generation.
+- `EMBEDDING_API_KEY` — Gemini API key for document embeddings.
+- `EVALUATOR_API_KEY` — OpenAI API key for AI evaluation.
+- `OPENAI_API_KEY` — OpenAI API key for Laravel comment moderation.
+- `APAKHABAR_AI_SERVICE_TOKEN` — Shared token used by Laravel and FastAPI.
+
+For a new installation, configure a Laravel `APP_KEY`. If restoring existing encrypted data, retain its original key.
+
+**Never commit real `.env` files or API keys to GitHub.**
+
+## 5. Start Docker
+
+First, open Docker Desktop and make sure the Docker Engine is running.
+
+Run the following commands from Repo A.
+
+### First Time — Build and Start
+
+```powershell
+docker compose --env-file deployment/.env -f deployment/compose.yaml up -d --build
+```
+
+This builds the images and starts Laravel, MariaDB, FastAPI, Nginx, the queue workers, and scheduler.
+
+For a new database, initialize the required Laravel tables using reviewed migrations. Do not reset an existing database.
+
+### Next Time — Start Existing Containers
+
+```powershell
+docker compose --env-file deployment/.env -f deployment/compose.yaml up -d --no-build
+```
+
+### Open Website
+
+Once all required containers are healthy:
+
+http://localhost:8088
+
+## 6. Common Docker Commands
+
+Run these commands from the Repo A root directory.
+
+### Start Everything
+
+```powershell
+docker compose --env-file deployment/.env -f deployment/compose.yaml up -d
+```
+
+### Build and Start
+
+```powershell
+docker compose --env-file deployment/.env -f deployment/compose.yaml up -d --build
+```
+
+### Start Without Rebuilding
+
+```powershell
+docker compose --env-file deployment/.env -f deployment/compose.yaml up -d --no-build
+```
+
+### Check Container Status
+
+```powershell
+docker compose --env-file deployment/.env -f deployment/compose.yaml ps
+```
+
+### View Logs
+
+```powershell
+docker compose --env-file deployment/.env -f deployment/compose.yaml logs --tail=50
+```
+
+### Stop All Services
+
+```powershell
+docker compose --env-file deployment/.env -f deployment/compose.yaml stop
+```
+
+### Restart Services
+
+```powershell
+docker compose --env-file deployment/.env -f deployment/compose.yaml restart
+```
+
+### Validate Docker Configuration
+
+```powershell
+docker compose --env-file deployment/.env -f deployment/compose.yaml config --quiet
+```
+
+Stopping containers does not delete your database or persistent volumes.
+
+If you update application code, dependencies, or Dockerfiles, rebuild the affected images to apply the changes.
+
+## 7. Database and Storage
+
+Docker uses its own MariaDB database, separate from XAMPP.
+
+Default database settings:
+
+```env
+DB_HOST=db
+DB_PORT=3306
+DB_DATABASE=apakhabar_docker
+DB_USERNAME=apakahbar
+```
+
+Use the actual username configured in `deployment/.env`. The Compose default in the current project is `apakhabar`.
+
+The following data is stored in persistent Docker volumes:
+
+- MariaDB records.
+- Laravel uploaded files.
+- Chroma vectors.
+- FastAPI uploads.
+- AI agent checkpoints.
+
+Docker volumes preserve data when containers are stopped or recreated. However, they should still be backed up regularly.
+
+Teammates do not automatically receive existing database records when pulling from GitHub.
+
+## 8. Gemini Embeddings
+
+ApaKhabar uses `gemini-embedding-001` with 768 dimensions for document retrieval.
+
+When changing embedding providers, approved information must be reindexed into the new Chroma collection.
+
+### Preview Information
+
+```powershell
+docker compose --env-file deployment/.env -f deployment/compose.yaml exec app php artisan ai:reindex-approved-information
+```
+
+### Reindex Approved Information
+
+```powershell
+docker compose --env-file deployment/.env -f deployment/compose.yaml exec app php artisan ai:reindex-approved-information --execute
+```
+
+The second command sends requests to the Gemini API and may incur charges.
+
+Review the preview before running the reindex command.
+
+## 9. Optional Translation
+
+LibreTranslate is optional and is not started by default.
+
+To enable it:
+
+```powershell
+docker compose --env-file deployment/.env -f deployment/compose.yaml --profile translation up -d libretranslate
+```
+
+The website can still operate without LibreTranslate.
+
+## 10. Microsoft Azure Deployment
+
+ApaKhabar will later be deployed to Microsoft Azure using Docker.
+
+Before cloud deployment, configure:
+
+- Production environment variables.
+- HTTPS and a public domain.
+- Secure database connections.
+- Persistent storage and backups.
+- Firewall and network settings.
+- Mobile API connection to the Azure backend.
+
+The Expo mobile application runs separately and connects to Laravel through its API.
+
+Local Docker database records and uploaded files are not automatically transferred to Azure.
+
+## Important Notes
+
+- Open Docker Desktop before running Docker commands.
+- XAMPP and `composer run dev` are not required.
+- Keep both Repo A and Repo B available when building images.
+- Keep API keys and passwords private.
+- Do not delete existing Docker volumes or databases.
+- Do not run destructive migrations such as `migrate:fresh`.
+- Rebuild images when changing application code or dependencies.
