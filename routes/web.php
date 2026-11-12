@@ -162,15 +162,15 @@ Route::prefix('admin')
         Route::post('/comments/{id}/decision', [CommentModerationController::class, 'decide'])->middleware('throttle:30,1')->name('comments.decision');
 
         // Broadcasting — full CRUD + archive/restore
-        Route::get('/broadcasting', [BroadcastController::class, 'index'])->name('broadcasting.index');
-        Route::get('/broadcasting/create', [BroadcastController::class, 'create'])->name('broadcasting.create');
-        Route::post('/broadcasting', [BroadcastController::class, 'store'])->name('broadcasting.store');
-        Route::get('/broadcasting/archived', [BroadcastController::class, 'archived'])->name('broadcasting.archived');
-        Route::get('/broadcasting/{broadcast}', [BroadcastController::class, 'show'])->name('broadcasting.show');
-        Route::post('/broadcasting/{broadcast}/resend', [BroadcastController::class, 'resend'])->name('broadcasting.resend');
-        Route::post('/broadcasting/archive', [BroadcastController::class, 'archive'])->name('broadcasting.archive');
-        Route::post('/broadcasting/{broadcast}/archive', [BroadcastController::class, 'archiveSingle'])->name('broadcasting.archive-single');
-        Route::post('/broadcasting/{broadcast}/restore', [BroadcastController::class, 'restore'])->name('broadcasting.restore');
+        Route::get('/broadcasting', [BroadcastController::class, 'index'])->middleware('role:admin')->name('broadcasting.index');
+        Route::get('/broadcasting/create', [BroadcastController::class, 'create'])->middleware('role:admin')->name('broadcasting.create');
+        Route::post('/broadcasting', [BroadcastController::class, 'store'])->middleware('role:admin')->name('broadcasting.store');
+        Route::get('/broadcasting/archived', [BroadcastController::class, 'archived'])->middleware('role:admin')->name('broadcasting.archived');
+        Route::get('/broadcasting/{broadcast}', [BroadcastController::class, 'show'])->middleware('role:admin')->name('broadcasting.show');
+        Route::post('/broadcasting/{broadcast}/resend', [BroadcastController::class, 'resend'])->middleware('role:admin')->name('broadcasting.resend');
+        Route::post('/broadcasting/archive', [BroadcastController::class, 'archive'])->middleware('role:admin')->name('broadcasting.archive');
+        Route::post('/broadcasting/{broadcast}/archive', [BroadcastController::class, 'archiveSingle'])->middleware('role:admin')->name('broadcasting.archive-single');
+        Route::post('/broadcasting/{broadcast}/restore', [BroadcastController::class, 'restore'])->middleware('role:admin')->name('broadcasting.restore');
 
         // General AI assistant. News generation and document extraction are
         // capabilities of this workspace, not its navigation parent.

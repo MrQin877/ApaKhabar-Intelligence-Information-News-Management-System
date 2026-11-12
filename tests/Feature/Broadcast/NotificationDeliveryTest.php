@@ -45,8 +45,8 @@ use Illuminate\Support\Facades\Http;
 
 // ── Shared setup ────────────────────────────────────────────────
 beforeEach(function () {
-    $this->moderator = User::factory()->create([
-        'roleID' => \App\Models\UserRole::firstOrCreate(['name' => 'moderator'])->getKey(),
+    $this->admin = User::factory()->create([
+        'roleID' => \App\Models\UserRole::firstOrCreate(['name' => 'admin'])->getKey(),
         'password' => bcrypt('Password123!'),
     ]);
 
@@ -64,7 +64,7 @@ beforeEach(function () {
 // Input  : Broadcast sent with aplikasi channel
 // Output : In-app notification saved to MongoDB for each target user
 test('TC-NOTIF-01: in-app notification is saved when broadcast is sent via aplikasi channel', function () {
-    $this->actingAs($this->moderator)
+    $this->actingAs($this->admin)
          ->post('/admin/broadcasting', [
              'title'     => 'Ujian Notifikasi',
              'message'   => 'Ini adalah ujian notifikasi dalam aplikasi.',
@@ -85,7 +85,7 @@ test('TC-NOTIF-01: in-app notification is saved when broadcast is sent via aplik
 // Input  : Broadcast sent with send_mode now
 // Output : Broadcast status updated to dikirim
 test('TC-NOTIF-02: broadcast status is set to dikirim when sent immediately', function () {
-    $this->actingAs($this->moderator)
+    $this->actingAs($this->admin)
          ->post('/admin/broadcasting', [
              'title'     => 'Ujian Status',
              'message'   => 'Mesej ujian status.',
@@ -104,10 +104,10 @@ test('TC-NOTIF-02: broadcast status is set to dikirim when sent immediately', fu
 
 // ── TC-NOTIF-03 ─────────────────────────────────────────────────
 // Input  : Broadcast sent to karyawan audience
-// Output : Notification saved only for admin and moderator users
+// Output : Notification saved only for admin and admin users
 //          not for villager users
 test('TC-NOTIF-03: notification is only sent to karyawan when audience is karyawan', function () {
-    $this->actingAs($this->moderator)
+    $this->actingAs($this->admin)
          ->post('/admin/broadcasting', [
              'title'     => 'Mesyuarat Kakitangan',
              'message'   => 'Sila hadir jam 9 pagi.',
@@ -124,17 +124,17 @@ test('TC-NOTIF-03: notification is only sent to karyawan when audience is karyaw
     expect($villagerNotification)->toBeNull();
 
     // Moderator MUST receive notification
-    $moderatorNotification = Notification::where('notifiable_id', (string) $this->moderator->id)
+    $adminNotification = Notification::where('notifiable_id', (string) $this->admin->id)
         ->first();
 
-    expect($moderatorNotification)->not->toBeNull();
+    expect($adminNotification)->not->toBeNull();
 });
 
 // ── TC-NOTIF-04 ─────────────────────────────────────────────────
 // Input  : Broadcast sent to semua audience
-// Output : Notification saved for both villager and moderator
+// Output : Notification saved for both villager and admin
 test('TC-NOTIF-04: notification is sent to all users when audience is semua', function () {
-    $this->actingAs($this->moderator)
+    $this->actingAs($this->admin)
          ->post('/admin/broadcasting', [
              'title'     => 'Pengumuman Semua',
              'message'   => 'Mesej untuk semua pengguna.',
@@ -144,12 +144,12 @@ test('TC-NOTIF-04: notification is sent to all users when audience is semua', fu
              'send_mode' => 'now',
          ]);
 
-    // Both villager and moderator must receive notification
+    // Both villager and admin must receive notification
     $villagerNotif = Notification::where('notifiable_id', (string) $this->villager->id)->first();
-    $moderatorNotif = Notification::where('notifiable_id', (string) $this->moderator->id)->first();
+    $adminNotif = Notification::where('notifiable_id', (string) $this->admin->id)->first();
 
     expect($villagerNotif)->not->toBeNull();
-    expect($moderatorNotif)->not->toBeNull();
+    expect($adminNotif)->not->toBeNull();
 });
 
 // ── TC-NOTIF-05 ─────────────────────────────────────────────────
@@ -293,7 +293,7 @@ test('TC-NOTIF-11: broadcast is saved even when sms delivery fails', function ()
         'phone_verified_at' => now(),
     ]);
 
-    $response = $this->actingAs($this->moderator)
+    $response = $this->actingAs($this->admin)
                      ->post('/admin/broadcasting', [
                          'title'     => 'Ujian SMS Gagal',
                          'message'   => 'Mesej ujian.',

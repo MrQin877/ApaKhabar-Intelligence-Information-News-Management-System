@@ -87,6 +87,28 @@ class Broadcast extends Model
         return $query->whereNull('archived_at');
     }
 
+    public function scopePublicEmergency(Builder $query): Builder
+    {
+        $now = now();
+
+        return $query->category('darurat')->active()
+            ->where('status', 'dikirim')
+            ->where('sent_at', '>', $now->copy()->subHours(24))
+            ->where('sent_at', '<=', $now)
+            ->latest('sent_at')->orderByDesc('alertID');
+    }
+
+    public function publicEmergencyData(): array
+    {
+        return [
+            'id' => (string) $this->getKey(),
+            'title' => $this->title,
+            'message' => $this->message,
+            'publishedAt' => $this->sent_at->toISOString(),
+            'expiresAt' => $this->sent_at->copy()->addHours(24)->toISOString(),
+        ];
+    }
+
     public function scopeArchived(Builder $query): Builder
     {
         return $query->whereNotNull('archived_at');

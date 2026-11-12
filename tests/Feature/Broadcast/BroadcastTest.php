@@ -8,7 +8,7 @@
 //   php artisan make:test Feature/Broadcast/BroadcastTest
 //
 // Module Overview:
-//   This module allows moderators to view, filter, archive,
+//   This module allows admins to view, filter, archive,
 //   resend and create new broadcasts (announcements and
 //   emergency alerts).
 //
@@ -26,7 +26,7 @@
 //   - Broadcast saved to MongoDB
 //   - Redirect to broadcast list on success
 //   - Session errors on invalid input
-//   - 403 Forbidden for non-moderator users
+//   - 403 Forbidden for non-admin users
 //
 // Positive Test Cases : TC-BRD-01 to TC-BRD-09
 // Negative Test Cases : TC-BRD-10 to TC-BRD-17
@@ -41,8 +41,8 @@ beforeEach(function () {
         \App\Models\BroadcastCategory::firstOrCreate(['name' => $name]);
     }
     \App\Models\Channel::firstOrCreate(['name' => 'aplikasi']);
-    $this->moderator = User::factory()->create([
-        'roleID' => \App\Models\UserRole::firstOrCreate(['name' => 'moderator'])->getKey(),
+    $this->admin = User::factory()->create([
+        'roleID' => \App\Models\UserRole::firstOrCreate(['name' => 'admin'])->getKey(),
         'password' => bcrypt('Password123!'),
     ]);
 
@@ -57,20 +57,20 @@ beforeEach(function () {
 // ================================================================
 
 // ── TC-BRD-01 ───────────────────────────────────────────────────
-// Input  : Moderator GET /admin/broadcasting
+// Input  : Admin GET /admin/broadcasting
 // Output : Broadcast list page renders with HTTP 200
-test('TC-BRD-01: moderator can view broadcast list page', function () {
-    $response = $this->actingAs($this->moderator)
+test('TC-BRD-01: admin can view broadcast list page', function () {
+    $response = $this->actingAs($this->admin)
                      ->get('/admin/broadcasting');
 
     $response->assertStatus(200);
 });
 
 // ── TC-BRD-02 ───────────────────────────────────────────────────
-// Input  : Moderator GET /admin/broadcasting/create
+// Input  : Admin GET /admin/broadcasting/create
 // Output : Broadcast create form renders with HTTP 200
-test('TC-BRD-02: moderator can view broadcast create form', function () {
-    $response = $this->actingAs($this->moderator)
+test('TC-BRD-02: admin can view broadcast create form', function () {
+    $response = $this->actingAs($this->admin)
                      ->get('/admin/broadcasting/create');
 
     $response->assertStatus(200);
@@ -79,8 +79,8 @@ test('TC-BRD-02: moderator can view broadcast create form', function () {
 // ── TC-BRD-03 ───────────────────────────────────────────────────
 // Input  : Valid broadcast form — pengumuman to semua via aplikasi
 // Output : Broadcast saved in DB, redirected to broadcast list
-test('TC-BRD-03: moderator can create valid pengumuman broadcast', function () {
-    $response = $this->actingAs($this->moderator)
+test('TC-BRD-03: admin can create valid pengumuman broadcast', function () {
+    $response = $this->actingAs($this->admin)
                      ->post('/admin/broadcasting', [
                          'title'     => 'Gotong Royong Desa Punggul',
                          'message'   => 'Jemput hadir pada 10 April 2026 jam 8 pagi.',
@@ -101,8 +101,8 @@ test('TC-BRD-03: moderator can create valid pengumuman broadcast', function () {
 // ── TC-BRD-04 ───────────────────────────────────────────────────
 // Input  : Valid darurat broadcast form
 // Output : Broadcast saved with category darurat
-test('TC-BRD-04: moderator can create valid darurat emergency alert broadcast', function () {
-    $response = $this->actingAs($this->moderator)
+test('TC-BRD-04: admin can create valid darurat emergency alert broadcast', function () {
+    $response = $this->actingAs($this->admin)
                      ->post('/admin/broadcasting', [
                          'title'     => 'Amaran Banjir Kilat',
                          'message'   => 'Semua penduduk diminta berhati-hati.',
@@ -122,8 +122,8 @@ test('TC-BRD-04: moderator can create valid darurat emergency alert broadcast', 
 // ── TC-BRD-05 ───────────────────────────────────────────────────
 // Input  : Valid broadcast form with audience karyawan
 // Output : Broadcast saved with audience karyawan
-test('TC-BRD-05: moderator can create broadcast targeted to karyawan only', function () {
-    $response = $this->actingAs($this->moderator)
+test('TC-BRD-05: admin can create broadcast targeted to karyawan only', function () {
+    $response = $this->actingAs($this->admin)
                      ->post('/admin/broadcasting', [
                          'title'     => 'Mesyuarat Kakitangan',
                          'message'   => 'Sila hadir jam 9 pagi.',
@@ -143,8 +143,8 @@ test('TC-BRD-05: moderator can create broadcast targeted to karyawan only', func
 // ── TC-BRD-06 ───────────────────────────────────────────────────
 // Input  : Valid scheduled broadcast with date and time
 // Output : Broadcast saved with status terjadwal
-test('TC-BRD-06: moderator can schedule a broadcast for later', function () {
-    $response = $this->actingAs($this->moderator)
+test('TC-BRD-06: admin can schedule a broadcast for later', function () {
+    $response = $this->actingAs($this->admin)
                      ->post('/admin/broadcasting', [
                          'title'          => 'Program Vaksinasi',
                          'message'        => 'Akan diadakan pada 15 April.',
@@ -164,11 +164,11 @@ test('TC-BRD-06: moderator can schedule a broadcast for later', function () {
 });
 
 // ── TC-BRD-07 ───────────────────────────────────────────────────
-// Input  : Moderator POST /admin/broadcasting/{id}/archive
+// Input  : Admin POST /admin/broadcasting/{id}/archive
 // Output : Broadcast archived, redirected to broadcast list
-test('TC-BRD-07: moderator can archive a broadcast', function () {
+test('TC-BRD-07: admin can archive a broadcast', function () {
     $broadcast = Broadcast::create([
-        'created_by' => (string) $this->moderator->id,
+        'created_by' => (string) $this->admin->id,
         'title'      => 'Berita Lama',
         'message'    => 'Kandungan lama.',
         'category'   => 'pengumuman',
@@ -180,7 +180,7 @@ test('TC-BRD-07: moderator can archive a broadcast', function () {
         'archived_at'=> null,
     ]);
 
-    $response = $this->actingAs($this->moderator)
+    $response = $this->actingAs($this->admin)
                      ->post("/admin/broadcasting/{$broadcast->getKey()}/archive");
 
     $response->assertRedirect('/admin/broadcasting');
@@ -190,21 +190,21 @@ test('TC-BRD-07: moderator can archive a broadcast', function () {
 });
 
 // ── TC-BRD-08 ───────────────────────────────────────────────────
-// Input  : Moderator GET /admin/broadcasting/archived
+// Input  : Admin GET /admin/broadcasting/archived
 // Output : Archived broadcast list renders with HTTP 200
-test('TC-BRD-08: moderator can view archived broadcast list', function () {
-    $response = $this->actingAs($this->moderator)
+test('TC-BRD-08: admin can view archived broadcast list', function () {
+    $response = $this->actingAs($this->admin)
                      ->get('/admin/broadcasting/archived');
 
     $response->assertStatus(200);
 });
 
 // ── TC-BRD-09 ───────────────────────────────────────────────────
-// Input  : Moderator POST /admin/broadcasting/{id}/restore
+// Input  : Admin POST /admin/broadcasting/{id}/restore
 // Output : Broadcast restored, archived_at set to null
-test('TC-BRD-09: moderator can restore an archived broadcast', function () {
+test('TC-BRD-09: admin can restore an archived broadcast', function () {
     $broadcast = Broadcast::create([
-        'created_by'  => (string) $this->moderator->id,
+        'created_by'  => (string) $this->admin->id,
         'title'       => 'Berita Diarkib',
         'message'     => 'Kandungan diarkib.',
         'category'    => 'pengumuman',
@@ -216,7 +216,7 @@ test('TC-BRD-09: moderator can restore an archived broadcast', function () {
         'archived_at' => now(),
     ]);
 
-    $response = $this->actingAs($this->moderator)
+    $response = $this->actingAs($this->admin)
                      ->post("/admin/broadcasting/{$broadcast->getKey()}/restore");
 
     $response->assertRedirect();
@@ -233,7 +233,7 @@ test('TC-BRD-09: moderator can restore an archived broadcast', function () {
 // Input  : Broadcast form with empty title field
 // Output : Session error on title field
 test('TC-BRD-10: broadcast fails when title field is empty', function () {
-    $response = $this->actingAs($this->moderator)
+    $response = $this->actingAs($this->admin)
                      ->post('/admin/broadcasting', [
                          'title'     => '',
                          'message'   => 'Kandungan mesej.',
@@ -250,7 +250,7 @@ test('TC-BRD-10: broadcast fails when title field is empty', function () {
 // Input  : Broadcast form with empty message field
 // Output : Session error on message field
 test('TC-BRD-11: broadcast fails when message field is empty', function () {
-    $response = $this->actingAs($this->moderator)
+    $response = $this->actingAs($this->admin)
                      ->post('/admin/broadcasting', [
                          'title'     => 'Test Siaran',
                          'message'   => '',
@@ -267,7 +267,7 @@ test('TC-BRD-11: broadcast fails when message field is empty', function () {
 // Input  : Broadcast form without category selected
 // Output : Session error on category field
 test('TC-BRD-12: broadcast fails when category is not selected', function () {
-    $response = $this->actingAs($this->moderator)
+    $response = $this->actingAs($this->admin)
                      ->post('/admin/broadcasting', [
                          'title'     => 'Test Siaran',
                          'message'   => 'Kandungan mesej.',
@@ -284,7 +284,7 @@ test('TC-BRD-12: broadcast fails when category is not selected', function () {
 // Input  : Broadcast form with invalid category value
 // Output : Session error on category field
 test('TC-BRD-13: broadcast fails when category value is invalid', function () {
-    $response = $this->actingAs($this->moderator)
+    $response = $this->actingAs($this->admin)
                      ->post('/admin/broadcasting', [
                          'title'     => 'Test Siaran',
                          'message'   => 'Kandungan mesej.',
@@ -301,7 +301,7 @@ test('TC-BRD-13: broadcast fails when category value is invalid', function () {
 // Input  : Broadcast form without audience selected
 // Output : Session error on audience field
 test('TC-BRD-14: broadcast fails when audience is not selected', function () {
-    $response = $this->actingAs($this->moderator)
+    $response = $this->actingAs($this->admin)
                      ->post('/admin/broadcasting', [
                          'title'     => 'Test Siaran',
                          'message'   => 'Kandungan mesej.',
@@ -318,7 +318,7 @@ test('TC-BRD-14: broadcast fails when audience is not selected', function () {
 // Input  : Broadcast form with empty channels array
 // Output : Session error on channels field
 test('TC-BRD-15: broadcast fails when no channel is selected', function () {
-    $response = $this->actingAs($this->moderator)
+    $response = $this->actingAs($this->admin)
                      ->post('/admin/broadcasting', [
                          'title'     => 'Test Siaran',
                          'message'   => 'Kandungan mesej.',
@@ -335,7 +335,7 @@ test('TC-BRD-15: broadcast fails when no channel is selected', function () {
 // Input  : Scheduled broadcast without scheduled_date
 // Output : Session error on scheduled_date field
 test('TC-BRD-16: scheduled broadcast fails when scheduled date is missing', function () {
-    $response = $this->actingAs($this->moderator)
+    $response = $this->actingAs($this->admin)
                      ->post('/admin/broadcasting', [
                          'title'          => 'Test Siaran',
                          'message'        => 'Kandungan mesej.',

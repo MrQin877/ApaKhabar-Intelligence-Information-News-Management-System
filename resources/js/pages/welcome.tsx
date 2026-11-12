@@ -1,5 +1,7 @@
 import { Head, Link, usePage } from '@inertiajs/react';
 import { useEffect, useRef, useState } from 'react';
+import { EmergencyBroadcastBanner } from '@/components/emergency-broadcast-banner';
+import type { EmergencyBroadcast } from '@/components/emergency-broadcast-banner';
 import { HeaderBar } from '@/components/header-bar';
 import { HomeFeaturedCarousel } from '@/components/home-featured-carousel';
 import type { HomeShort } from '@/components/home-shorts';
@@ -23,9 +25,7 @@ interface Props {
     featuredSlides: NewsItem[];
     supportingNews: NewsItem[];
     remainingNews: NewsItem[];
-    breakingNews: string | null;
-    breakingMessage: string | null;
-    breakingSentAt: string | null;
+    emergencyBroadcasts?: EmergencyBroadcast[];
 }
 
 export default function Welcome({
@@ -33,16 +33,13 @@ export default function Welcome({
     featuredSlides = [],
     supportingNews = [],
     remainingNews = [],
-    breakingNews,
-    breakingMessage,
-    breakingSentAt,
+    emergencyBroadcasts = [],
 }: Props) {
     const { categories = [] } = usePage<SharedData>().props;
     const [category, setCategory] = useState<string | null>(null);
     const filteredNews = remainingNews.filter(
         (news) => !category || news.category === category,
     );
-    const [now, setNow] = useState(() => Date.now());
     const mainRef = useRef<HTMLElement>(null);
 
     useEffect(() => {
@@ -50,22 +47,6 @@ export default function Welcome({
             return observeHomeReveals(mainRef.current);
         }
     }, []);
-
-    useEffect(() => {
-        const timer = window.setInterval(() => setNow(Date.now()), 60000);
-
-        return () => window.clearInterval(timer);
-    }, []);
-
-    const timeRemaining = breakingSentAt
-        ? Math.max(
-              0,
-              24 -
-                  Math.floor(
-                      (now - new Date(breakingSentAt).getTime()) / 3600000,
-                  ),
-          )
-        : 0;
 
     return (
         <>
@@ -80,49 +61,14 @@ export default function Welcome({
             <div className="min-h-screen bg-background text-foreground">
                 <HeaderBar />
 
-                {/* ── Darurat Broadcast Bar — shows 24 hours only ── */}
-                {breakingNews && timeRemaining > 0 && (
-                    <div className="overflow-hidden border-b border-danger-border/50 bg-danger-bg py-2">
-                        <div
-                            style={{
-                                display: 'inline-flex',
-                                whiteSpace: 'nowrap',
-                                animation: 'marquee 18s linear infinite',
-                            }}
-                        >
-                            <span className="inline-flex items-center gap-3 px-8">
-                                {/* Darurat badge */}
-                                <span className="inline-flex shrink-0 items-center gap-1 rounded border border-danger-border bg-danger-text/10 px-2 py-1 text-sm font-bold text-danger-text">
-                                    <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-danger-500" />
-                                    DARURAT
-                                </span>
-
-                                {/* Title */}
-                                <span className="text-base font-semibold text-danger-text">
-                                    {breakingNews}
-                                </span>
-
-                                {/* Message */}
-                                {breakingMessage && (
-                                    <>
-                                        <span className="text-danger-text">
-                                            —
-                                        </span>
-                                        <span className="text-sm text-danger-text">
-                                            {breakingMessage}
-                                        </span>
-                                    </>
-                                )}
-                            </span>
-                        </div>
-                    </div>
-                )}
-
                 <main
                     ref={mainRef}
                     className="mx-auto max-w-7xl space-y-12 px-4 py-6 sm:px-6 lg:space-y-24 lg:px-8"
                 >
                     <div className="space-y-5">
+                        <EmergencyBroadcastBanner
+                            broadcasts={emergencyBroadcasts}
+                        />
                         <div data-home-reveal>
                             <HomeFeaturedCarousel items={featuredSlides} />
                         </div>
