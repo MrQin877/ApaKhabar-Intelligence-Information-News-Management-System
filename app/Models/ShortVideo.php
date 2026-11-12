@@ -12,7 +12,17 @@ class ShortVideo extends Model
 
     protected $guarded = ['id'];
 
-    protected $casts = ['metadata' => 'array', 'published_at' => 'datetime', 'frame_offset' => 'float', 'view_count' => 'integer', 'likes_count' => 'integer'];
+    protected $casts = ['metadata' => 'array', 'published_at' => 'datetime', 'frame_offset' => 'float', 'view_count' => 'integer', 'likes_count' => 'integer', 'comments_count' => 'integer'];
+
+    public function likes()
+    {
+        return $this->belongsToMany(User::class, 'short_video_likes', 'short_video_id', 'user_id');
+    }
+
+    public function scopeWithPublicEngagement($query)
+    {
+        return $query->withCount(['likes', 'comments' => fn ($comments) => $comments->where('status', 'published')]);
+    }
 
     public function getThumbnailUrlAttribute(?string $value): ?string
     {

@@ -1,0 +1,19 @@
+# Development only. Use with compose.yaml; never use this override in Azure.
+x-lan-env: &lan-env
+  APP_URL: http://${LAN_IP:?Set LAN_IP to your laptop Wi-Fi IPv4 address}:${WEB_PORT:-8088}
+
+services:
+  web:
+    ports: !override
+      - "127.0.0.1:${WEB_PORT:-8088}:80"
+      - "${LAN_IP:?Set LAN_IP to your laptop Wi-Fi IPv4 address}:${WEB_PORT:-8088}:80"
+  app:
+    environment: *lan-env
+  worker-documents:
+    environment: *lan-env
+  worker-generation:
+    environment: *lan-env
+  worker-video:
+    environment: *lan-env
+  scheduler:
+    environment: *lan-env

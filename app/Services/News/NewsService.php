@@ -18,7 +18,7 @@ class NewsService
             $query->category($category);
         }
 
-        return $query->get()->map(function ($item) {
+        return PublicNewsEngagement::loadCounts($query->get())->map(function ($item) {
             return [
                 'id' => (string) $item->getKey(),
                 'title' => $item->title,
@@ -29,7 +29,9 @@ class NewsService
                 'category' => $item->category ?? 'Umum',
                 'views' => $item->unique_views ?? 0,
                 'likes' => $item->likes_count ?? 0,
-                'comments' => 0,
+                'comments' => (int) $item->comments_count,
+                'likes_count' => (int) $item->likes_count,
+                'comments_count' => (int) $item->comments_count,
             ];
         })->all();
     }
@@ -41,6 +43,7 @@ class NewsService
         if (! $news) {
             return null;
         }
+        $news->loadCount('likes');
 
         $originalImage = IntelligentNewsDraft::where('published_news_id', $news->getKey())
             ->latest('id')->value('image');
@@ -51,19 +54,7 @@ class NewsService
                 'likes as liked_by_user' => fn ($query) => $query->where('users.userID', auth()->id()),
                 'reporters as reported_by_user' => fn ($query) => $query->where('users.userID', auth()->id()),
             ])->oldest()->get()->keyBy('commentID');
-        $comments = $published->filter(function ($comment) use ($published) {
-            $parentId = $comment->parentID;
-            $seen = [];
-            while ($parentId) {
-                if (isset($seen[$parentId]) || ! isset($published[$parentId])) {
-                    return false;
-                }
-                $seen[$parentId] = true;
-                $parentId = $published[$parentId]->parentID;
-            }
-
-            return true;
-        })->map(fn ($comment) => [
+        $comments = PublicNewsEngagement::visibleComments($published)->map(fn ($comment) => [
             'id' => (string) $comment->getKey(), 'content' => $comment->content,
             'author' => $comment->author?->name ?? $comment->guest_name ?? 'Tamu',
             'user' => $comment->author?->name ?? $comment->guest_name ?? 'Tamu',
@@ -93,23 +84,26 @@ class NewsService
                     ->exists()
                 : false,
             'comments' => $comments->count(),
+            'comments_count' => $comments->count(),
             'comments_list' => $comments->all(),
         ];
     }
 
     public function getRelatedNews(string $id): array
     {
-        return News::active()->latest()
+        return PublicNewsEngagement::loadCounts(News::active()->latest()
             ->limit(10)
             ->get()
             ->filter(fn ($item) => (string) $item->getKey() !== (string) $id)
             ->take(3)
-            ->values()
+            ->values())
             ->map(fn ($item) => [
                 'id' => (string) $item->getKey(),
                 'title' => $item->title,
                 'category' => $item->category ?? 'Umum',
                 'image' => $item->image ?? 'https://placehold.co/600x400',
+                'likes_count' => (int) $item->likes_count,
+                'comments_count' => (int) $item->comments_count,
             ])
             ->all();
     }

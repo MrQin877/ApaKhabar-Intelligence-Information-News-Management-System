@@ -29,6 +29,8 @@ class NewsController extends Controller
                 'image' => NewsImageUrl::forWeb($item['image']),
                 'date' => $item['date'],
                 'category' => $item['category'],
+                'likes_count' => $item['likes_count'],
+                'comments_count' => $item['comments_count'],
             ])->all(),
             'activeCategory' => $category ?? 'Semua',
         ]);
@@ -57,6 +59,7 @@ class NewsController extends Controller
                 'category' => $news['category'],
                 'views' => $news['views'],
                 'likes_count' => $news['likes_count'],
+                'comments_count' => $news['comments_count'],
                 'liked_by_user' => $news['liked_by_user'],
             ],
             'comments' => $news['comments_list'],

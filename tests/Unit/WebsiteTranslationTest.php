@@ -49,3 +49,13 @@ test('returns a safe failure when LibreTranslate is unavailable', function () {
     $this->postJson('/website/translate', ['target' => 'en', 'texts' => ['Halo']])
         ->assertStatus(503)->assertExactJson(['message' => 'Translation is temporarily unavailable.']);
 });
+
+test('returns valid translations when cache reads and writes fail', function () {
+    $cache = Mockery::mock(Illuminate\Contracts\Cache\Repository::class);
+    $cache->shouldReceive('get')->once()->andThrow(new RuntimeException('unwritable cache'));
+    $cache->shouldReceive('put')->once()->andThrow(new RuntimeException('unwritable cache'));
+    Cache::shouldReceive('store')->andReturn($cache);
+    Http::fake(['localhost:5005/translate' => Http::response(['translatedText' => ['Hello']])]);
+    $this->postJson('/website/translate', ['target' => 'en', 'texts' => ['Halo']])
+        ->assertOk()->assertExactJson(['translations' => ['Hello']]);
+});

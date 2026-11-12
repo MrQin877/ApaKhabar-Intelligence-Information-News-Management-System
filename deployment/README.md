@@ -119,6 +119,26 @@ Once all required containers are healthy:
 
 http://localhost:8088
 
+### Physical phone / Expo on local Wi-Fi (development only)
+
+Set `LAN_IP` in the ignored `deployment/.env` to the laptop's current Wi-Fi IPv4 address. Start with the opt-in LAN override:
+
+```powershell
+docker compose --env-file deployment/.env -f deployment/compose.yaml -f deployment/compose.lan.yaml up -d --no-build
+```
+
+This exposes only Nginx port 8088 on localhost and that Wi-Fi address. It also sets Laravel's `APP_URL` to the LAN address for mobile media and generated links. MariaDB, FastAPI, and LibreTranslate keep their internal-only ports. Do not use this override for Azure.
+
+On the same Wi-Fi, set the mobile app's `EXPO_PUBLIC_API_BASE_URL=http://YOUR_LAPTOP_WIFI_IP:8088/api`, then restart Expo with `npx expo start --lan --clear`. The automatic Expo development fallback uses port 8000, so supply this explicit override for Docker. Check `/api/news` in the phone browser first. Wi-Fi client isolation can block communication even with correct Docker settings.
+
+If Windows blocks the connection, run a narrowly scoped rule in an Administrator PowerShell, substituting the current Wi-Fi address:
+
+```powershell
+New-NetFirewallRule -Name ApaKhabar-Docker-LAN-8088 -DisplayName 'ApaKhabar Docker development API (Wi-Fi)' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8088 -LocalAddress YOUR_LAPTOP_WIFI_IP -RemoteAddress LocalSubnet -InterfaceAlias 'Wi-Fi' -Profile Private
+```
+
+Update the binding and firewall rule after the Wi-Fi address changes. Use both Compose files for subsequent starts while testing on a phone. To return to laptop-only access, start using only `deployment/compose.yaml`; disable the development firewall rule with `Disable-NetFirewallRule -Name ApaKhabar-Docker-LAN-8088` in Administrator PowerShell.
+
 ## 6. Common Docker Commands
 
 Run these commands from the Repo A root directory.

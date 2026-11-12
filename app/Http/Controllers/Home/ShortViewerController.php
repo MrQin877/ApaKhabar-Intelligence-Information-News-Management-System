@@ -14,12 +14,15 @@ class ShortViewerController extends Controller
 {
     private function published(int $id): ShortVideo
     {
-        return ShortVideo::where('status', 'published')->whereNotNull('published_at')->findOrFail($id);
+        return ShortVideo::where('status', 'published')->whereNotNull('published_at')->withPublicEngagement()->findOrFail($id);
     }
 
     public function show(Request $request, int $id)
     {
         $video = $this->published($id);
+        if ($request->expectsJson()) {
+            return response()->json(['data' => $video->only(['id', 'title', 'description', 'video_url', 'thumbnail_url', 'view_count', 'likes_count', 'comments_count', 'published_at'])]);
+        }
         $base = ShortVideo::where('status', 'published')->whereNotNull('published_at');
         $next = (clone $base)->where(function ($query) use ($video) {
             $query->where('published_at', '<', $video->published_at)
@@ -33,11 +36,11 @@ class ShortViewerController extends Controller
         $previous ??= (clone $base)->where('id', '<>', $video->id)->orderBy('published_at')->orderBy('id')->value('id');
 
         return Inertia::render('short-viewer', [
-            'short' => $video->only(['id', 'title', 'description', 'video_url', 'thumbnail_url', 'view_count', 'likes_count', 'published_at']),
+            'short' => $video->only(['id', 'title', 'description', 'video_url', 'thumbnail_url', 'view_count', 'likes_count', 'comments_count', 'published_at']),
             'nextShortId' => $next,
             'nextShortPreview' => $next ? (clone $base)->find($next, ['id', 'title', 'thumbnail_url'])?->only(['id', 'title', 'thumbnail_url']) : null,
             'previousShortId' => $previous,
-            'commentCount' => $video->comments()->where('status', 'published')->count(),
+            'commentCount' => (int) $video->comments_count,
             'likedByUser' => $request->user() ? DB::table('short_video_likes')->where('short_video_id', $id)->where('user_id', $request->user()->getKey())->exists() : false,
             'canFlagComments' => $request->user() && ($request->user()->isAdmin() || $request->user()->isModerator()),
         ]);

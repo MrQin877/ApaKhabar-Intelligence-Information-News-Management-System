@@ -30,6 +30,8 @@ Route::post('/register', [AuthController::class, 'register']);
 Route::get('/news', [NewsController::class, 'index']);
 Route::get('/news/{id}', [NewsController::class, 'show']);
 Route::get('/news/{id}/related', [NewsController::class, 'related']);
+Route::get('/shorts', [\App\Http\Controllers\Home\VideoPageController::class, 'index']);
+Route::get('/shorts/{id}', [\App\Http\Controllers\Home\ShortViewerController::class, 'show'])->whereNumber('id');
 Route::get('/categories', [NewsCategoryController::class, 'active']);
 Route::get('/broadcasts/darurat', [EmergencyBroadcastController::class, 'darurat']);
 Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
