@@ -21,7 +21,7 @@ The Docker environment includes:
 - **Queue Workers** — Handle document processing, AI generation, and video publishing.
 - **Scheduler** — Runs scheduled Laravel tasks.
 - **Chroma** — Stores document embeddings for RAG.
-- **LibreTranslate** — Optional translation service.
+- **LibreTranslate** — Internal translation service, started with the main project.
 
 ## 2. API Usage
 
@@ -103,7 +103,7 @@ Run the following commands from Repo A.
 docker compose --env-file deployment/.env -f deployment/compose.yaml up -d --build
 ```
 
-This builds the images and starts Laravel, MariaDB, FastAPI, Nginx, the queue workers, and scheduler.
+This builds the images and starts Laravel, MariaDB, FastAPI, Nginx, LibreTranslate, the queue workers, and scheduler. Before the first startup, configure the external translation model volume as described in section 9.
 
 For a new database, initialize the required Laravel tables using reviewed migrations. Do not reset an existing database.
 
@@ -224,17 +224,23 @@ The second command sends requests to the Gemini API and may incur charges.
 
 Review the preview before running the reindex command.
 
-## 9. Optional Translation
+## 9. Website Translation
 
-LibreTranslate is optional and is not started by default.
+LibreTranslate starts automatically with normal `docker compose up -d`; no profile is required. Laravel uses `http://libretranslate:5000`. The service publishes no host port and is reachable through the Compose network. Keep the historical root `compose.translation.yaml` project stopped to avoid running a second translation server.
 
-To enable it:
+`TRANSLATION_MODELS_VOLUME` in `deployment/.env` selects an external Docker volume. This installation reuses `apakhabar-intelligence-information-news-management-system_translation_models` from the old stopped container. The old container and volume are retained. Both services use `libretranslate/libretranslate:v1.9.6`, the same `/home/libretranslate/.local` cache layout, `LT_LOAD_ONLY=en,id,ms`, a 12,000-character limit and a batch limit of 20. Cached packages include English↔Indonesian and English↔Malay; Indonesian↔Malay uses English as a pivot.
+
+For a fresh teammate setup, the example selects `apakhabar-docker_translation_models`. Create that external volume once before startup:
 
 ```powershell
-docker compose --env-file deployment/.env -f deployment/compose.yaml --profile translation up -d libretranslate
+docker volume create apakhabar-docker_translation_models
 ```
 
-The website can still operate without LibreTranslate.
+An empty volume requires initial language-model downloads. To reuse an existing compatible cache instead, set `TRANSLATION_MODELS_VOLUME` to its exact Docker volume name. Never run both old and new services against the same cache concurrently. Existing volumes are not removed by this integration.
+
+Check readiness with `docker compose --env-file deployment/.env -f deployment/compose.yaml ps libretranslate`. The `/languages` API should list `en`, `id`, and `ms`. Website requests go through `/website/translate`; if the service is temporarily unavailable, Laravel returns a safe 503 and the website shows its translation-unavailable message.
+
+The image uses four Gunicorn workers. Translation loads CPU models into memory as requests arrive; allow roughly 1–2 GiB of additional Docker memory initially and measure under real concurrency before setting a hard limit. CPU-only ONNX device-detection and Requests dependency-version warnings may appear in this pinned upstream image; health and translation tests should be checked independently.
 
 ## 10. Microsoft Azure Deployment
 

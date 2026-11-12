@@ -127,7 +127,6 @@ services:
     networks: [internal]
 
   libretranslate:
-    profiles: [translation]
     image: libretranslate/libretranslate:v1.9.6
     environment:
       LT_LOAD_ONLY: en,id,ms
@@ -156,3 +155,5 @@ volumes:
   ai_checkpoints:
   ai_model_cache:
   translation_models:
+    external: true
+    name: ${TRANSLATION_MODELS_VOLUME:-apakhabar-docker_translation_models}
