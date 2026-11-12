@@ -21,11 +21,12 @@ RUN composer install --no-dev --no-scripts --prefer-dist --no-interaction
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY . .
-RUN composer dump-autoload --no-dev --no-scripts --optimize \
-    && php artisan package:discover --ansi \
-    && npm run build \
+RUN mkdir -p bootstrap/cache storage/app/public storage/app/private storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs \
+    && composer dump-autoload --no-dev --no-scripts --optimize \
+    && php artisan package:discover --ansi
+RUN php artisan wayfinder:generate --with-form
+RUN npm run build \
     && rm -rf node_modules \
-    && mkdir -p storage/app/public storage/app/private storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs \
     && ln -sfn ../storage/app/public public/storage \
     && chown -R www-data:www-data storage bootstrap/cache
 
