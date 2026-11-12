@@ -27,7 +27,7 @@ const nodes = (node) =>
           ? node.flatMap(nodes)
           : [node, ...nodes(node.props?.children)];
 
-function mount({ authenticated = true, likedByUser = false, width = 1280, reducedMotion = false } = {}) {
+function mount({ authenticated = true, likedByUser = false, width = 1280, reducedMotion = false, likeResponse } = {}) {
     const slots = [];
     const requests = [];
     const copied = [];
@@ -133,6 +133,7 @@ function mount({ authenticated = true, likedByUser = false, width = 1280, reduce
                 return {
                     async metaRequest(path) {
                         requests.push(path);
+                        if (likeResponse) return likeResponse();
                         remoteLiked = !remoteLiked;
 
                         return {
@@ -691,6 +692,29 @@ test('like toggles backend count and red state with a restartable pop animation'
     );
     assert.deepEqual(view.requests, ['/shorts/7/like', '/shorts/7/like']);
 });
+
+for (const initiallyLiked of [false, true]) {
+    test(`like updates immediately, locks rapid clicks and rolls back failure (${initiallyLiked})`, async () => {
+        let reject;
+        const view = mount({ likedByUser: initiallyLiked, likeResponse: () => new Promise((_, fail) => { reject = fail; }) });
+        const button = view.render().find(node => node.props?.['aria-label']?.endsWith('video: 3 suka'));
+        button.props.onClick();
+        button.props.onClick();
+        let current = view.render();
+        const expectedCount = initiallyLiked ? 2 : 4;
+        const optimistic = current.find(node => node.props?.['aria-label']?.endsWith(`video: ${expectedCount} suka`));
+        assert.equal(optimistic.props['aria-pressed'], !initiallyLiked);
+        assert.equal(optimistic.props.disabled, true);
+        assert.equal(view.requests.length, 1);
+        reject(new Error('Request failed'));
+        await new Promise(setImmediate);
+        current = view.render();
+        const restored = current.find(node => node.props?.['aria-label']?.endsWith('video: 3 suka'));
+        assert.equal(restored.props['aria-pressed'], initiallyLiked);
+        assert.equal(restored.props.disabled, false);
+        assert.ok(current.some(node => node.props?.children === 'Request failed'));
+    });
+}
 
 test('share copies the selected Short URL and shows success feedback', async () => {
     const view = mount();

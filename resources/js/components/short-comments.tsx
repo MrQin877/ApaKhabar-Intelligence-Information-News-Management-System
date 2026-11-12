@@ -54,6 +54,7 @@ export function ShortComments({
     const [lastPage, setLastPage] = useState(1);
     const [replies, setReplies] = useState<Record<string, ReplyPage>>({});
     const [loading, setLoading] = useState(true);
+    const [loadAttempt, setLoadAttempt] = useState(0);
     const [error, setError] = useState('');
     const [notice, setNotice] = useState('');
     const [quotaOpen, setQuotaOpen] = useState(false);
@@ -82,7 +83,8 @@ export function ShortComments({
 
     useEffect(() => {
         let live = true;
-        void Promise.all([
+        setLoading(true);
+        void Promise.allSettled([
             metaRequest<{ comments: Page; count: number }>(
                 `${base}/comments?page=1`,
             ),
@@ -93,12 +95,24 @@ export function ShortComments({
                     return;
                 }
 
-                setComments(response.comments.data);
-                setPage(response.comments.current_page);
-                setLastPage(response.comments.last_page);
-                onCountChange(response.count);
-                setChallenge(context.challenge);
-                setError('');
+                if (response.status === 'fulfilled') {
+                    setComments(response.value.comments.data);
+                    setPage(response.value.comments.current_page);
+                    setLastPage(response.value.comments.last_page);
+                    onCountChange(response.value.count);
+                }
+
+                if (context.status === 'fulfilled') {
+                    setChallenge(context.value.challenge);
+                }
+
+                setError(
+                    response.status === 'rejected'
+                        ? 'Komentar belum dapat dimuat. Coba lagi.'
+                        : !authenticated && context.status === 'rejected'
+                          ? 'Formulir komentar belum siap. Coba lagi.'
+                          : '',
+                );
             })
             .catch(() => {
                 if (live) {
@@ -114,7 +128,7 @@ export function ShortComments({
         return () => {
             live = false;
         };
-    }, [base, onCountChange]);
+    }, [base, onCountChange, authenticated, loadAttempt]);
 
     async function loadMore() {
         if (loading || page >= lastPage) {
@@ -580,9 +594,18 @@ export function ShortComments({
                     </p>
                 )}
                 {error && (
-                    <p role="alert" className="text-sm text-destructive">
-                        {error}
-                    </p>
+                    <div role="alert" className="text-sm text-destructive">
+                        <p>{error}</p>
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            disabled={loading}
+                            onClick={() => setLoadAttempt((value) => value + 1)}
+                        >
+                            Muat ulang komentar
+                        </Button>
+                    </div>
                 )}
                 {notice && (
                     <p role="status" className="text-sm text-primary">

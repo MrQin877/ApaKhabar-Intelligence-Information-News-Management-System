@@ -23,7 +23,7 @@ function mount(initialDraft = draft, options = {}) {
         if (name === '@/hooks/use-unsaved-news') return {useUnsavedNews:(isDirty)=>{dirty=isDirty;return{open:false,requestLeave:fn=>fn(),allowLeave(){},leave(){},continueEditing(){}}}};
         if (name === '@/lib/editor-snapshot') return {editorSnapshot:JSON.stringify};
         if (name === '@/lib/rich-text') return richText;
-        if (name === '@/lib/meta-auth') return {metaRequest:async (path,body)=>{apiRequests.push({path,body});return path.endsWith('/preview')?{token:'server-token'}:{video:{...draft,id:2,title:'New title',description:'Description',status:'published'},result:{pending:false,results:{}}};}};
+        if (name === '@/lib/meta-auth') return {metaRequest:async (path,body)=>{apiRequests.push({path,body});if(path.endsWith('/processing'))return {video:options.processed};return path.endsWith('/preview')?{token:'server-token'}:{video:{...draft,id:2,title:'New title',description:'Description',status:'published'},result:{pending:false,results:{}}};}};
         if (name === '@/components/video-frame-timeline') return {VideoFrameTimeline:'VideoFrameTimeline',formatFrameTime:t=>`${String(Math.floor(t/60)).padStart(2,'0')}:${(t%60).toFixed(1).padStart(4,'0')}`};
         if (name === '@/components/short-cover-dialog') return {CoverPreview:'CoverPreview',ShortCoverDialog:'ShortCoverDialog',defaultCoverCrop:{mode:'fit',x:0.5,y:0.5,zoom:1},coverPoster:async(source)=>source};
         if (name === 'react/jsx-runtime') return require(name);
@@ -66,7 +66,7 @@ test('video replacement stays local and resets the old cover and frame', async (
     assert.equal(v.all().find(n=>n.type==='CoverPreview'),undefined);
     assert.equal(v.all().find(n => n.type === 'VideoFrameTimeline').props.offset,0);
 });
-test('new local media preserves fields and requires saving before publishing', () => {
+test('new local media preserves fields and opens confirmation without saving a draft', async () => {
     const v=mount(null);
     v.input('short-title').props.onChange({target:{value:'Kegiatan Desa'}});
     v.input('short-description').props.onChange('Warga bergotong-royong.');
@@ -79,7 +79,9 @@ test('new local media preserves fields and requires saving before publishing', (
     assert.equal(v.input('short-description').props.value,'Warga bergotong-royong.');
     assert.equal(v.find('Publikasikan').props.disabled,false);
     assert.equal(v.find('Simpan Draf').props.disabled,false);
-    assert.match(v.text(),/Simpan draf terlebih dahulu/);
+    assert.doesNotMatch(v.text(),/Simpan draf terlebih dahulu/);
+    await v.find('Publikasikan').props.onClick(); v.render();
+    assert.equal(v.all().find(n=>n.type==='PublishNewsDialog').props.open,true);
     assert.equal(v.requests.length,0);
 });
 test('missing publication fields do not block drafts; invalid video never reports success', () => {
@@ -180,16 +182,42 @@ test('final Publish confirmation uploads once, saves, previews on server and pub
     v.render();
     v.all().find(n=>n.type==='video' && n.props.controls).props.onLoadedMetadata({currentTarget:{duration:20}});v.render();
     await v.find('Publikasikan').props.onClick();v.render();
-    assert.deepEqual(v.paths,['/admin/short-videos/upload','/admin/short-videos/2']);
-    assert.equal(v.all().find(n=>n.type==='PublishNewsDialog').props.open,false);
+    assert.deepEqual(v.paths,[]);
+    assert.equal(v.all().find(n=>n.type==='PublishNewsDialog').props.open,true);
     assert.equal(v.apiRequests.length,0,'saving must not publish automatically');
-    await v.find('Publikasikan').props.onClick();v.render();
     v.all().find(n=>n.type==='PublishNewsDialog').props.onPublish('local-preview');
     await new Promise(resolve=>setImmediate(resolve));v.render();
-    assert.deepEqual(v.paths,['/admin/short-videos/upload','/admin/short-videos/2','/admin/short-videos/2']);
+    assert.deepEqual(v.paths,['/admin/short-videos/upload','/admin/short-videos/2']);
     assert.deepEqual(v.apiRequests.map(x=>x.path),['/admin/short-videos/2/preview','/admin/short-videos/2/publish']);
     assert.equal(v.apiRequests[1].body.preview_token,'server-token');
 });
+for (const status of ['ready', 'failed']) {
+    test(`confirmed publication waits for processing and handles ${status}`, async () => {
+        const pending = {...draft, metadata:{...draft.metadata, processing:{status:'queued'}}};
+        const processed = {...pending, metadata:{...pending.metadata, processing:{status, error:status === 'failed' ? 'FFmpeg failed' : null}}};
+        const v = mount(pending, {respond:()=>pending, processed});
+        await v.find('Publikasikan').props.onClick(); v.render();
+        const confirm = v.all().find(n=>n.type==='PublishNewsDialog').props.onPublish;
+        confirm('local-preview');
+        confirm('local-preview');
+        await new Promise(setImmediate); v.render();
+        assert.equal(v.paths.length,1,'rapid confirmations save only once');
+        assert.equal(v.apiRequests.length,0,'must wait before server preview or publication');
+        assert.equal(v.events.filter(e=>e.type==='short-publication').length,1);
+        await v.tick(); await new Promise(setImmediate); v.render();
+        assert.equal(v.apiRequests[0].path,'/admin/short-videos/1/processing');
+        if (status === 'ready') {
+            assert.deepEqual(v.apiRequests.map(x=>x.path),['/admin/short-videos/1/processing','/admin/short-videos/1/preview','/admin/short-videos/1/publish']);
+            assert.equal(v.visits.length,1);
+        } else {
+            assert.equal(v.apiRequests.length,1);
+            assert.equal(v.visits.length,0);
+            assert.match(v.text(),/FFmpeg failed/);
+            assert.ok(v.events.some(e=>e.detail?.removeId));
+        }
+    });
+}
+
 test('saving an unchanged draft does not upload its video again', async () => {
     const v=mount();
     v.find('Simpan Draf').props.onClick();
@@ -395,7 +423,7 @@ for (const status of ['queued','processing','failed','ready']) {
     test(`reopened ${status} draft restores status and leaves draft editing enabled`, () => {
         const v=mount({...draft,metadata:{...draft.metadata,processing:{revision:'version-1',status}}});
         assert.equal(v.find('Simpan Draf').props.disabled,false);
-        assert.equal(v.find('Publikasikan').props.disabled,status !== 'ready');
+        assert.equal(v.find('Publikasikan').props.disabled,status === 'failed');
         assert.equal(v.input('short-title').props.disabled,false);
         assert.match(v.text(),status === 'failed' ? /Gagal memproses/ : status === 'ready' ? /Video siap/ : status === 'queued' ? /Menunggu pemrosesan/ : /Memproses video/);
         assert.equal(Boolean(v.find('Coba lagi')),status === 'failed');
@@ -446,7 +474,7 @@ test('save stops loading without a success toast while background processing con
     assert.equal(v.find('Simpan Draf').props.disabled,true);
     await new Promise(resolve=>setImmediate(resolve));v.render();
     assert.equal(v.find('Simpan Draf').props.disabled,false);
-    assert.equal(v.find('Publikasikan').props.disabled,true);
+    assert.equal(v.find('Publikasikan').props.disabled,false);
     assert.equal(v.all().find(n=>n.type==='FeedbackToast').props.feedback,null);
     assert.equal(v.events.find(e=>e.type==='short-draft').detail.status,'queued');
     assert.match(v.text(),/Menunggu pemrosesan/);
@@ -463,7 +491,7 @@ test('retry restores pending processing without uploading saved media', async ()
     assert.match(v.text(),/Menunggu pemrosesan/);
     assert.equal(v.events.find(e=>e.type==='short-draft').detail.revision,'v2');
     assert.equal(v.find('Simpan Draf').props.disabled,false);
-    assert.equal(v.find('Publikasikan').props.disabled,true);
+    assert.equal(v.find('Publikasikan').props.disabled,false);
 });
 
 

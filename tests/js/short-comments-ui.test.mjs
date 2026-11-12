@@ -17,7 +17,7 @@ const nodes = (node) =>
           ? node.flatMap(nodes)
           : [node, ...nodes(node.props?.children)];
 
-function mount(canFlag) {
+function mount(canFlag, { authenticated = true, failContext = false, failComments = false } = {}) {
     const slots = [];
     const posts = [];
     let cursor = 0;
@@ -60,8 +60,10 @@ function mount(canFlag) {
                 return {
                     metaRequest(path) {
                         if (path.endsWith('/engagement')) {
+                            if (failContext) return Promise.reject(new Error('Challenge unavailable'));
                             return Promise.resolve({ challenge: 'challenge' });
                         }
+                        if (failComments) return Promise.reject(new Error('Comments unavailable'));
 
                         return Promise.resolve({
                             comments: {
@@ -104,13 +106,47 @@ function mount(canFlag) {
         cursor = 0;
 
         return nodes(context.exports.ShortComments({
-            shortId: 7, authenticated: true, canFlag, count: 1,
+            shortId: 7, authenticated, canFlag, count: 1,
             onCountChange() {}, onClose() {}, onLogin() {},
         }));
     };
 
     return { render, posts };
 }
+
+test('guest challenge failure does not hide published comments or disable registered submissions', async () => {
+    const view = mount(false, { failContext: true });
+    view.render();
+    await new Promise(setImmediate);
+    let current = view.render();
+    assert.ok(current.some(node => JSON.stringify(node.props?.children)?.includes('Komentar warga')));
+    current.find(node => node.props?.id === 'short-comment-content').props.onChange({ target: { value: 'Komentar baru' } });
+    current = view.render();
+    assert.equal(current.find(node => node.props?.children === 'Kirim Komentar').props.disabled, false);
+});
+
+test('guest can retry a failed challenge while still viewing comments', async () => {
+    const view = mount(false, { authenticated: false, failContext: true });
+    view.render();
+    await new Promise(setImmediate);
+    const current = view.render();
+    assert.ok(current.some(node => JSON.stringify(node.props?.children)?.includes('Komentar warga')));
+    assert.ok(current.some(node => node.props?.children === 'Muat ulang komentar'));
+    assert.equal(current.find(node => node.props?.children === 'Kirim Komentar').props.disabled, true);
+});
+
+test('a failed list request does not lose the guest submission challenge', async () => {
+    const view = mount(false, { authenticated: false, failComments: true });
+    view.render();
+    await new Promise(setImmediate);
+    let current = view.render();
+    current.find(node => node.props?.id === 'short-comment-content').props.onChange({ target: { value: 'Komentar tamu' } });
+    current = view.render();
+    assert.equal(current.find(node => node.props?.children === 'Kirim Komentar').props.disabled, false);
+    await current.find(node => node.type === 'form' && node.props.className?.includes('border-t')).props.onSubmit({ preventDefault() {} });
+    assert.equal(view.posts[0].path, '/shorts/7/comments');
+    assert.equal(view.posts[0].data.challenge, 'challenge');
+});
 
 for (const canFlag of [false, true]) {
     test(`${canFlag ? 'moderator flag' : 'user report'} uses the News-style comment card and correct endpoint`, async () => {
