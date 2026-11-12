@@ -20,6 +20,48 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
+Artisan::command('ai:reindex-approved-information {--execute : Send approved active information to the current embedding collection} {--owner= : Limit to the uploader ID}', function () {
+    $query = IntelligenceInformation::query()
+        ->where('review_status', 'approved')
+        ->where('is_active', true)
+        ->whereHas('document', fn ($q) => $q->whereNull('archived_at'));
+    if ($owner = $this->option('owner')) {
+        $query->whereHas('document', fn ($q) => $q->where('uploaded_by', $owner));
+    }
+    $count = (clone $query)->count();
+    $this->info("Eligible approved information: {$count}");
+    if (! $this->option('execute') || ! $count) {
+        return;
+    }
+
+    $indexed = 0;
+    $query->with('document')->chunkById(50, function ($rows) use (&$indexed) {
+        $items = $rows->map(fn (IntelligenceInformation $item) => [
+            'information_id' => (string) $item->id,
+            'document_id' => (string) $item->document_id,
+            'owner_id' => (string) $item->document->uploaded_by,
+            'title' => $item->title,
+            'summary' => $item->summary,
+            'labels' => $item->labels ?? [],
+            'fields' => (object) ($item->fields ?? []),
+            'evidence' => $item->evidence ?? [],
+            'source' => $item->document->original_name,
+            'review_status' => 'approved',
+            'is_active' => true,
+            'archived' => false,
+        ])->all();
+        $response = Http::acceptJson()
+            ->withHeaders(['X-ApaKhabar-Service-Token' => config('services.apakhabar_ai.token', '')])
+            ->timeout(1200)
+            ->post(rtrim(config('services.apakhabar_ai.url'), '/').'/rag/information/index', ['items' => $items]);
+        $response->throw();
+        IntelligenceInformation::query()->whereIn('id', $rows->pluck('id'))
+            ->update(['information_embedding_status' => 'ready']);
+        $indexed += $rows->count();
+        $this->info("Indexed {$indexed} / {$count}");
+    });
+})->purpose('Preview or reindex only approved, active, unarchived information for the configured embedding provider');
+
 Artisan::command('shorts:recover-facebook-permalinks {--id= : Publication record ID}', function () {
     $normalized = 0;
     $queued = 0;

@@ -1,6 +1,7 @@
 name: apakhabar-docker
 
 x-laravel: &laravel
+  image: apakhabar-docker-app:latest
   build:
     context: ..
     dockerfile: deployment/docker/laravel.Dockerfile
@@ -59,10 +60,12 @@ services:
     env_file: ./ai.env
     environment:
       APAKHABAR_AI_SERVICE_TOKEN: ${APAKHABAR_AI_SERVICE_TOKEN:?Set a shared service token in deployment/.env}
+      HF_HOME: /app/data/huggingface
     volumes:
       - ai_chroma:/app/data/chroma
       - ai_uploads:/app/data/uploads
       - ai_checkpoints:/app/data/agent
+      - ai_model_cache:/app/data/huggingface
     healthcheck:
       test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=5)"]
       interval: 30s
@@ -150,4 +153,5 @@ volumes:
   ai_chroma:
   ai_uploads:
   ai_checkpoints:
+  ai_model_cache:
   translation_models:
