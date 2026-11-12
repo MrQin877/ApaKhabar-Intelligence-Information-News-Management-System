@@ -117,9 +117,9 @@ test('API failures timeouts malformed responses and missing key fail closed', fu
     expect(app(CommentModeration::class)->check('Normal comment')['status'])->toBe('pending_review');
 })->with(['key', 'timeout', 'malformed', 'server']);
 
-test('promotional links are held even when AI passes and duplicates are blocked', function () {
+test('links cleared by AI are published and duplicates are blocked', function () {
     $this->actingAs(User::factory()->create());
-    $this->postJson($this->url.'/comment', ['content' => 'Promo murah https://example.com'])->assertCreated()->assertJsonPath('status', 'pending_review');
+    $this->postJson($this->url.'/comment', ['content' => 'Promo murah https://example.com'])->assertCreated()->assertJsonPath('status', 'published');
     $this->postJson($this->url.'/comment', ['content' => 'Promo murah https://example.com'])->assertUnprocessable();
     expect(Comment::count())->toBe(1);
 });

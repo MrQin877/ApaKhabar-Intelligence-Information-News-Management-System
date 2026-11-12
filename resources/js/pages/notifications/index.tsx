@@ -111,7 +111,7 @@ return !n.is_read
                         <div className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900">
                             <Bell className="h-4 w-4 text-neutral-600 dark:text-neutral-400" />
                             {unreadCount > 0 && (
-                                <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-green-500 text-[9px] font-bold text-white ring-2 ring-white dark:ring-neutral-900">
+                                <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-green-700 text-[9px] font-bold text-white ring-2 ring-white dark:ring-neutral-900">
                                     {unreadCount > 9 ? '9+' : unreadCount}
                                 </span>
                             )}
@@ -154,7 +154,7 @@ return !n.is_read
                                 value={tab.key}
                                 className={cn(
                                     "flex-1 h-7 text-xs gap-1.5 transition-all",
-                                    "data-[state=active]:bg-green-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
+                                    "data-[state=active]:bg-green-700 data-[state=active]:text-white data-[state=active]:shadow-sm"
                                 )}
                             >
                                 {tab.label}

@@ -60,6 +60,14 @@ test('guest Shorts comments require an aged challenge and do not enter News data
     $this->getJson($url)->assertJsonPath('count', 1)->assertJsonPath('comments.data.0.replies_count', 0);
 });
 
+test('Shorts use the moderation classification rather than matching words or links', function (string $content) {
+    $video = engagedShort();
+    $this->actingAs(shortActor())->postJson('/shorts/'.$video->id.'/comments', ['content' => $content])
+        ->assertCreated()->assertJsonPath('status', 'published')->assertJsonPath('comment.content', $content);
+    $this->getJson('/shorts/'.$video->id.'/comments')->assertOk()->assertJsonPath('count', 1);
+    Http::assertSent(fn ($request) => $request['input'] === $content);
+})->with(['Info diskon warga: https://example.com', 'Damn, jalan ini rusak lagi.']);
+
 test('guest identity and WIB quota are shared by News, Shorts, and replies', function () {
     $video = engagedShort();
     $news = News::factory()->create();

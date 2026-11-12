@@ -33,8 +33,8 @@ class WelcomeController extends Controller
         $slideCount = max(1, min(5, $homepage->count() - 3));
         $featuredSlides = $homepage->take($slideCount)->values();
         $supportingNews = $homepage->skip($slideCount)->take(3)->values();
-        $featuredIds = $featuredSlides->merge($supportingNews)->pluck('id');
-        $remainingNews = $news->whereNotIn('id', $featuredIds)->values();
+        // Latest includes featured stories too, so small collections never disappear.
+        $remainingNews = $news->values();
 
         // ── Darurat broadcast — only show if sent within last 24 hours ──
         $daruratBroadcast = Broadcast::category('darurat')

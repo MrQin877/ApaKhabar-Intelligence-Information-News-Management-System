@@ -383,7 +383,7 @@ export default function NewsEngagement({
         }
     }
     const primaryButton =
-        'rounded-lg border border-green-600 bg-green-600 px-4 py-2 text-sm text-white enabled:hover:border-green-700 enabled:hover:bg-green-700 disabled:cursor-not-allowed disabled:border-gray-300 disabled:bg-gray-300 disabled:text-gray-500 dark:disabled:border-gray-700 dark:disabled:bg-gray-700 dark:disabled:text-gray-400';
+        'rounded-lg border border-green-600 bg-green-700 px-4 py-2 text-sm text-white enabled:hover:border-green-700 enabled:hover:bg-green-800 disabled:cursor-not-allowed disabled:border-gray-300 disabled:bg-gray-300 disabled:text-gray-500 dark:disabled:border-gray-700 dark:disabled:bg-gray-700 dark:disabled:text-gray-400';
     const action =
         'inline-flex items-center gap-1 rounded text-xs text-muted-foreground no-underline transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50';
     const threads = commentThreads(comments);

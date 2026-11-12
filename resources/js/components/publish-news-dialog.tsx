@@ -682,7 +682,7 @@ export function PublishNewsDialog({
 
                             onPublish(preview.token);
                         }}
-                        className="h-auto min-h-11 bg-brand-600 whitespace-normal text-white hover:bg-brand-700"
+                        className="h-auto min-h-11 bg-brand-700 whitespace-normal text-white hover:bg-brand-800"
                     >
                         {processing ? (
                             <LoaderCircle className="animate-spin" />

@@ -28,7 +28,7 @@ type ReplyPage = Page & { open: boolean; loading: boolean };
 const action =
     'inline-flex items-center gap-1 rounded text-xs text-muted-foreground no-underline transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50 [@media(pointer:coarse)]:min-h-11';
 const primary =
-    'border border-green-600 bg-green-600 text-white enabled:hover:border-green-700 enabled:hover:bg-green-700 disabled:opacity-50';
+    'border border-green-600 bg-green-700 text-white enabled:hover:border-green-700 enabled:hover:bg-green-800 disabled:opacity-50';
 
 export function ShortComments({
     shortId,
@@ -54,6 +54,7 @@ export function ShortComments({
     const [lastPage, setLastPage] = useState(1);
     const [replies, setReplies] = useState<Record<string, ReplyPage>>({});
     const [loading, setLoading] = useState(true);
+    const [loadAttempt, setLoadAttempt] = useState(0);
     const [error, setError] = useState('');
     const [notice, setNotice] = useState('');
     const [quotaOpen, setQuotaOpen] = useState(false);
@@ -82,7 +83,8 @@ export function ShortComments({
 
     useEffect(() => {
         let live = true;
-        void Promise.all([
+        setLoading(true);
+        void Promise.allSettled([
             metaRequest<{ comments: Page; count: number }>(
                 `${base}/comments?page=1`,
             ),
@@ -93,12 +95,24 @@ export function ShortComments({
                     return;
                 }
 
-                setComments(response.comments.data);
-                setPage(response.comments.current_page);
-                setLastPage(response.comments.last_page);
-                onCountChange(response.count);
-                setChallenge(context.challenge);
-                setError('');
+                if (response.status === 'fulfilled') {
+                    setComments(response.value.comments.data);
+                    setPage(response.value.comments.current_page);
+                    setLastPage(response.value.comments.last_page);
+                    onCountChange(response.value.count);
+                }
+
+                if (context.status === 'fulfilled') {
+                    setChallenge(context.value.challenge);
+                }
+
+                setError(
+                    response.status === 'rejected'
+                        ? 'Komentar belum dapat dimuat. Coba lagi.'
+                        : !authenticated && context.status === 'rejected'
+                          ? 'Formulir komentar belum siap. Coba lagi.'
+                          : '',
+                );
             })
             .catch(() => {
                 if (live) {
@@ -114,7 +128,7 @@ export function ShortComments({
         return () => {
             live = false;
         };
-    }, [base, onCountChange]);
+    }, [base, onCountChange, authenticated, loadAttempt]);
 
     async function loadMore() {
         if (loading || page >= lastPage) {
@@ -580,9 +594,18 @@ export function ShortComments({
                     </p>
                 )}
                 {error && (
-                    <p role="alert" className="text-sm text-destructive">
-                        {error}
-                    </p>
+                    <div role="alert" className="text-sm text-destructive">
+                        <p>{error}</p>
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            disabled={loading}
+                            onClick={() => setLoadAttempt((value) => value + 1)}
+                        >
+                            Muat ulang komentar
+                        </Button>
+                    </div>
                 )}
                 {notice && (
                     <p role="status" className="text-sm text-primary">

@@ -97,8 +97,8 @@ export function NotificationCard({ notif, onMarkRead }: NotificationCardProps) {
                                 {notif.is_read && (
                                     <>
                                         <span className="text-border">·</span>
-                                        <CheckCheck className="h-3 w-3 text-brand-400" />
-                                        <span className="text-brand-500">Dibaca</span>
+                                        <CheckCheck className="h-3 w-3 text-success-text" />
+                                        <span className="text-success-text">Dibaca</span>
                                     </>
                                 )}
                             </div>

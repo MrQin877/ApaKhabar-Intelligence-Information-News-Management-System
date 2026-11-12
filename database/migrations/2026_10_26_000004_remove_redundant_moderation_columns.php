@@ -68,9 +68,28 @@ return new class extends Migration
         }, $key);
     }
 
+    private function hasLegacyData(): bool
+    {
+        foreach ([
+            'comment_reports' => ['reason'],
+            'short_video_comment_reports' => ['reason'],
+            'comments' => ['moderator_id'],
+            'short_video_comments' => ['moderator_id', 'moderation_assessment'],
+        ] as $table => $columns) {
+            foreach ($columns as $column) {
+                if (Schema::hasColumn($table, $column)
+                    && DB::table($table)->whereNotNull($column)->exists()) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     private function requireVerifiedBackup(): void
     {
-        if (app()->environment('testing')) {
+        if (app()->environment('testing') || ! $this->hasLegacyData()) {
             return;
         }
         $path = getenv('APAKHABAR_MODERATION_BACKUP_PATH');

@@ -37,7 +37,7 @@ function VillagerSettingsTabs() {
                     className={cn(
                         "flex-1 rounded-md px-3 py-1.5 text-center text-sm font-medium transition-colors",
                         url.startsWith(href)
-                            ? "bg-green-600 text-white"
+                            ? "bg-green-700 text-white"
                             : "text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800"
                     )}
                 >

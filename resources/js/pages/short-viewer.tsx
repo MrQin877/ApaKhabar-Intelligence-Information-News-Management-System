@@ -116,6 +116,7 @@ function ShortViewerContent({
     } | null>(null);
     const [loginPrompt, setLoginPrompt] = useState(false);
     const [liking, setLiking] = useState(false);
+    const likeRequest = useRef(false);
     const [likeAnimation, setLikeAnimation] = useState(0);
     const [shareMessage, setShareMessage] = useState('');
     const [engagementError, setEngagementError] = useState('');
@@ -496,11 +497,18 @@ function ShortViewerContent({
             return;
         }
 
-        if (liking) {
+        if (likeRequest.current) {
             return;
         }
 
+        likeRequest.current = true;
+        const previousLiked = liked;
+        const previousLikes = likes;
         setLiking(true);
+        setLiked(!previousLiked);
+        setLikes(Math.max(0, previousLikes + (previousLiked ? -1 : 1)));
+        setLikeAnimation((value) => value + 1);
+        setEngagementError('');
 
         try {
             const result = await metaRequest<{
@@ -509,11 +517,13 @@ function ShortViewerContent({
             }>(`/shorts/${short.id}/like`, {});
             setLiked(result.liked);
             setLikes(result.likes_count);
-            setLikeAnimation((value) => value + 1);
             setEngagementError('');
         } catch (caught) {
+            setLiked(previousLiked);
+            setLikes(previousLikes);
             setEngagementError((caught as Error).message);
         } finally {
+            likeRequest.current = false;
             setLiking(false);
         }
     }

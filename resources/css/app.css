@@ -116,7 +116,7 @@
 [data-theme='light'],
 [data-theme='default'] {
     color-scheme: light;
-    --primary: var(--brand-600);
+    --primary: var(--brand-700);
     --primary-foreground: var(--white);
     --ring: var(--primary);
     --radius: 0.5rem;
@@ -130,13 +130,13 @@
     --muted: var(--surface-secondary);
     --accent: var(--surface-tertiary);
     --accent-foreground: var(--foreground);
-    --destructive: var(--danger);
+    --destructive: var(--danger-600);
     --destructive-foreground: var(--white);
     --field-background: var(--surface);
     --field-foreground: var(--foreground);
     --field-placeholder: var(--muted-foreground);
-    --field-border: transparent;
-    --input: var(--border);
+    --field-border: var(--input);
+    --input: var(--greyscale-500);
     --sidebar: var(--greyscale-200);
     --sidebar-foreground: var(--foreground);
     --sidebar-primary: var(--primary);
@@ -164,7 +164,7 @@
     --border: var(--greyscale-200);
     --danger: var(--danger-500);
     --default: var(--greyscale-100);
-    --muted-foreground: var(--greyscale-500);
+    --muted-foreground: var(--greyscale-600);
     --surface: var(--white);
     --surface-secondary: var(--greyscale-100);
     --surface-tertiary: var(--greyscale-200);
@@ -540,7 +540,7 @@
     padding: 0 0.625rem;
     height: 2.25rem;
     min-width: 5rem;
-    border: 1px solid var(--border);
+    border: 1px solid var(--input);
     border-radius: var(--field-radius);
     background-color: var(--field-background);
     cursor: pointer;
@@ -611,7 +611,7 @@
     width: 100%;
     height: 2.25rem;
     padding: 0 0.75rem;
-    border: 1px solid var(--border);
+    border: 1px solid var(--input);
     border-radius: var(--field-radius);
     background-color: var(--field-background);
     color: var(--foreground);
@@ -629,7 +629,7 @@
 
 .PhoneInputInput::placeholder {
     color: var(--muted-foreground);
-    opacity: 0.7;
+    opacity: 1;
 }
 
 .PhoneInputInput:disabled {

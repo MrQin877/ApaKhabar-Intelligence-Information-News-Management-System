@@ -362,34 +362,31 @@ export function ShortVideos({
             : '') ||
         '';
     const processingStatus = current?.metadata.processing?.status ?? 'ready';
-    const pendingFrame =
-        current?.metadata.local_path &&
-        coverMode === 'frame' &&
-        (!hasFrameCover(current) ||
-            Math.abs(current.frame_offset - offset) >= 0.001);
     const publishHint =
-        localFile || pendingFrame
-            ? 'Simpan draf terlebih dahulu dan tunggu sampai video siap.'
-            : processingStatus !== 'ready'
-              ? 'Tunggu sampai video siap sebelum menerbitkan.'
-              : busy
-                ? 'Tunggu proses video selesai.'
-                : !localFile && !current
-                  ? 'Pilih video terlebih dahulu.'
-                  : localVideoError
-                    ? 'Video lokal tidak dapat diputar. Pilih video MP4 yang valid.'
-                    : localFile && !duration
-                      ? 'Menunggu pratinjau video lokal.'
-                      : localFile &&
-                          (!Number.isFinite(duration) || duration > 900)
-                        ? 'Durasi video harus maksimal 15 menit.'
-                        : current && current.status !== 'draft'
-                          ? 'Video ini tidak tersedia sebagai draf.'
-                          : !title.trim()
-                            ? 'Judul video wajib diisi.'
+        !localFile && processingStatus === 'failed'
+            ? 'Pemrosesan video gagal. Coba proses ulang terlebih dahulu.'
+            : busy
+              ? 'Tunggu proses video selesai.'
+              : !localFile && !current
+                ? 'Pilih video terlebih dahulu.'
+                : localVideoError
+                  ? 'Video lokal tidak dapat diputar. Pilih video MP4 yang valid.'
+                  : localFile && !duration
+                    ? 'Menunggu pratinjau video lokal.'
+                    : localFile &&
+                        (!Number.isFinite(duration) || duration > 900)
+                      ? 'Durasi video harus maksimal 15 menit.'
+                      : current && current.status !== 'draft'
+                        ? 'Video ini tidak tersedia sebagai draf.'
+                        : !title.trim()
+                          ? 'Judul video wajib diisi.'
+                          : title.length > 200
+                            ? 'Judul maksimal 200 karakter.'
                             : descriptionLength < 20
                               ? 'Konten minimal 20 karakter untuk diterbitkan.'
-                              : !localFile && !current?.thumbnail_url
+                              : !localFile &&
+                                  processingStatus === 'ready' &&
+                                  !current?.thumbnail_url
                                 ? 'Sampul video belum tersedia.'
                                 : '';
     const canPublish = !publishHint;
@@ -985,6 +982,37 @@ export function ShortVideos({
             thumbnail_url: thumbnail || undefined,
         };
     }
+    async function waitUntilReady(video: ShortVideo): Promise<ShortVideo> {
+        const deadline = Date.now() + 20 * 60 * 1000;
+
+        while (true) {
+            const status = video.metadata.processing?.status ?? 'ready';
+
+            if (status === 'ready') {
+                return video;
+            }
+
+            if (status === 'failed') {
+                throw new Error(
+                    video.metadata.processing?.error ||
+                        'Pemrosesan video gagal. Coba proses ulang.',
+                );
+            }
+
+            if (Date.now() >= deadline) {
+                throw new Error(
+                    'Video masih diproses. Draf tersimpan; coba terbitkan kembali setelah video siap.',
+                );
+            }
+
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+            const response = await metaRequest<{ video: ShortVideo }>(
+                `/admin/short-videos/${video.id}/processing`,
+            );
+            video = response.video;
+            setCurrent(video);
+        }
+    }
     async function publish() {
         if (guard.current || !requireTitle()) {
             return;
@@ -1025,7 +1053,7 @@ export function ShortVideos({
         );
 
         try {
-            const video = await save();
+            const video = await waitUntilReady(await save());
             const preview = await metaRequest<PublicationPreviewData>(
                 `/admin/short-videos/${video.id}/preview`,
                 { platforms: selected },
@@ -1786,23 +1814,31 @@ export function ShortVideos({
                                     Simpan Draf
                                 </Button>
                                 <Button
-                                    className="bg-brand-600 text-white hover:bg-brand-700"
+                                    className="bg-brand-700 text-white hover:bg-brand-800"
                                     disabled={
-                                        !canPublish &&
-                                        publishHint !==
-                                            'Judul video wajib diisi.' &&
-                                        publishHint !==
-                                            'Konten minimal 20 karakter untuk diterbitkan.'
+                                        busy ||
+                                        (!canPublish &&
+                                            publishHint !==
+                                                'Judul video wajib diisi.' &&
+                                            publishHint !==
+                                                'Konten minimal 20 karakter untuk diterbitkan.')
                                     }
-                                    onClick={() => {
-                                        if (guard.current) {
-                                            return;
-                                        }
-
+                                    onClick={async () => {
+                                        if (guard.current) return;
                                         if (!requireTitle()) return;
                                         setAttempted(true);
                                         setPublishAttempted(true);
                                         if (descriptionLength < 20) return;
+                                        if (descriptionLength > 2000) {
+                                            setError(
+                                                'Konten maksimal 2.000 karakter.',
+                                            );
+                                            return;
+                                        }
+                                        if (!canPublish) {
+                                            setError(publishHint);
+                                            return;
+                                        }
 
                                         setDialog(true);
                                     }}
@@ -1904,7 +1940,7 @@ export function ShortVideos({
                         </Button>
                         <Button
                             disabled={busy}
-                            className="bg-brand-600 text-white hover:bg-brand-700"
+                            className="bg-brand-700 text-white hover:bg-brand-800"
                             onClick={() => void saveDraft()}
                         >
                             {savingAction === 'draft' && (
