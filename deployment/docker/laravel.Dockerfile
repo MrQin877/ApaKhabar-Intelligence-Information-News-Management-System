@@ -25,8 +25,10 @@ RUN mkdir -p bootstrap/cache storage/app/public storage/app/private storage/fram
     && composer dump-autoload --no-dev --no-scripts --optimize \
     && php artisan package:discover --ansi \
     && npm run build \
+    && php artisan package:discover --ansi
+RUN php artisan wayfinder:generate --with-form
+RUN npm run build \
     && rm -rf node_modules \
-    && mkdir -p storage/app/public storage/app/private storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs \
     && ln -sfn ../storage/app/public public/storage \
     && chown -R www-data:www-data storage bootstrap/cache
 
