@@ -4,7 +4,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg libpng-dev libjpeg62-turbo-dev libwebp-dev libzip-dev \
     unzip git libicu-dev libssl-dev pkg-config libonig-dev \
     && docker-php-ext-configure gd --with-jpeg --with-webp \
-    && docker-php-ext-install pdo_mysql pcntl gd zip intl bcmath mbstring \
+    && docker-php-ext-install pdo_mysql pcntl gd exif zip intl bcmath mbstring \
     && pecl install mongodb-2.2.0 && docker-php-ext-enable mongodb \
     && rm -rf /var/lib/apt/lists/*
 

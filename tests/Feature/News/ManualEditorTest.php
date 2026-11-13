@@ -425,3 +425,21 @@ test('category creation returns the saved category and refreshed active dropdown
         ->and($ids->contains($active->getKey()))->toBeTrue()
         ->and($ids->contains($inactive->getKey()))->toBeFalse();
 });
+
+test('JPEG covers produce publication previews with all platform crops', function () {
+    Storage::fake('public');
+    config(['filesystems.news_media_disk' => 'public']);
+    $crop = ['x' => 0.5, 'y' => 0.5, 'zoom' => 1];
+    $preview = $this->postJson('/admin/news/manual/preview', manualArticle([
+        'cover_photo' => UploadedFile::fake()->image('cover.jpeg', 600, 400),
+        'image_crops' => ['sync' => true, 'website' => $crop, 'instagram' => $crop, 'facebook' => $crop],
+    ]))->assertOk()->json();
+
+    foreach (['website', 'instagram', 'facebook'] as $platform) {
+        $url = $preview['images'][$platform];
+        expect($url)->toBeString()->not->toBeEmpty();
+        $path = ltrim(str_replace('/storage/', '/', parse_url($url, PHP_URL_PATH)), '/');
+        Storage::disk('public')->assertExists($path);
+    }
+    expect(News::count())->toBe(0);
+});
