@@ -123,7 +123,20 @@ services:
 
   scheduler:
     <<: *laravel
-    command: [php, artisan, schedule:work]
+    command: [php, deployment/docker/scheduler.php]
+    # PHP-FPM's inherited SIGQUIT is not a scheduler shutdown protocol.
+    stop_signal: SIGTERM
+    stop_grace_period: 60s
+    # Reverse dependency order keeps workers and their DB/AI dependencies alive
+    # until the scheduler has finished dispatching/draining its current runs.
+    depends_on:
+      <<: *laravel-depends
+      worker-documents:
+        condition: service_started
+      worker-generation:
+        condition: service_started
+      worker-video:
+        condition: service_started
     networks: [internal]
 
   libretranslate:
