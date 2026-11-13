@@ -12,7 +12,9 @@ class NewsService
 {
     public function listNews(?string $category = null): array
     {
-        $query = News::active()->latest();
+        $query = News::active()->latest()->withExists([
+            'likes as liked_by_user' => fn ($query) => $query->where('userID', auth()->id()),
+        ]);
 
         if ($category) {
             $query->category($category);
@@ -26,10 +28,12 @@ class NewsService
                 'body' => $item->content ?? '',
                 'image' => $item->image ?? 'https://placehold.co/600x400',
                 'date' => optional($item->created_at)->format('d F Y') ?? '-',
+                'published_at' => $item->created_at?->toISOString(),
                 'category' => $item->category ?? 'Umum',
                 'views' => $item->unique_views ?? 0,
                 'likes' => $item->likes_count ?? 0,
                 'comments' => (int) $item->comments_count,
+                'liked_by_user' => auth()->check() && (bool) $item->liked_by_user,
                 'likes_count' => (int) $item->likes_count,
                 'comments_count' => (int) $item->comments_count,
             ];
@@ -74,6 +78,7 @@ class NewsService
             'image' => $news->image ?? 'https://placehold.co/800x400',
             'original_image' => $originalImage ?: ($news->image ?? 'https://placehold.co/800x400'),
             'date' => optional($news->created_at)->format('d F Y') ?? '-',
+            'published_at' => $news->created_at?->toISOString(),
             'category' => $news->category ?? 'Umum',
             'views' => $news->unique_views ?? 0,
             'likes' => $news->likes_count ?? 0,

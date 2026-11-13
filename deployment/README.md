@@ -1,67 +1,71 @@
-ï»¿# ApaKhabar â€” Docker Deployment
+# ApaKhabar — Docker Setup & User Manual
 
-This guide explains how to set up and run ApaKhabar using Docker.
+A beginner-friendly guide to install, start, test, and troubleshoot the **ApaKhabar website and mobile app** on a Windows laptop using Docker Desktop.
 
-Docker runs the Laravel website, FastAPI AI service, MariaDB database, and background workers together. You do not need XAMPP or `composer run dev`.
+> **For local development only.** This guide uses the local Docker setup, not Microsoft Azure. You do **not** need XAMPP or `composer run dev` when using Docker.
 
-## 1. Project Overview
+## Quick start (already set up?)
 
-ApaKhabar uses two separate repositories:
+1. Open **Docker Desktop** and ensure its engine is running.
+2. Open **PowerShell / VS Code terminal** in **Repo A** (the ApaKhabar website repository).
+3. Run:
 
-- **Repo A â€” ApaKhabar Website:** Laravel backend, website, and Docker configuration.
-- **Repo B â€” ApaKhabar AI Service:** FastAPI, document extraction, RAG, and AI news generation.
+   ```powershell
+   powershell -NoProfile -ExecutionPolicy Bypass -File .\deployment\start-local.ps1
+   ```
 
-Docker Compose is managed in Repo A and connects to Repo B through `AI_REPO_PATH`.
+4. Open **http://localhost:8088** in your laptop browser.
+5. To use the mobile app, see [Start the mobile app](#7-start-the-mobile-app-expo).
 
-The Docker environment includes:
+If you see **502 Bad Gateway**, try:
 
-- **Laravel + Nginx** â€” Runs the website and backend APIs.
-- **MariaDB** â€” Stores news, users, comments, broadcasts, and other data.
-- **FastAPI** â€” Handles AI document extraction, retrieval, and news generation.
-- **Queue Workers** â€” Handle document processing, AI generation, and video publishing.
-- **Scheduler** â€” Runs scheduled Laravel tasks.
-- **Chroma** â€” Stores document embeddings for RAG.
-- **LibreTranslate** â€” Internal translation service, started with the main project.
+```powershell
+docker restart apakhabar-docker-web-1
+```
 
-## 2. API Usage
+Then refresh the website. See [Troubleshooting](#9-troubleshooting) if it keeps happening.
 
-ApaKhabar uses the following external APIs:
+---
 
-- **Google Gemini (Writer):** Generates news content from provided information.
-- **Google Gemini (Embeddings):** Converts approved document information into vectors for AI retrieval.
-- **OpenAI (Evaluator):** Reviews and evaluates AI-generated news.
-- **OpenAI Moderation:** Detects potentially harmful comments.
-- **Meta Graph API:** Publishes news to Facebook and Instagram.
-- **Cloudinary:** Handles media for social media publishing.
-- **Whapi:** Sends WhatsApp broadcasts.
-- **Bulk360 / Vonage:** Sends SMS broadcasts.
-- **Gmail SMTP:** Sends emails and password reset links.
+## 1. What is being installed?
 
-### AI News Generation Workflow
+ApaKhabar uses the following repositories:
 
-1. Laravel sends a request to FastAPI.
-2. FastAPI retrieves relevant approved information from Chroma.
-3. Gemini generates the news content.
-4. OpenAI evaluates the generated content.
-5. FastAPI returns the result to Laravel.
+| Repository | Contents |
+| --- | --- |
+| **Repo A — ApaKhabar Website** | Laravel backend, web UI, Docker Compose files, startup script |
+| **Repo B — ApaKhabar AI Service** | FastAPI, AI document extraction, retrieval (RAG), AI news generation |
+| **Mobile app (separate Expo project)** | React Native / Expo client that connects to Repo A's Laravel API |
 
-Keep `AGENT_ENABLED=true` and `EVALUATOR_ENABLED=true` in `deployment/ai.env` to enable the LangGraph workflow and independent evaluation.
+Docker Compose is managed from **Repo A**. It runs Nginx (website), Laravel (API), MariaDB (database), FastAPI (AI), queue workers, scheduler, and LibreTranslate (translation). Chroma stores RAG embeddings. The mobile app runs separately with Expo.
 
-## 3. Requirements
+**Important:** Repo A and Repo B must both be available when building images. The Docker database is **separate from XAMPP's database**. Pulling GitHub code does not automatically download another person's database records or uploads.
 
-Install the following:
+## 2. What you need before starting
 
-- Docker Desktop with Linux containers enabled.
-- Git.
-- Repo A and Repo B.
+- Windows PC with **Docker Desktop** installed and configured for **Linux containers**.
+- **Git** and **PowerShell** (VS Code's PowerShell terminal is fine).
+- A local copy of **Repo A** and **Repo B**.
+- Required credentials/API keys from your project administrator.
+- For mobile testing: **Node.js / npm**, an Expo-compatible phone setup, and phone + laptop on the **same Wi-Fi**.
 
-Make sure `AI_REPO_PATH` in `deployment/.env` points to the correct Repo B folder.
+Example Repo A folder used by the project developer:
 
-## 4. Environment Setup
+```powershell
+cd C:\Testxampp\htdocs\ApaKhabar-Intelligence-Information-News-Management-System
+```
 
-Open a terminal in the **Repo A root folder**.
+Your teammate's path may be different. Always run deployment commands from the **actual Repo A folder** unless instructed otherwise.
 
-Create the environment files from the provided examples:
+## 3. First-time setup (do this only once)
+
+### Step 1 — Open Repo A
+
+Open Repo A in VS Code, then open **Terminal → New Terminal**. Make sure the terminal shows the Repo A directory.
+
+### Step 2 — Create the environment files
+
+Run these only if the corresponding files do not already exist:
 
 ```powershell
 Copy-Item deployment/.env.example deployment/.env
@@ -69,304 +73,356 @@ Copy-Item deployment/laravel.env.example deployment/laravel.env
 Copy-Item deployment/ai.env.example deployment/ai.env
 ```
 
-Only copy these files during first-time setup. Do not overwrite existing configured files.
+> **Do not overwrite existing `.env` files.** They may contain working passwords and configuration.
 
-### Environment Files
+| File | Purpose |
+| --- | --- |
+| `deployment/.env` | Docker database settings, website port, shared token, paths |
+| `deployment/laravel.env` | Laravel configuration, API credentials, `APP_KEY` |
+| `deployment/ai.env` | FastAPI, Gemini, OpenAI, embeddings, AI agent settings |
 
-- `deployment/.env` â€” Docker database credentials, port, and shared AI service token.
-- `deployment/laravel.env` â€” Laravel configuration and external API credentials.
-- `deployment/ai.env` â€” Gemini, OpenAI, embeddings, and FastAPI settings.
+### Step 3 — Set up Repo B path and credentials
 
-Fill in the required API keys, passwords, and environment values.
+Open `deployment/.env` and set `AI_REPO_PATH` to the correct Repo B directory. Fill in the required fields in all three environment files. Obtain actual values from your project administrator; do not invent or commit credentials.
 
-Important AI variables:
+Important variables in this project include:
 
-- `AI_API_KEY` â€” Gemini API key for news generation.
-- `EMBEDDING_API_KEY` â€” Gemini API key for document embeddings.
-- `EVALUATOR_API_KEY` â€” OpenAI API key for AI evaluation.
-- `OPENAI_API_KEY` â€” OpenAI API key for Laravel comment moderation.
-- `APAKHABAR_AI_SERVICE_TOKEN` â€” Shared token used by Laravel and FastAPI.
+| Variable | What it is for |
+| --- | --- |
+| `AI_REPO_PATH` | Location of Repo B during the Docker build |
+| `AI_API_KEY` | Gemini news writing |
+| `EMBEDDING_API_KEY` | Gemini document embeddings |
+| `EVALUATOR_API_KEY` | OpenAI news evaluation |
+| `OPENAI_API_KEY` | Laravel comment moderation |
+| `APAKHABAR_AI_SERVICE_TOKEN` | Shared Laravel–FastAPI authentication token |
+| `APP_KEY` | Laravel encryption key |
 
-For a new installation, configure a Laravel `APP_KEY`. If restoring existing encrypted data, retain its original key.
+Keep `AGENT_ENABLED=true` and `EVALUATOR_ENABLED=true` in `deployment/ai.env` when the LangGraph workflow and evaluation are needed. For a brand-new installation, configure a Laravel `APP_KEY`; when restoring encrypted existing data, **preserve the original key**.
 
-**Never commit real `.env` files or API keys to GitHub.**
+**Security:** Never push real `.env` files, tokens, or passwords to GitHub.
 
-## 5. Start Docker
+### Step 4 — Create the translation-model volume
 
-First, open Docker Desktop and make sure the Docker Engine is running.
-
-Run the following commands from the Repo A root directory.
-
-| Command | What it does | When to use it |
-| --- | --- | --- |
-| `docker compose ... up -d --no-build` | Starts/recreates services using existing images and the explicitly selected Compose files; does not detect the LAN IP. | Direct Compose startup; the base-file command in section 6 uses localhost only. |
-| `start-local.ps1` | Detects the LAN IP, validates configuration and starts services without rebuilding. | Recommended daily PowerShell startup. |
-| `start-local.ps1 -Build` | Performs the same LAN detection and validation, then builds images and starts services. | First build or changes to application code, dependencies or Dockerfiles. |
-| `start-local.ps1 -CheckOnly` | Detects the LAN IP, validates configuration and prints planned URLs without changing containers. | Check the setup before starting. |
-
-### Recommended PowerShell Startup
-
-```powershell
-# Daily startup
-powershell -NoProfile -ExecutionPolicy Bypass -File .\deployment\start-local.ps1
-
-# First build or changed code/dependencies/Dockerfiles
-powershell -NoProfile -ExecutionPolicy Bypass -File .\deployment\start-local.ps1 -Build
-
-# Validate only; do not start or change containers
-powershell -NoProfile -ExecutionPolicy Bypass -File .\deployment\start-local.ps1 -CheckOnly
-```
-
-The launcher automatically detects the current physical LAN/Wi-Fi IPv4 address
-and applies `compose.lan.yaml` for phone access; no manual `LAN_IP` edit is needed.
-It falls back to localhost if LAN discovery fails and does not rewrite `.env`.
-See the physical-phone section below for adapter selection and LAN details.
-
-Building starts Laravel, MariaDB, FastAPI, Nginx, LibreTranslate, the queue workers,
-and scheduler. Before first startup, configure the external translation model
-volume as described in section 9. For a new database, initialize the required
-Laravel tables using reviewed migrations. Do not reset an existing database.
-
-### Open Website
-
-Once all required containers are healthy:
-
-http://localhost:8088
-
-### Physical phone / Expo on local Wi-Fi (development only)
-
-Use the recommended PowerShell launcher commands above for local phone access.
-
-Add `-Build` for a first build or changed application code, `-CheckOnly` to detect and validate without changing containers, or `-LocalhostOnly` for laptop-only access. Paths resolve relative to the script, so it can also run from another directory. The launcher uses the existing Compose project and volumes; it never runs `down`, removes volumes, or migrates the database. An external translation model volume must already exist (section 9).
-
-The launcher selects an up physical adapter with a preferred, non-link-local IPv4 address and a default route, ordered by route plus interface metric. It excludes virtual/VPN adapters; use `-InterfaceAlias 'Wi-Fi'` to choose between physical adapters. Detection is repeated on every start and overrides any stale `LAN_IP` only in the child Compose process environment. No IP is written to `.env`. Missing/disconnected adapters or failed discovery result in localhost-only access.
-
-The LAN override **replaces** the base ports with exactly `127.0.0.1:8088:80` and `DETECTED_IP:8088:80`. These distinct addresses can coexist; a wildcard `0.0.0.0:8088` would overlap them. Compose must support `!override` (2.24.4 or newer). The launcher validates the resolved mappings and checks that other services publish no ports before startup. If Docker rejects the LAN binding, it retries with the base localhost-only configuration; a localhost port already occupied by another application still needs to be freed. Other startup errors are reported without an automatic retry.
-
-Laravel's `APP_URL` uses the LAN address for mobile media and generated links while LAN access is enabled. Localhost remains available. MariaDB, FastAPI, and LibreTranslate publish no host ports; the displayed `/api` URLs are Laravel APIs, which call FastAPI internally. The launcher prints website/API URLs and container status after startup; services may still be warming up. Do not use this launcher or LAN override for Azure.
-
-On the same Wi-Fi, set the mobile app's `EXPO_PUBLIC_API_BASE_URL=http://YOUR_LAPTOP_WIFI_IP:8088/api`, then restart Expo with `npx expo start --lan --clear`. The automatic Expo development fallback uses port 8000, so supply this explicit override for Docker. Check `/api/news` in the phone browser first. Wi-Fi client isolation can block communication even with correct Docker settings.
-
-If Windows blocks the connection, run a narrowly scoped rule in an Administrator PowerShell, substituting the current Wi-Fi address:
-
-```powershell
-New-NetFirewallRule -Name ApaKhabar-Docker-LAN-8088 -DisplayName 'ApaKhabar Docker development API (Wi-Fi)' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8088 -LocalAddress YOUR_LAPTOP_WIFI_IP -RemoteAddress LocalSubnet -InterfaceAlias 'Wi-Fi' -Profile Private
-```
-
-Rerun the launcher after changing networks; `up` recreates containers whose configuration changed while retaining their volumes. Docker Desktop restart policies reuse the last binding, so use the launcher after a laptop/network restart too. Update any manually created address-specific firewall rule after the Wi-Fi address changes; the launcher does not modify firewall rules. To return to laptop-only access, run the launcher with `-LocalhostOnly`; disable the development firewall rule with `Disable-NetFirewallRule -Name ApaKhabar-Docker-LAN-8088` in Administrator PowerShell.
-
-## 6. Common Docker Commands
-
-Run these commands from the Repo A root directory.
-
-### Start Everything
-
-```powershell
-docker compose --env-file deployment/.env -f deployment/compose.yaml up -d
-```
-
-### Build and Start
-
-```powershell
-docker compose --env-file deployment/.env -f deployment/compose.yaml up -d --build
-```
-
-### Start Without Rebuilding
-
-```powershell
-docker compose --env-file deployment/.env -f deployment/compose.yaml up -d --no-build
-```
-
-### Check Container Status
-
-```powershell
-docker compose --env-file deployment/.env -f deployment/compose.yaml ps
-```
-
-### View Logs
-
-```powershell
-docker compose --env-file deployment/.env -f deployment/compose.yaml logs --tail=50
-```
-
-### Stop All Services
-
-```powershell
-docker compose --env-file deployment/.env -f deployment/compose.yaml stop
-```
-
-### Restart Services
-
-```powershell
-docker compose --env-file deployment/.env -f deployment/compose.yaml restart
-```
-
-### Validate Docker Configuration
-
-```powershell
-docker compose --env-file deployment/.env -f deployment/compose.yaml config --quiet
-```
-
-Stopping containers does not delete your database or persistent volumes.
-
-If you update application code, dependencies, or Dockerfiles, rebuild the affected images to apply the changes.
-
-## 7. Database and Storage
-
-Docker uses its own MariaDB database, separate from XAMPP.
-
-Default database settings:
-
-```env
-DB_HOST=db
-DB_PORT=3306
-DB_DATABASE=apakhabar_docker
-DB_USERNAME=apakahbar
-```
-
-Use the actual username configured in `deployment/.env`. The Compose default in the current project is `apakhabar`.
-
-The following data is stored in persistent Docker volumes:
-
-- MariaDB records.
-- Laravel uploaded files.
-- Chroma vectors.
-- FastAPI uploads.
-- AI agent checkpoints.
-
-Docker volumes preserve data when containers are stopped or recreated. However, they should still be backed up regularly.
-
-Teammates do not automatically receive existing database records when pulling from GitHub.
-
-## 8. Gemini Embeddings
-
-ApaKhabar uses `gemini-embedding-001` with 768 dimensions for document retrieval.
-
-When changing embedding providers, approved information must be reindexed into the new Chroma collection.
-
-### Preview Information
-
-```powershell
-docker compose --env-file deployment/.env -f deployment/compose.yaml exec app php artisan ai:reindex-approved-information
-```
-
-### Reindex Approved Information
-
-```powershell
-docker compose --env-file deployment/.env -f deployment/compose.yaml exec app php artisan ai:reindex-approved-information --execute
-```
-
-The second command sends requests to the Gemini API and may incur charges.
-
-Review the preview before running the reindex command.
-
-## 9. Website Translation
-
-LibreTranslate starts automatically with normal `docker compose up -d`; no profile is required. Laravel uses `http://libretranslate:5000`. The service publishes no host port and is reachable through the Compose network. Keep the historical root `compose.translation.yaml` project stopped to avoid running a second translation server.
-
-`TRANSLATION_MODELS_VOLUME` in `deployment/.env` selects an external Docker volume. This installation reuses `apakhabar-intelligence-information-news-management-system_translation_models` from the old stopped container. The old container and volume are retained. Both services use `libretranslate/libretranslate:v1.9.6`, the same `/home/libretranslate/.local` cache layout, `LT_LOAD_ONLY=en,id,ms`, a 12,000-character limit and a batch limit of 20. Cached packages include Englishâ†”Indonesian and Englishâ†”Malay; Indonesianâ†”Malay uses English as a pivot.
-
-For a fresh teammate setup, the example selects `apakhabar-docker_translation_models`. Create that external volume once before startup:
+The translation service uses a Docker volume that must exist before startup. For a fresh setup, the example volume name is:
 
 ```powershell
 docker volume create apakhabar-docker_translation_models
 ```
 
-An empty volume requires initial language-model downloads. To reuse an existing compatible cache instead, set `TRANSLATION_MODELS_VOLUME` to its exact Docker volume name. Never run both old and new services against the same cache concurrently. Existing volumes are not removed by this integration.
+Check that `TRANSLATION_MODELS_VOLUME` in `deployment/.env` matches the volume you're using. Existing installations may intentionally use a different pre-existing volume. An empty volume needs its initial language models downloaded; it can take additional startup time and memory.
 
-Check readiness with `docker compose --env-file deployment/.env -f deployment/compose.yaml ps libretranslate`. The `/languages` API should list `en`, `id`, and `ms`. Website requests go through `/website/translate`; if the service is temporarily unavailable, Laravel returns a safe 503 and the website shows its translation-unavailable message.
+### Step 5 — Start Docker Desktop, then build and start
 
-The image uses four Gunicorn workers. Translation loads CPU models into memory as requests arrive; allow roughly 1â€“2 GiB of additional Docker memory initially and measure under real concurrency before setting a hard limit. CPU-only ONNX device-detection and Requests dependency-version warnings may appear in this pinned upstream image; health and translation tests should be checked independently.
-
-## 10. Microsoft Azure Deployment
-
-ApaKhabar will later be deployed to Microsoft Azure using Docker.
-
-Before cloud deployment, configure:
-
-- Production environment variables.
-- HTTPS and a public domain.
-- Secure database connections.
-- Persistent storage and backups.
-- Firewall and network settings.
-- Mobile API connection to the Azure backend.
-
-The Expo mobile application runs separately and connects to Laravel through its API.
-
-Local Docker database records and uploaded files are not automatically transferred to Azure.
-
-## Important Notes
-
-- Open Docker Desktop before running Docker commands.
-- XAMPP and `composer run dev` are not required.
-- Keep both Repo A and Repo B available when building images.
-- Keep API keys and passwords private.
-- Do not delete existing Docker volumes or databases.
-- Do not run destructive migrations such as `migrate:fresh`.
-- Rebuild images when changing application code or dependencies.
-
-
-## Scheduler shutdown
-
-The scheduler uses `deployment/docker/scheduler.php` to launch the existing
-`php artisan schedule:run` at minute boundaries. All schedules in
-`routes/console.php` and their overlap locks/queue dispatches are unchanged.
-
-On SIGTERM the supervisor stops accepting new minute runs, waits for every active
-run to finish, then exits with code 0. It does not terminate active task processes.
-The scheduler explicitly overrides PHP-FPM's inherited SIGQUIT with SIGTERM and
-uses a 60-second shutdown budget. If future scheduled callbacks regularly take
-longer, increase this scheduler-specific budget before deploying them; long work
-should continue to be dispatched to the existing queues. Document, generation
-and video queue workers retain their 1,400-second grace periods.
-
-The scheduler depends on the workers as well as MariaDB and AI. Compose reverses
-this dependency order on shutdown: scheduler drains, workers drain, then their
-DB/AI dependencies stop. This prevents schedule callbacks/queue dispatches from
-trying to reach services that have already stopped. LibreTranslate is independent
-of the current schedule callbacks and can stop concurrently. The LAN override
-inherits these shutdown settings without modification.
-
-After pulling this change, rebuild the Laravel image and recreate the scheduler:
+From Repo A:
 
 ```powershell
-docker compose --env-file deployment/.env -f deployment/compose.yaml build scheduler
-docker compose --env-file deployment/.env -f deployment/compose.yaml up -d --no-build scheduler
+powershell -NoProfile -ExecutionPolicy Bypass -File .\deployment\start-local.ps1 -Build
 ```
 
-For LAN mode, include `-f deployment/compose.lan.yaml` and set `LAN_IP` to the
-current Wi-Fi IPv4 address, as required by that override. Avoid `stop -t` overrides
-shorter than the configured task-draining budget.
+`-Build` is appropriate for the **first build**, or after changes to app code, dependencies, or Dockerfiles. Building can take longer than a normal start. Do not run a second `docker compose up` in another terminal while it is still building.
 
-Isolated regression test (fake artisan tasks; no database or application jobs):
+### Step 6 — Check it works
+
+The launcher should print the website and API addresses plus container status. Open:
+
+- **Laptop website:** http://localhost:8088
+- **Laptop API test:** http://localhost:8088/api/news
+- **Web-server health check:** http://localhost:8088/healthz
+
+`/healthz` returning `200` confirms the Nginx health endpoint, **not necessarily the Laravel app**. Also test `/` and `/api/news`.
+
+For a **brand-new database**, the required Laravel tables must be initialized using reviewed project migrations. **Do not** run `migrate:fresh`, reset, or drop a database with existing data. Ask the project administrator for the approved initialization steps and database contents; they are not provided by GitHub alone.
+
+## 4. Daily startup (after first-time setup)
+
+Every time you want to work on the website:
+
+1. Open **Docker Desktop**.
+2. Open a terminal in **Repo A**.
+3. Run the standard launcher:
+
+   ```powershell
+   powershell -NoProfile -ExecutionPolicy Bypass -File .\deployment\start-local.ps1
+   ```
+
+4. Open **http://localhost:8088**. You may close the terminal once the command returns to the PowerShell prompt; Docker containers run in the background.
+
+**No XAMPP, Apache, XAMPP MySQL, or `composer run dev` is required for this Docker workflow.**
+
+### Which startup command should I use?
+
+| Command | What it does | When to use it |
+| --- | --- | --- |
+| `docker compose ... up -d --no-build` | Directly starts/recreates services using existing images; does **not** auto-detect LAN IP. The exact Compose files must be supplied. | Advanced/manual Docker usage |
+| `start-local.ps1` | Detects Wi-Fi/LAN IP, validates bindings, starts containers **without rebuilding** | **Recommended daily startup** |
+| `start-local.ps1 -Build` | Detects LAN IP, rebuilds images, then starts containers | First-time build; changes to code/dependencies/Dockerfiles |
+| `start-local.ps1 -CheckOnly` | Validates configuration and planned access without starting containers | Troubleshooting/validation |
+
+For all `start-local.ps1` options, run the full PowerShell command, for example:
+
+```powershell
+# Normal daily startup
+powershell -NoProfile -ExecutionPolicy Bypass -File .\deployment\start-local.ps1
+
+# Rebuild images and start
+powershell -NoProfile -ExecutionPolicy Bypass -File .\deployment\start-local.ps1 -Build
+
+# Check configuration without starting
+powershell -NoProfile -ExecutionPolicy Bypass -File .\deployment\start-local.ps1 -CheckOnly
+```
+
+Other options: `-LocalhostOnly` for laptop-only access and `-InterfaceAlias 'Wi-Fi'` to select a specific physical adapter.
+
+## 5. How local website and LAN addresses work
+
+The startup script detects an active **physical Wi-Fi/LAN IPv4 address** (ignoring virtual/VPN adapters) each time it runs. For example, if it detects `192.168.68.51`, you may see:
+
+| Use | Example URL |
+| --- | --- |
+| Laptop website | `http://localhost:8088` |
+| Laptop Laravel API | `http://localhost:8088/api` |
+| Phone website on same Wi-Fi | `http://192.168.68.51:8088` |
+| Phone Laravel API on same Wi-Fi | `http://192.168.68.51:8088/api` |
+
+**These are examples, not permanent addresses.** Always use the IP printed by your own latest startup. Rerun the launcher after changing Wi-Fi networks, restarting your laptop, or changing local networking. If IP detection or the LAN binding fails, the script may fall back to **localhost-only** mode.
+
+The website exposes port **8088** through Nginx. MariaDB, FastAPI, and LibreTranslate remain internal to Docker. For local LAN mode, Nginx binds to `127.0.0.1:8088` and the detected physical LAN IP; it does not need a wildcard `0.0.0.0:8088`. The Compose LAN override requires Docker Compose **2.24.4 or newer** for `!override`. Do not use the local launcher or LAN override for Azure production deployment.
+
+## 6. Check Docker service status
+
+From any terminal with Docker available:
+
+```powershell
+docker ps
+```
+
+Typical containers include:
+
+- `apakhabar-docker-web-1` — Nginx website
+- `apakhabar-docker-app-1` — Laravel / PHP-FPM
+- `apakhabar-docker-db-1` — MariaDB
+- `apakhabar-docker-ai-1` — FastAPI
+- `apakhabar-docker-libretranslate-1` — translation
+- `apakhabar-docker-scheduler-1` — Laravel scheduled tasks
+- `apakhabar-docker-worker-documents-1`, `worker-generation-1`, `worker-video-1` — background jobs
+
+Look for `Up` and, where configured, `(healthy)`. Some services may still be warming up after startup. A healthy Nginx container alone does **not** prove that every Laravel route works.
+
+## 7. Start the mobile app (Expo)
+
+The Expo app runs **outside Docker** in a separate terminal. Start Docker first using section 4, then:
+
+1. Connect your phone and laptop to the **same Wi-Fi**.
+2. Open another VS Code/PowerShell terminal in the **mobile repository** (example below).
+3. Configure the mobile app to use the detected Docker LAN API address (not `localhost` on the phone).
+
+   Example environment setting in the mobile app's appropriate local environment file:
+
+   ```env
+   EXPO_PUBLIC_API_BASE_URL=http://192.168.68.51:8088/api
+   ```
+
+   Replace `192.168.68.51` with **your current IP printed by the launcher**. Docker uses port **8088**; the mobile app's automatic development fallback may use port **8000** and therefore needs this override.
+
+4. Start Expo:
+
+   ```powershell
+   cd C:\Testxampp\htdocs\ApaKhabar-Mobile-App
+   npx expo start --lan --clear
+   ```
+
+5. Scan the Expo QR code on your phone using a compatible Expo Go setup.
+6. On your **phone's browser**, test `http://YOUR_LAPTOP_WIFI_IP:8088/api/news` before debugging mobile app requests.
+
+The website and mobile app now use the **same Laravel Docker API/database**, assuming this environment setting is correct. If you change Wi-Fi networks or IPs, rerun the Docker launcher, update the Expo API address if needed, and restart Expo.
+
+## 8. Useful maintenance commands
+
+Use these when diagnosing an issue:
+
+| Task | Command |
+| --- | --- |
+| Show running containers | `docker ps` |
+| Website/Nginx logs | `docker logs apakhabar-docker-web-1 --tail 50` |
+| Laravel/PHP-FPM logs | `docker logs apakhabar-docker-app-1 --tail 50` |
+| Restart website Nginx only | `docker restart apakhabar-docker-web-1` |
+| Test Nginx health | `curl.exe -i http://localhost:8088/healthz` |
+| Test Laravel API | `curl.exe -i http://localhost:8088/api/news` |
+
+For **advanced manual Compose commands**, these base-file examples use localhost-only defaults rather than the automatic LAN launcher:
+
+```powershell
+# Show service status
+docker compose --env-file deployment/.env -f deployment/compose.yaml ps
+
+# View recent logs
+docker compose --env-file deployment/.env -f deployment/compose.yaml logs --tail=50
+
+# Stop services gracefully (preserves volumes)
+docker compose --env-file deployment/.env -f deployment/compose.yaml stop
+
+# Validate base Compose configuration
+docker compose --env-file deployment/.env -f deployment/compose.yaml config --quiet
+```
+
+**Do not use `docker compose down -v` or destructive database commands.** The normal stop/restart actions do not remove persistent volumes.
+
+## 9. Troubleshooting
+
+### Problem A — Website shows **502 Bad Gateway**
+
+**What this means:** Nginx received the browser request but could not talk to Laravel's PHP-FPM backend.
+
+This was observed after the Laravel container was recreated during Docker startup while Nginx stayed running. Logs showed `connect() failed (111: Connection refused)` for `fastcgi://172.19.0.5:9000`. Restarting Nginx restored access. A stale resolved backend IP is a **likely explanation**, but it should be confirmed against the actual configuration/logs if the error repeats.
+
+**Quick fix (does not delete data):**
+
+```powershell
+docker restart apakhabar-docker-web-1
+```
+
+Refresh **http://localhost:8088** and test **http://localhost:8088/api/news**.
+
+If the website still returns 502:
+
+```powershell
+docker logs apakhabar-docker-web-1 --tail 50
+docker logs apakhabar-docker-app-1 --tail 50
+docker ps
+```
+
+- `Connection refused`: backend endpoint not accepting connections, or Nginx is targeting the wrong/old address.
+- `host not found in upstream`: backend service-name / DNS resolution issue.
+- `upstream timed out`: backend did not respond within the configured time.
+
+**Important:** `http://localhost:8088/healthz` may return `200` while the Laravel website itself still returns `502`. Test `/` or `/api/news` as well. If this frequently happens after `-Build`, the Docker/Nginx configuration should be reviewed for service-name DNS refresh instead of relying on manual restarts.
+
+### Problem B — Docker says “Waiting” repeatedly
+
+Usually normal during startup: MariaDB, AI, and Laravel may need time to become healthy. Check for eventual `Healthy` output, then `docker ps`. If a service never becomes healthy, inspect its logs.
+
+### Problem C — Website works on laptop, but not on phone
+
+Check that phone and laptop are on the **same Wi-Fi**, that the phone uses the latest **LAN IP** (not `localhost`), and that the launcher printed a LAN website address. Some guest networks have Wi-Fi client isolation enabled.
+
+If Windows Firewall blocks port **8088**, an administrator may add a narrowly scoped rule after checking the correct network interface and IP (run as Administrator and substitute your current Wi-Fi IP):
+
+```powershell
+New-NetFirewallRule -Name ApaKhabar-Docker-LAN-8088 -DisplayName 'ApaKhabar Docker development API (Wi-Fi)' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8088 -LocalAddress YOUR_LAPTOP_WIFI_IP -RemoteAddress LocalSubnet -InterfaceAlias 'Wi-Fi' -Profile Private
+```
+
+After changing Wi-Fi/IP, review/update any address-specific firewall rule. To disable that development rule in Administrator PowerShell:
+
+```powershell
+Disable-NetFirewallRule -Name ApaKhabar-Docker-LAN-8088
+```
+
+Avoid broad firewall exposure or publishing internal DB/AI ports.
+
+### Problem D — Mobile app loads but cannot fetch news
+
+Make sure Docker is running and that the mobile environment uses `EXPO_PUBLIC_API_BASE_URL=http://YOUR_LAPTOP_WIFI_IP:8088/api`, **not** port `8000`, `127.0.0.1`, or `localhost`. Test `/api/news` from the phone's browser and restart Expo with `npx expo start --lan --clear` after changing its environment value.
+
+### Problem E — Changes to the backend are not showing
+
+Run a rebuild if your Docker image copies the changed application code/dependencies:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\deployment\start-local.ps1 -Build
+```
+
+If the website then shows 502, use the Nginx restart workaround in Problem A and report repeated occurrences to the maintainer.
+
+### Problem F — Docker cannot start or a port is already in use
+
+Verify Docker Desktop is running, inspect the error text, and check for another process already using **8088**. The launcher can fall back from LAN to localhost when LAN binding fails, but it cannot fix a localhost port conflict automatically.
+
+### Problem G — Missing database tables or missing teammate data
+
+GitHub does **not** contain Docker database records by default. Check whether you initialized a new database or need an **approved backup/import** from the team. Never run destructive migrations against populated volumes.
+
+## 10. Database and persistent data — please read
+
+Docker uses its **own** MariaDB database, separate from any XAMPP database.
+
+Typical internal settings:
+
+```env
+DB_HOST=db
+DB_PORT=3306
+DB_DATABASE=apakhabar_docker
+```
+
+The actual DB username/password come from `deployment/.env`; the Compose project's default username is `apakhabar` (the original guide also showed an installation-specific `apakahbar` value). **Use your configured values, not a guessed username.**
+
+Docker volumes preserve MariaDB records, uploaded files, Chroma vectors, FastAPI uploads, and AI checkpoints across normal container restarts and recreations. Keep regular backups. **Do not delete existing volumes, reset the database, or run `migrate:fresh`.**
+
+## 11. AI, external services, and optional features
+
+| Service / API | Use |
+| --- | --- |
+| Gemini (writer) | Generate news drafts |
+| Gemini (embeddings) | Generate document embedding vectors |
+| OpenAI evaluator | Evaluate generated news |
+| OpenAI moderation | Flag potentially harmful comments |
+| Meta Graph API | Facebook/Instagram publishing |
+| Cloudinary | Social-publishing media |
+| Whapi | WhatsApp broadcasts |
+| Bulk360 / Vonage | SMS broadcasts |
+| Gmail SMTP | Email and password-reset messages |
+
+AI generation flow: **Laravel → FastAPI → Chroma retrieval → Gemini writing → OpenAI evaluation → Laravel response**. Which features work depends on valid credentials and service readiness.
+
+### Reindex document embeddings (advanced)
+
+The guide's embedding configuration uses **`gemini-embedding-001` with 768 dimensions**. Changing embedding providers requires reindexing approved information into the appropriate Chroma collection.
+
+```powershell
+# Preview first
+docker compose --env-file deployment/.env -f deployment/compose.yaml exec app php artisan ai:reindex-approved-information
+
+# Execute only after reviewing the preview; this may incur Gemini API charges
+docker compose --env-file deployment/.env -f deployment/compose.yaml exec app php artisan ai:reindex-approved-information --execute
+```
+
+### LibreTranslate translation service
+
+LibreTranslate starts with the Docker stack and is available internally at `http://libretranslate:5000`, not as a public host port. The configured model cache contains English, Indonesian and Malay support; Indonesian↔Malay may translate via English. On a fresh installation, initial downloads may take time. The translation service uses a separate **external model volume**; see section 3.
+
+The existing deployment documents `libretranslate/libretranslate:v1.9.6`, `LT_LOAD_ONLY=en,id,ms`, a 12,000-character limit, a batch limit of 20, and a cache at `/home/libretranslate/.local`. Avoid launching the historical `compose.translation.yaml` project simultaneously against the same volume. If translation is unavailable, the website may report translation temporarily unavailable (503). Translation loads CPU models into memory; allow additional Docker RAM (roughly 1–2 GiB initially) and assess actual usage.
+
+## 12. Scheduler behavior (maintainer reference)
+
+The scheduler uses `deployment/docker/scheduler.php` to run Laravel's `php artisan schedule:run` at minute boundaries, preserving schedules in `routes/console.php` and existing queue dispatches/overlap locks.
+
+On `SIGTERM`, it stops launching new scheduled runs and lets active runs finish before exiting with code `0`. Its scheduler-only shutdown grace period is **60 seconds**, while document, generation, and video queue workers keep their **1,400-second** grace periods. Shutdown ordering drains scheduler activity before workers, then DB/AI dependencies; active work may extend overall shutdown duration.
+
+If changing scheduler behavior, avoid forcing a shutdown timeout shorter than active tasks need; long work should normally be queued. The LAN Compose override inherits these settings.
+
+**Previously verified on 13 November 2026:** idle/active isolated supervisor tests exited cleanly; base-stack shutdown was **3.96 seconds** and LAN-stack shutdown **4.95 seconds** under the tested workloads. The prior old scheduler required a **one-time** termination to migrate; this is not part of the daily setup. A reported 12–14-second task slowdown was **not reproduced** and must not be described as a confirmed fixed SQL timeout.
+
+Optional isolated regression test (advanced, fake artisan tasks; no live database jobs):
 
 ```powershell
 $deploymentPath = (Resolve-Path deployment).Path
 docker run --rm --entrypoint php --mount "type=bind,source=$deploymentPath,target=/verify,readonly" apakhabar-docker-app:latest /verify/tests/scheduler-shutdown.php
 ```
 
-Validation on 13 November 2026:
+## 13. Azure / production deployment (not covered by this local manual)
 
-- Previous scheduler: inherited SIGQUIT, grace 1,400 seconds, `schedule:work`
-  running as PID 1. It continued launching minute runs after a stop request and
-  after normal TERM/INT signals. The diagnostic stop remained blocked for 419.18
-  seconds until an explicitly approved one-time termination of the idle old
-  container allowed migration. This is not a normal graceful baseline measurement;
-  the originally reported complete-stop time was about 125 seconds.
-- Replacement: isolated active task drained in 2.01 seconds; idle test exited in
-  0.01 seconds. Existing minute callbacks ran successfully in roughly 3-31 ms.
-- Base full-stack stop: 3.96 seconds; scheduler exited code 0.
-- LAN full-stack stop: 4.95 seconds, scheduler exited code 0 about 0.30 seconds
-  after SIGTERM. Docker events confirmed workers and MariaDB stopped afterward;
-  no scheduler SIGKILL occurred. Existing independent AI/translation services hit
-  their own pre-existing stop deadlines in that test; their settings were not
-  changed by this scheduler fix.
+Future Azure deployment needs separate production environment variables, HTTPS/domain, secure DB connections, backups, firewall rules, and a public mobile API address. Local Docker database records and uploaded files are **not automatically transferred** to Azure. Do **not** reuse the LAN startup script or its local bindings as a production deployment configuration.
 
-The previously reported 12-14 second per-task slowdown was not reproduced with
-the database kept healthy; it should not be treated as a measured SQL connection
-timeout diagnosis. The verified fix removes continued scheduling during shutdown
-and ensures dependency availability while runs drain.
+---
 
-These times are workload-dependent. An active queue job can still legitimately
-extend full-stack shutdown up to its worker's grace period. No database volumes,
-uploads, migrations, schedule definitions or queued jobs were removed.
+## Final checklist
+
+- [ ] Docker Desktop is running.
+- [ ] Repo A and Repo B are available; `AI_REPO_PATH` is correct.
+- [ ] Required `.env` files and API credentials are configured privately.
+- [ ] Translation-model volume exists.
+- [ ] `start-local.ps1` completed; `docker ps` shows running containers.
+- [ ] Website (`/`) and `/api/news` load successfully on the laptop.
+- [ ] For Expo: phone and laptop share Wi-Fi, mobile API URL uses detected LAN IP and port `8088`.
+- [ ] If 502 happens, restart only Nginx and inspect logs if it persists.
+
+**For regular development: open Docker Desktop → run `start-local.ps1` → open `http://localhost:8088`.**

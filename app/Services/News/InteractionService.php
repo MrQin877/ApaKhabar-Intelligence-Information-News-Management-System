@@ -48,16 +48,24 @@ class InteractionService
     {
         $news = News::active()->findOrFail($newsId);
         $content = trim($content);
-        $hash = hash('sha256', $newsId.'|'.mb_strtolower(preg_replace('/\s+/u', ' ', $content)));
-        if (Comment::where('submission_hash', $hash)->exists()) {
+        $guestName = $userId ? null : ($guestName ?? 'Guest'.random_int(10000, 99999));
+        $normalized = mb_strtolower(preg_replace('/\s+/u', ' ', $content));
+        $legacyHash = hash('sha256', $newsId.'|'.$normalized);
+        $hash = hash('sha256', json_encode([(string) $news->getKey(), $userId, $guestName, $parentId, $normalized]));
+        // A repeated submission belongs to one author and one reply target.
+        // Read legacy hashes too, without rewriting existing moderation records.
+        $duplicate = fn () => Comment::where('newsID', $news->getKey())->where('parentID', $parentId)
+            ->where('userID', $userId)->when($userId === null, fn ($query) => $query->where('guest_name', $guestName))
+            ->whereIn('submission_hash', [$hash, $legacyHash])->exists();
+        if ($duplicate()) {
             throw ValidationException::withMessages(['content' => 'Komentar yang sama sudah dikirim.']);
         }
         $moderation = app(CommentModeration::class)->check($content);
 
-        return DB::transaction(function () use ($news, $userId, $content, $parentId, $guestName, $hash, $moderation) {
+        return DB::transaction(function () use ($news, $userId, $content, $parentId, $guestName, $hash, $moderation, $duplicate) {
             // Serialize the duplicate check and insert, including concurrent submissions.
-            News::whereKey($news->getKey())->lockForUpdate()->firstOrFail();
-            if (Comment::where('submission_hash', $hash)->exists()) {
+            News::active()->whereKey($news->getKey())->lockForUpdate()->firstOrFail();
+            if ($duplicate()) {
                 throw ValidationException::withMessages(['content' => 'Komentar yang sama sudah dikirim.']);
             }
             $comment = Comment::create(array_merge($moderation, [

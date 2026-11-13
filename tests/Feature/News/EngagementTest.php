@@ -16,7 +16,10 @@ use Inertia\Testing\AssertableInertia as Assert;
 beforeEach(function () {
     config(['engagement.openai_key' => 'test-key']);
     Http::preventStrayRequests();
-    Http::fake(['api.openai.com/*' => Http::response(['results' => [['flagged' => false, 'categories' => ['harassment' => false]]]])]);
+    Http::fake([
+        'api.openai.com/v1/moderations' => Http::response(['results' => [['flagged' => false, 'categories' => ['harassment' => false]]]]),
+        'api.openai.com/v1/chat/completions' => Http::response(appropriateCommentClassification()),
+    ]);
     $this->article = News::factory()->create();
     $this->url = '/news/'.$this->article->getKey();
 });
@@ -92,7 +95,7 @@ test('guest comments publish only after bot and moderation checks', function () 
 
 test('English Indonesian mixed slang and criticism are sent unchanged to moderation', function (string $content) {
     $this->actingAs(User::factory()->create())->postJson($this->url.'/comment', ['content' => $content])->assertCreated()->assertJsonPath('status', 'published');
-    Http::assertSent(fn ($request) => $request['input'] === $content && $request['model'] === 'omni-moderation-latest');
+    Http::assertSent(fn ($request) => $request->url() === 'https://api.openai.com/v1/moderations' && $request['input'] === $content && $request['model'] === 'omni-moderation-latest');
 })->with(['Thank you for the update.', 'Terima kasih atas informasinya.', 'Thanks, beritanya sangat membantu.', 'Makasih min, infonya mantap banget.', 'Saya tidak setuju dengan kebijakan ini; anggarannya perlu dijelaskan.']);
 
 test('flagged threats and offensive language are held and hidden', function (string $content) {
@@ -170,7 +173,7 @@ test('comment rate limiting applies before repeated moderation calls', function 
         $this->postJson($this->url.'/comment', ['content' => 'Comment '.$i])->assertCreated();
     }
     $this->postJson($this->url.'/comment', ['content' => 'One too many'])->assertStatus(429);
-    Http::assertSentCount(5);
+    Http::assertSentCount(10);
 });
 
 test('comment and reply likes persist with per-user counts and reject guests', function () {

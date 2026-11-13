@@ -8,6 +8,7 @@ import DemographicFields from '@/components/demographic-fields';
 import Heading from '@/components/heading';
 import InputError from '@/components/input-error';
 import { PhoneVerification } from '@/components/phone-verification';
+import ProfilePhoto from '@/components/profile-photo';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -53,6 +54,7 @@ export default function Profile({
             <h1 className="sr-only">Informasi Profil</h1>
 
             <div className="space-y-6">
+                <ProfilePhoto user={user} />
                 <Heading
                     variant="small"
                     title="Informasi Profil"

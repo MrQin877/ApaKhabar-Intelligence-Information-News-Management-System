@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\MetaConnectionController;
+use App\Http\Controllers\Auth\ProfilePhotoController;
 use App\Http\Controllers\Settings\PhoneVerificationController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
@@ -8,6 +9,8 @@ use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth'])->group(function () {
     Route::redirect('settings', '/settings/profile');
+    Route::post('settings/profile/photo', [ProfilePhotoController::class, 'store'])->middleware('throttle:10,1')->name('profile.photo.store');
+    Route::delete('settings/profile/photo', [ProfilePhotoController::class, 'destroy'])->middleware('throttle:10,1')->name('profile.photo.destroy');
 
     Route::get('settings/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('settings/profile', [ProfileController::class, 'update'])->name('profile.update');

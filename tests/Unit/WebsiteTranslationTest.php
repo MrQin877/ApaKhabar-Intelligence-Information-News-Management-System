@@ -8,7 +8,7 @@ use Tests\TestCase;
 uses(TestCase::class);
 
 beforeEach(function () {
-    config(['translation.url' => 'http://localhost:5005', 'translation.cache_store' => 'array']);
+    config(['translation.url' => 'http://localhost:5005', 'translation.cache_store' => 'array', 'translation.lock_wait' => 0]);
     Cache::store('array')->flush();
     Http::preventStrayRequests();
 });
@@ -52,10 +52,58 @@ test('returns a safe failure when LibreTranslate is unavailable', function () {
 
 test('returns valid translations when cache reads and writes fail', function () {
     $cache = Mockery::mock(Illuminate\Contracts\Cache\Repository::class);
-    $cache->shouldReceive('get')->once()->andThrow(new RuntimeException('unwritable cache'));
+    $cache->shouldReceive('get')->twice()->andThrow(new RuntimeException('unwritable cache'));
     $cache->shouldReceive('put')->once()->andThrow(new RuntimeException('unwritable cache'));
     Cache::shouldReceive('store')->andReturn($cache);
     Http::fake(['localhost:5005/translate' => Http::response(['translatedText' => ['Hello']])]);
     $this->postJson('/website/translate', ['target' => 'en', 'texts' => ['Halo']])
         ->assertOk()->assertExactJson(['translations' => ['Hello']]);
+});
+
+test('rejects Malay and separates explicit source language caches', function () {
+    $this->postJson('/website/translate', ['target' => 'ms', 'texts' => ['Hello']])->assertUnprocessable();
+    $this->postJson('/website/translate', ['target' => 'en', 'source' => 'ms', 'texts' => ['Hello']])->assertUnprocessable();
+    Http::fakeSequence()->push(['translatedText' => ['Hello']])->push(['translatedText' => ['Hello again']]);
+    $translator = app(WebsiteTranslation::class);
+    expect($translator->translate(['Halo'], 'en', 'id'))->toBe(['Hello']);
+    expect($translator->translate(['Halo'], 'en', 'auto'))->toBe(['Hello again']);
+    Http::assertSentCount(2);
+});
+
+test('empty results are rejected and can be retried', function () {
+    Http::fakeSequence()->push(['translatedText' => ['   ']])->push(['translatedText' => ['Hello']]);
+    $translator = app(WebsiteTranslation::class);
+    expect(fn () => $translator->translate(['Halo'], 'en'))->toThrow(RuntimeException::class);
+    expect($translator->translate(['Halo'], 'en'))->toBe(['Hello']);
+});
+
+test('busy inference gate avoids duplicate upstream requests', function () {
+    $lock = Cache::store('file')->lock('website-translation-inference', 60);
+    $lock->get();
+    try {
+        $this->postJson('/website/translate', ['target' => 'en', 'texts' => ['Halo']])->assertStatus(503);
+        Http::assertNothingSent();
+    } finally {
+        $lock->release();
+    }
+});
+
+test('deduplicates repeated fields without changing output order', function () {
+    Http::fake(['*' => Http::response(['translatedText' => ['Hello', 'News']])]);
+    expect(app(WebsiteTranslation::class)->translate(['Halo', 'Berita', 'Halo'], 'en'))->toBe(['Hello', 'News', 'Hello']);
+    Http::assertSent(fn ($request) => $request['q'] === ['Halo', 'Berita']);
+});
+
+test('cached translations succeed while another inference holds the gate', function () {
+    Http::fake(['*' => Http::response(['translatedText' => ['Hello']])]);
+    $translator = app(WebsiteTranslation::class);
+    $translator->translate(['Halo'], 'en');
+    $lock = Cache::store('file')->lock('website-translation-inference', 60);
+    $lock->get();
+    try {
+        expect($translator->translate(['Halo'], 'en'))->toBe(['Hello']);
+        Http::assertSentCount(1);
+    } finally {
+        $lock->release();
+    }
 });

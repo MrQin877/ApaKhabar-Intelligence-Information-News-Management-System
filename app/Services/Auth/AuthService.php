@@ -6,9 +6,9 @@ use App\Models\Email;
 use App\Models\PersonalAccessToken;
 use App\Models\User;
 use App\Models\UserRole;
+use App\Notifications\MobileResetPassword;
 use App\Notifications\MobileVerifyEmail;
 use Illuminate\Auth\Events\PasswordReset;
-use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
@@ -103,6 +103,8 @@ class AuthService
         return [
             ...$user->demographicProfile(),
             'profile_completion_required' => ! $user->date_of_birth || ! $user->citizenship,
+            'avatar' => $user->avatar,
+            'profile_photo_url' => $user->avatar,
             'id' => (string) $user->getKey(),
             'name' => $user->name,
             'email' => $user->email,
@@ -123,15 +125,13 @@ class AuthService
         $user->update(['push_token' => null]);
     }
 
-    public function forgotPassword(string $email): bool
+    public function forgotPassword(string $email, ?string $returnUrl = null): bool
     {
-        ResetPassword::createUrlUsing(function ($user, string $token) {
-            $email = urlencode($user->email);
-
-            return url("/mobile/reset-password?token={$token}&email={$email}");
+        $destination = app(MobilePasswordResetLink::class)->destination($returnUrl);
+        // Request-scoped notification: never change Laravel's global website URL callback.
+        $status = Password::sendResetLink(['email' => $email], function ($user, string $token) use ($destination) {
+            $user->notify(new MobileResetPassword($token, $destination));
         });
-
-        $status = Password::sendResetLink(['email' => $email]);
 
         return $status === Password::RESET_LINK_SENT;
     }

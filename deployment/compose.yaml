@@ -32,6 +32,8 @@ x-laravel: &laravel
       condition: service_healthy
     ai:
       condition: service_healthy
+    libretranslate:
+      condition: service_healthy
   restart: unless-stopped
   stop_grace_period: 1400s
 

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ShortVideo;
 use App\Models\ShortVideoComment;
 use App\Services\GuestCommentIdentity;
+use App\Services\MobileGuestChallenge;
 use App\Services\Shorts\ShortCommentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
@@ -104,7 +105,7 @@ class ShortEngagementController extends Controller
     {
         $video = $this->video($id);
         $parent = $this->comment($video, $comment);
-        $data = $request->validate(['content' => 'required|string|max:1000', 'challenge' => 'nullable|string|max:2000']);
+        $data = $request->validate(['content' => 'required|string|max:1000', 'website' => 'nullable|string|max:0', 'challenge' => 'nullable|string|max:2000']);
         $this->checkGuestChallenge($request, $id, $data);
         [$reply, $remaining] = app(GuestCommentIdentity::class)->submit($request,
             fn ($guestName) => $service->add($video, $request->user()?->getKey(), $data['content'], $parent, $guestName));
@@ -120,6 +121,11 @@ class ShortEngagementController extends Controller
     private function checkGuestChallenge(Request $request, int $id, array $data): void
     {
         if ($request->user()) {
+            return;
+        }
+        if ($request->attributes->has('mobile_guest_identity')) {
+            app(MobileGuestChallenge::class)->validate($request, 'short', (string) $id, $data);
+
             return;
         }
         try {

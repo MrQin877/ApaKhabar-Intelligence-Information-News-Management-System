@@ -6,11 +6,14 @@ type Entry = {
     node: Text | Element;
     attribute?: string;
     source: string;
+    sourceLanguage: string;
     rendered: string;
 };
 const excluded =
     'script,style,noscript,textarea,pre,code,kbd,[contenteditable]:not([contenteditable="false"]),[translate="no"],.notranslate,[data-no-translate],[data-slot="avatar"]';
 const attributes = ['placeholder', 'title', 'aria-label', 'alt'];
+// Reuse successful results across language switches; never persist page content.
+const pageTranslations = new Map<string, string>();
 
 // Only text-node data and descriptive attributes are changed. React-owned
 // elements, form values, links and event handlers are never replaced.
@@ -20,12 +23,12 @@ export function translateWebsite(
 ) {
     let stopped = false;
     let working = false;
-    let failed = false;
+    const failures = new Set<string>();
     let dirty = false;
     let timer: ReturnType<typeof setTimeout>;
     const abort = new AbortController();
     const entries = new Map<Node, Map<string, Entry>>();
-    const cache = new Map<string, string>();
+    const cache = pageTranslations;
     const read = (entry: Entry) =>
         entry.attribute
             ? ((entry.node as Element).getAttribute(entry.attribute) ?? '')
@@ -58,14 +61,29 @@ export function translateWebsite(
             return;
         }
 
+        const declared = parent.closest(
+            '[lang]:not(html),[data-translation-source]',
+        );
+        const hint =
+            declared?.getAttribute('data-translation-source') ??
+            declared?.getAttribute('lang');
+        const sourceLanguage =
+            hint && ['en', 'id'].includes(hint) ? hint : 'auto';
         const key = attribute ?? 'text';
         const group = entries.get(node) ?? new Map<string, Entry>();
         const entry = group.get(key);
 
         if (!entry) {
-            group.set(key, { node, attribute, source: value, rendered: value });
+            group.set(key, {
+                node,
+                attribute,
+                source: value,
+                sourceLanguage,
+                rendered: value,
+            });
         } else if (value !== entry.rendered) {
             entry.source = value;
+            entry.sourceLanguage = sourceLanguage;
             entry.rendered = value;
         }
 
@@ -99,32 +117,41 @@ export function translateWebsite(
             });
     }
     function parts(text: string): string[] {
-        const chunks: string[] = [];
-
-        while (text.length > 2500) {
-            let cut = text.lastIndexOf(' ', 2500);
-
-            if (cut < 1250) {
-                cut = 2500;
+        // Keep line breaks outside inference so paragraph formatting survives.
+        return text.split(/(\s*\n\s*)/u).flatMap((line) => {
+            if (!line.trim()) return [line];
+            const chunks: string[] = [];
+            let characters = Array.from(line);
+            while (characters.length > 700) {
+                let cut = characters.slice(0, 701).lastIndexOf(' ');
+                if (cut < 350) cut = 700;
+                chunks.push(characters.slice(0, cut).join(''));
+                characters = characters.slice(cut);
             }
-
-            chunks.push(text.slice(0, cut));
-            text = text.slice(cut);
-        }
-
-        if (text) {
-            chunks.push(text);
-        }
-
-        return chunks;
+            if (characters.length) chunks.push(characters.join(''));
+            return chunks;
+        });
     }
+    const cacheKey = (part: string, entry: Entry) =>
+        JSON.stringify([entry.sourceLanguage, part, language]);
     function apply(entry: Entry) {
+        if (entry.sourceLanguage === language) return;
         const source = entry.source.trim();
         const translated =
             uiTranslation(source, language) ??
-            (parts(source).every((part) => cache.has(part))
+            (parts(source).every(
+                (part) => !part.trim() || cache.has(cacheKey(part, entry)),
+            )
                 ? parts(source)
-                      .map((part) => cache.get(part))
+                      .map((part) => {
+                          if (!part.trim()) return part;
+                          const translated = cache.get(cacheKey(part, entry))!;
+                          return (
+                              (part.match(/^\s*/u)?.[0] ?? '') +
+                              translated.trim() +
+                              (part.match(/\s*$/u)?.[0] ?? '')
+                          );
+                      })
                       .join('')
                 : undefined);
 
@@ -151,65 +178,96 @@ export function translateWebsite(
         const missing = [
             ...new Set(
                 snapshot.flatMap((entry) =>
+                    entry.sourceLanguage !== language &&
                     uiTranslation(entry.source.trim(), language) === undefined
-                        ? parts(entry.source.trim()).filter(
-                              (part) => !cache.has(part),
-                          )
+                        ? parts(entry.source.trim())
+                              .filter(
+                                  (part) =>
+                                      !!part.trim() &&
+                                      !cache.has(cacheKey(part, entry)),
+                              )
+                              .map((part) => cacheKey(part, entry))
                         : [],
                 ),
             ),
         ];
+        const pending = new Set(missing);
+        for (const key of failures) {
+            if (!pending.has(key)) failures.delete(key);
+        }
 
-        if (!failed && missing.length) {
+        if (missing.some((part) => !failures.has(part))) {
             status('working');
 
             try {
                 while (missing.length && !stopped) {
                     const batch: string[] = [];
                     let size = 0;
+                    const source = JSON.parse(missing[0])[0];
 
                     while (
                         missing.length &&
-                        batch.length < 20 &&
-                        size + missing[0].length <= 10000
+                        batch.length < 4 &&
+                        size + JSON.parse(missing[0])[1].length <= 1400 &&
+                        JSON.parse(missing[0])[0] === source
                     ) {
                         const item = missing.shift()!;
+                        if (failures.has(item)) continue;
                         batch.push(item);
-                        size += item.length;
+                        size += JSON.parse(item)[1].length;
                     }
 
-                    const response = await apiFetch('/website/translate', {
-                        method: 'POST',
-                        credentials: 'same-origin',
-                        signal: abort.signal,
-                        headers: {
-                            'Content-Type': 'application/json',
-                            Accept: 'application/json',
-                            'X-CSRF-TOKEN':
-                                document.querySelector<HTMLMetaElement>(
-                                    'meta[name="csrf-token"]',
-                                )?.content ?? '',
-                        },
-                        body: JSON.stringify({
-                            texts: batch,
-                            target: language,
-                        }),
-                    });
-
-                    if (!response.ok) {
-                        throw new Error('Translation unavailable');
+                    if (!batch.length) continue;
+                    let response: Response | undefined;
+                    try {
+                        response = await apiFetch('/website/translate', {
+                            method: 'POST',
+                            credentials: 'same-origin',
+                            signal: abort.signal,
+                            headers: {
+                                'Content-Type': 'application/json',
+                                Accept: 'application/json',
+                                'X-CSRF-TOKEN':
+                                    document.querySelector<HTMLMetaElement>(
+                                        'meta[name="csrf-token"]',
+                                    )?.content ?? '',
+                            },
+                            body: JSON.stringify({
+                                texts: batch.map((key) => JSON.parse(key)[1]),
+                                source,
+                                target: language,
+                            }),
+                        });
+                    } catch {
+                        if (stopped) return;
+                    }
+                    if (!response?.ok) {
+                        batch.forEach((part) => failures.add(part));
+                        // An unavailable service/session will fail every subsequent
+                        // batch too. Keep originals and avoid an outage request storm.
+                        missing.forEach((part) => failures.add(part));
+                        missing.length = 0;
+                        break;
                     }
 
-                    const body = await response.json();
+                    let body;
+                    try {
+                        body = await response.json();
+                    } catch {
+                        batch.forEach((part) => failures.add(part));
+                        continue;
+                    }
 
                     if (
                         !Array.isArray(body.translations) ||
                         body.translations.length !== batch.length ||
                         body.translations.some(
-                            (text: unknown) => typeof text !== 'string',
+                            (text: unknown) =>
+                                typeof text !== 'string' || !text.trim(),
                         )
                     ) {
-                        throw new Error('Invalid response');
+                        batch.forEach((part) => failures.add(part));
+                        continue;
                     }
 
                     if (stopped) {
@@ -219,22 +277,25 @@ export function translateWebsite(
                     batch.forEach((text, index) =>
                         cache.set(text, body.translations[index]),
                     );
+                    while (cache.size > 2000) {
+                        cache.delete(cache.keys().next().value!);
+                    }
                     snapshot
                         .filter((entry) => entry.node.isConnected)
                         .forEach(apply);
                 }
 
                 if (!stopped) {
-                    status('ready');
+                    status(failures.size ? 'error' : 'ready');
                 }
             } catch {
                 if (!stopped) {
-                    failed = true;
+                    missing.forEach((part) => failures.add(part));
                     status('error');
                 }
             }
-        } else if (!failed) {
-            status('ready');
+        } else {
+            status(failures.size ? 'error' : 'ready');
         }
 
         working = false;

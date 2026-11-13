@@ -27,6 +27,7 @@ class User extends Authenticatable implements MustVerifyEmail
     ];
 
     protected $hidden = [
+        'profile_photo_path',
         'password',
         'date_of_birth', 'citizenship', 'gender', 'ethnicity',
         'two_factor_secret',
@@ -35,6 +36,8 @@ class User extends Authenticatable implements MustVerifyEmail
     ];
 
     protected $appends = [
+        'avatar',
+        'profile_photo_url',
         'id',
         'email',
         'email_verified_at',
@@ -48,6 +51,16 @@ class User extends Authenticatable implements MustVerifyEmail
     public function demographicProfile(): array
     {
         return ['date_of_birth' => $this->date_of_birth?->format('Y-m-d'), 'citizenship' => $this->citizenship, 'gender' => $this->gender, 'ethnicity' => $this->ethnicity];
+    }
+
+    public function getAvatarAttribute(): ?string
+    {
+        return $this->profile_photo_path ? url('/storage/'.$this->profile_photo_path) : null;
+    }
+
+    public function getProfilePhotoUrlAttribute(): ?string
+    {
+        return $this->avatar;
     }
 
     public function notifications()

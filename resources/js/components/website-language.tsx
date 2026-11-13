@@ -1,4 +1,4 @@
-import { Globe } from'lucide-react';
+import { Globe } from 'lucide-react';
 import { createContext, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
@@ -15,10 +15,11 @@ const LanguageContext = createContext<{
 export function WebsiteLanguageProvider({ children }: { children: ReactNode }) {
     const [language, setLanguage] = useState<WebsiteLanguage>(() => {
         try {
-            return typeof window !== 'undefined' &&
-                localStorage.getItem('apakhabar-language') === 'en'
-                ? 'en'
-                : 'id';
+            const saved =
+                typeof window !== 'undefined'
+                    ? localStorage.getItem('apakhabar-language')
+                    : null;
+            return saved === 'en' ? 'en' : 'id';
         } catch {
             return 'id';
         }
@@ -67,15 +68,11 @@ export function WebsiteLanguage() {
     const label =
         language === 'id' ? 'Switch to English' : 'Ganti ke Bahasa Indonesia';
     const status =
-        state === 'error'
+        state === 'working'
             ? language === 'en'
-                ? 'Some text could not be translated. Switch languages to retry.'
-                : 'Sebagian teks belum diterjemahkan. Ganti bahasa untuk mencoba lagi.'
-            : state === 'working'
-              ? language === 'en'
-                  ? 'Translating…'
-                  : 'Menerjemahkan…'
-              : '';
+                ? 'Translating...'
+                : 'Menerjemahkan...'
+            : '';
 
     return (
         <span translate="no" data-no-translate className="inline-flex shrink-0">
@@ -94,10 +91,7 @@ export function WebsiteLanguage() {
                 <Globe />
                 {language.toUpperCase()}
             </Button>
-            <span
-                role="status"
-                className={state === 'error' ? 'max-w-56 self-center px-2 text-xs text-muted-foreground' : 'sr-only'}
-            >
+            <span role="status" className="sr-only">
                 {status}
             </span>
         </span>

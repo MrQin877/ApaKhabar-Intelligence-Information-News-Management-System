@@ -10,7 +10,6 @@ import {
     UserPlus,
     UserCircle,
 } from 'lucide-react';
-import ProfileCompletionBanner from '@/components/profile-completion-banner';
 import { WebsiteLanguage } from '@/components/website-language';
 import { useInitials } from '@/hooks/use-initials';
 import { login, register } from '@/routes';
@@ -49,7 +48,6 @@ export function HeaderBar() {
 
     return (
         <>
-            <ProfileCompletionBanner />
             <nav className="sticky top-0 z-40 h-[65px] border-b border-border bg-background px-4 py-3">
                 <div className="relative mx-auto flex max-w-7xl items-center justify-between">
                     {/*  Logo  */}

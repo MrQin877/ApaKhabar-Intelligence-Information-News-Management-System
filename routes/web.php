@@ -12,6 +12,7 @@ use App\Http\Controllers\Admin\NewsCreatorController;
 use App\Http\Controllers\Admin\NewsWorkspaceController;
 use App\Http\Controllers\Admin\ShortVideoController;
 use App\Http\Controllers\Auth\MobileEmailVerificationController;
+use App\Http\Controllers\Auth\MobilePasswordResetController;
 use App\Http\Controllers\Home\ShortEngagementController;
 use App\Http\Controllers\Home\ShortViewerController;
 use App\Http\Controllers\Home\VideoPageController;
@@ -31,19 +32,7 @@ Route::get('/mobile/email/verify/{id}/{hash}', [MobileEmailVerificationControlle
     ->middleware('throttle:30,1')->name('mobile.verification.verify');
 
 // Browser entry point for password-reset emails sent by the mobile API.
-Route::get('/mobile/reset-password', function (Request $request) {
-    $parameters = $request->validate([
-        'token' => ['required', 'string'],
-        'email' => ['required', 'email'],
-    ]);
-    $destination = config('services.mobile.password_reset_return_url');
-    $separator = str_contains($destination, '?') ? '&' : '?';
-    $query = http_build_query($parameters, '', '&', PHP_QUERY_RFC3986);
-
-    return redirect()->away($destination.$separator.$query)
-        ->header('Referrer-Policy', 'no-referrer')
-        ->header('Cache-Control', 'no-store');
-})->name('mobile.password.reset');
+Route::get('/mobile/reset-password', MobilePasswordResetController::class)->name('mobile.password.reset');
 
 Route::post('/website/translate', WebsiteTranslationController::class)
     ->middleware('throttle:60,1,website-translation:')->name('website.translate');

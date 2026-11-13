@@ -44,7 +44,10 @@ function agedShortCommentChallenge($test, ShortVideo $video): string
 beforeEach(function () {
     $this->withoutMiddleware(ThrottleRequests::class);
     Http::preventStrayRequests();
-    Http::fake(['api.openai.com/*' => Http::response(['results' => [['flagged' => false, 'categories' => ['harassment' => false]]]])]);
+    Http::fake([
+        'api.openai.com/v1/moderations' => Http::response(['results' => [['flagged' => false, 'categories' => ['harassment' => false]]]]),
+        'api.openai.com/v1/chat/completions' => Http::response(appropriateCommentClassification()),
+    ]);
     config(['engagement.openai_key' => 'test-key']);
 });
 
@@ -65,7 +68,7 @@ test('Shorts use the moderation classification rather than matching words or lin
     $this->actingAs(shortActor())->postJson('/shorts/'.$video->id.'/comments', ['content' => $content])
         ->assertCreated()->assertJsonPath('status', 'published')->assertJsonPath('comment.content', $content);
     $this->getJson('/shorts/'.$video->id.'/comments')->assertOk()->assertJsonPath('count', 1);
-    Http::assertSent(fn ($request) => $request['input'] === $content);
+    Http::assertSent(fn ($request) => $request->url() === 'https://api.openai.com/v1/moderations' && $request['input'] === $content);
 })->with(['Info diskon warga: https://example.com', 'Damn, jalan ini rusak lagi.']);
 
 test('guest identity and WIB quota are shared by News, Shorts, and replies', function () {

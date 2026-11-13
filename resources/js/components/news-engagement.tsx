@@ -1,7 +1,9 @@
 import { Link, router } from '@inertiajs/react';
-import { Eye, Flag, Heart, Share2 } from 'lucide-react';
+import { Eye, Flag, Heart, Info, Share2, ShieldCheck } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import AdminCommentFlag from '@/components/admin-comment-flag';
+import { FeedbackToast } from '@/components/feedback-toast';
+import type { Feedback } from '@/components/feedback-toast';
 import { GuestCommentLimitDialog } from '@/components/guest-comment-limit-dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -54,9 +56,11 @@ export async function engagementPost(url: string, data: unknown) {
                 body.message ||
                 'Permintaan gagal. Silakan coba lagi.',
         );
+
         if (body.errors?.quota) {
             Object.assign(error, { quotaReached: true });
         }
+
         throw error;
     }
 
@@ -82,6 +86,7 @@ export default function NewsEngagement({
     const [liking, setLiking] = useState(false);
     const [sharing, setSharing] = useState(false);
     const [message, setMessage] = useState('');
+    const [feedback, setFeedback] = useState<Feedback | null>(null);
     const [content, setContent] = useState('');
     const [website, setWebsite] = useState('');
     const [challenge, setChallenge] = useState('');
@@ -245,17 +250,26 @@ export default function NewsEngagement({
             });
             setContent('');
             setRemainingQuota(data.remaining_quota ?? null);
-            setMessage(
-                data.message ??
-                    (data.status === 'published'
-                        ? 'Komentar diterbitkan.'
-                        : 'Komentar menunggu peninjauan moderator.'),
-            );
+
+            if (data.status === 'published') {
+                setFeedback({
+                    variant: 'success',
+                    message: 'Komentar diterbitkan.',
+                });
+            } else {
+                setFeedback(null);
+                setMessage(
+                    data.message ?? 'Komentar menunggu peninjauan moderator.',
+                );
+            }
+
             router.reload({ only: ['comments'] });
         } catch (error) {
-            if ((error as Error & { quotaReached?: boolean }).quotaReached)
+            if ((error as Error & { quotaReached?: boolean }).quotaReached) {
                 setQuotaOpen(true);
-            else setMessage((error as Error).message);
+            } else {
+                setMessage((error as Error).message);
+            }
         } finally {
             submission.current = false;
             setBusy(false);
@@ -314,12 +328,15 @@ export default function NewsEngagement({
                     });
                 });
             }
+
             setRemainingQuota(data.remaining_quota ?? null);
         } catch (error) {
             if ((error as Error & { quotaReached?: boolean }).quotaReached) {
                 setQuotaOpen(true);
+
                 return;
             }
+
             setReplyNotice({
                 parentId,
                 error: true,
@@ -405,7 +422,7 @@ export default function NewsEngagement({
         return (
             <article
                 key={comment.id}
-                className="min-w-0 space-y-3 rounded-xl bg-secondary p-4"
+                className="min-w-0 space-y-3 rounded-xl border border-border/50 bg-secondary p-4 sm:p-5"
             >
                 <div className="group/comment space-y-2">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
@@ -420,7 +437,7 @@ export default function NewsEngagement({
                                 )[0]?.toLocaleUpperCase('id') || 'T'}
                             </AvatarFallback>
                         </Avatar>
-                        <strong className="min-w-0 break-words">
+                        <strong className="min-w-0 flex-1 break-words">
                             {comment.author}
                         </strong>
                         <button
@@ -623,6 +640,11 @@ export default function NewsEngagement({
 
     return (
         <section aria-label="Interaksi berita" className="space-y-6">
+            <FeedbackToast
+                feedback={feedback}
+                onDismiss={() => setFeedback(null)}
+                duration={5000}
+            />
             <div className="flex flex-wrap items-center gap-3 border-y border-border py-4">
                 <span
                     className="flex items-center gap-2 text-sm"
@@ -685,37 +707,59 @@ export default function NewsEngagement({
                         />
                     </label>
                 </div>
-                <label className="block text-sm">
+                <label htmlFor="news-comment" className="sr-only">
                     Komentar
-                    <textarea
-                        required
-                        maxLength={1000}
-                        rows={3}
-                        value={content}
-                        onChange={(e) => setContent(e.target.value)}
-                        className="mt-1 block w-full rounded-lg border border-border bg-background p-3"
-                    />
                 </label>
-                <p className="text-xs text-muted-foreground">
-                    Komentar diperiksa otomatis menggunakan OpenAI dan dapat
-                    ditinjau moderator sebelum diterbitkan.
-                </p>
-                {!authenticated && remainingQuota !== null && (
-                    <p role="status" className="text-xs text-muted-foreground">
-                        Sisa kuota komentar hari ini: {remainingQuota}
+                <Textarea
+                    id="news-comment"
+                    required
+                    maxLength={1000}
+                    rows={4}
+                    placeholder="Tulis komentar..."
+                    value={content}
+                    onChange={(e) => setContent(e.target.value)}
+                    className="min-h-28 w-full rounded-xl border-border bg-background p-4 text-sm"
+                />
+                <div className="flex items-start gap-3 rounded-xl border border-border bg-secondary/60 p-3 text-sm text-muted-foreground sm:p-4">
+                    <ShieldCheck
+                        className="mt-0.5 size-5 shrink-0"
+                        aria-hidden="true"
+                    />
+                    <p>
+                        Komentar diperiksa otomatis menggunakan OpenAI dan dapat
+                        ditinjau moderator sebelum diterbitkan.
                     </p>
-                )}
-                <Button
-                    type="submit"
-                    className={primaryButton}
-                    disabled={
-                        busy ||
-                        !content.trim() ||
-                        (!authenticated && !challenge)
-                    }
-                >
-                    {busy ? 'Memproses...' : 'Kirim Komentar'}
-                </Button>
+                </div>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    {!authenticated && remainingQuota !== null && (
+                        <p
+                            role="status"
+                            className="flex items-center gap-2 text-sm text-muted-foreground"
+                        >
+                            <Info
+                                className="size-4 shrink-0"
+                                aria-hidden="true"
+                            />
+                            <span>
+                                Sisa kuota komentar hari ini:{' '}
+                                <strong className="font-semibold text-primary">
+                                    {remainingQuota}
+                                </strong>
+                            </span>
+                        </p>
+                    )}
+                    <Button
+                        type="submit"
+                        className={`${primaryButton} min-h-11 w-full shrink-0 sm:ml-auto sm:w-auto`}
+                        disabled={
+                            busy ||
+                            !content.trim() ||
+                            (!authenticated && !challenge)
+                        }
+                    >
+                        {busy ? 'Memproses...' : 'Kirim Komentar'}
+                    </Button>
+                </div>
             </form>
             {comments.length === 0 && (
                 <p className="text-sm text-muted-foreground">

@@ -92,7 +92,7 @@ const pairs: [string, string][] = [
     ['Oldest', 'Terlama'],
     ['News categories', 'Kategori berita'],
 ];
-const dictionary = new Map<string, Record<WebsiteLanguage, string>>();
+const dictionary = new Map<string, Partial<Record<WebsiteLanguage, string>>>();
 
 for (const [en, id] of pairs) {
     dictionary.set(en.toLocaleLowerCase(), { en, id });

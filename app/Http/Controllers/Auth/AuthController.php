@@ -105,9 +105,9 @@ class AuthController extends Controller
 
     public function forgotPassword(Request $request)
     {
-        $request->validate(['email' => 'required|email']);
+        $request->validate(['email' => 'required|email', 'return_url' => 'nullable|string|max:2048']);
 
-        $sent = $this->authService->forgotPassword($request->email);
+        $sent = $this->authService->forgotPassword($request->email, $request->input('return_url'));
 
         if ($sent) {
             return response()->json(['message' => 'Reset link sent to your email.']);
@@ -134,6 +134,6 @@ class AuthController extends Controller
             return response()->json(['message' => 'Password reset successfully.']);
         }
 
-        return response()->json(['message' => 'Invalid or expired token.'], 422);
+        return response()->json(['message' => 'Invalid or expired token.', 'code' => 'invalid_or_expired_reset_token'], 422);
     }
 }
