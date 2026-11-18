@@ -33,3 +33,13 @@ yarn-error.log
 /deployment/ai.env
 /deployment/models/
 /deployment/runtime-test/
+
+# Private production configuration and TLS material
+/deployment/production/*
+!/deployment/production/*.example
+/deployment/**/*.pem
+/deployment/**/*.key
+
+
+/deployment/__pycache__/
+/deployment/tests/__pycache__/

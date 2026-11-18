@@ -426,3 +426,152 @@ Future Azure deployment needs separate production environment variables, HTTPS/d
 - [ ] If 502 happens, restart only Nginx and inspect logs if it persists.
 
 **For regular development: open Docker Desktop → run `start-local.ps1` → open `http://localhost:8088`.**
+
+## Separate production configuration (Azure preparation)
+
+`compose.production.yaml` is standalone. Do not combine it with `compose.yaml`
+or `compose.lan.yaml`. The local launcher and local files retain their current behavior.
+The production file preserves all nine services, worker commands, scheduler shutdown
+ordering, upload limits and persistent mount paths. Only Nginx publishes ports.
+The network permits outbound access for AI providers and other integrations.
+JSON container logs rotate at 10 MB with three files; Laravel logs to stderr.
+No Azure resources, TLS certificates, secrets, backups or migrated data are created
+by these files. Configuration validation is not runtime or production readiness verification.
+
+### Prepare private configuration
+
+On the eventual Linux host, keep the two source repositories in the same relative
+layout as locally, or set `AI_REPO_PATH` and `AI_DOCKERFILE` explicitly. Include the
+reviewed AI repository changes in the deployed revision. From the main repository:
+
+```sh
+cp deployment/production/.env.example deployment/production/.env
+cp deployment/production/laravel.env.example deployment/production/laravel.env
+cp deployment/production/ai.env.example deployment/production/ai.env
+chmod 600 deployment/production/.env deployment/production/laravel.env deployment/production/ai.env
+```
+
+Edit these files privately on the host. Never paste secrets into chat. The actual
+files and private TLS keys are ignored by Git and excluded from the main build
+context. The AI Dockerfile has its existing allowlist-only build context.
+Use literal `NAME=value` assignments (optionally quoted), without interpolation,
+backslash escapes, multiline values or inline comments. The validator intentionally
+rejects ambiguous dotenv syntax. A value containing `$` or a backslash needs a
+reviewed alternate secret injection strategy before deployment.
+
+- `.env`: Compose inputs, public HTTPS origin, database credentials, shared token,
+  explicit volume names, repository paths and an absolute TLS directory.
+- `laravel.env`: Laravel production settings and integrations. Keep APP_URL,
+  DB_DATABASE, DB_USERNAME, DB_PASSWORD and APAKHABAR_AI_SERVICE_TOKEN identical to
+  `.env`; Compose explicitly overrides these settings in every Laravel service.
+- `ai.env`: FastAPI settings and shared token. Gemini embeddings require
+  EMBEDDING_API_KEY independently of the writer's AI_API_KEY. Retain the existing
+  collection's embedding model and dimensions. The normal production build supports
+  Gemini/OpenAI embeddings; local model dependencies need a separate reviewed build.
+
+Replace every populated placeholder. For integrations intentionally disabled, clear
+their related placeholder values together. SMTP is needed for email-based account
+flows; configure and test a real sender. OpenAI moderation and the configured AI
+writer, embedding and enabled evaluator credentials are required. Presence checks
+cannot confirm credential validity or provider permissions. Configure Cloudinary
+and Meta credentials before exercising their features. Review other optional
+broadcast channels before enabling them.
+
+Retain the existing APP_KEY when moving encrypted data; do not generate or rotate
+it blindly. Previously exposed credentials still require provider-side remediation
+and a separate APP_KEY migration assessment. This configuration does not fix Git
+history exposure.
+
+### Domain, certificates and OAuth
+
+Point a chosen domain to the eventual VM. Provision a valid certificate externally
+before starting Nginx. `TLS_CERT_DIR` must be an absolute host directory containing
+`fullchain.pem` and `privkey.pem`; mount it read-only. If using certificate symlinks,
+ensure their targets are also reachable inside the mounted directory, or publish
+regular files into this directory using a controlled renewal hook. Restrict key
+permissions while allowing container Nginx to read it. Never put the directory in
+Git or either repository's build context.
+
+Nginx redirects HTTP to HTTPS and tells PHP-FPM that requests are secure. The
+validator expects standard host ports 80/443. The private container-only port 8080
+is an Nginx liveness check, not a Laravel/database/provider health test.
+The preflight checks certificate-file presence only: verify certificate validity,
+chain, hostname, key match and Nginx syntax on the target host before traffic.
+
+Use a DNS-based certificate challenge or an external provisioning method; this
+configuration does not serve HTTP ACME challenges. Automate renewal externally and
+reload Nginx after renewed files are installed. Reloading or starting services is
+a later operational step and has not been performed during preparation.
+
+Set FACEBOOK_REDIRECT_URI to the exact APP_URL origin followed by
+`/admin/social/facebook/callback`. Register the same URI with Meta. Provider-side
+app configuration and callback testing remain required.
+
+### Volume identity and migration
+
+All production volume names are explicit and distinct. The default production
+names create a separate data set when the stack is eventually started. Never start
+against an empty database expecting local data to appear automatically. MariaDB
+initialization variables only apply to a fresh database volume; changing passwords
+in env files does not change existing database users.
+
+Inspect existing volume identities and take database-consistent backups before
+selecting any existing volume. Do not attach the live local database/AI/storage
+volumes to a second running stack. No volumes are renamed, deleted, copied or
+migrated by this preparation. Named volumes on your laptop do not transfer to Azure.
+Back up MariaDB, Laravel storage, AI uploads, Chroma and checkpoints, and preserve
+or deliberately rebuild model caches. Restore and verify in isolation first.
+
+The translation-model volume is external and must already exist with appropriate
+models and ownership on the target host. Choose its name deliberately. Do not
+create an empty replacement and assume translation is ready. The launcher still
+does not create this external volume automatically.
+
+### Read-only validation
+
+From the main repository, with Python 3.10+ and Docker Compose available:
+
+```sh
+python3 deployment/validate-production.py
+# On the target host: also check Engine access and the external translation volume.
+python3 deployment/validate-production.py --docker
+```
+
+The first command checks files, placeholders, safe production settings, matching
+credentials, internal endpoints, persistent paths, TLS-file presence and resolved
+Compose settings. It needs the Compose CLI but does not need a running Engine.
+It captures resolved configuration privately and never prints values or raw Docker
+errors. `--docker` only inspects the external volume; it does not start containers.
+A failing check exits nonzero. Do not run `docker compose config` without `--quiet`
+against real configuration in shared logs: its output includes secrets.
+
+Production structure can be validated with templates and dummy values, but that
+cannot satisfy the production preflight. Do not use templates as real credentials.
+Use this exact Compose selection for later reviewed operational commands:
+
+```sh
+docker compose --env-file deployment/production/.env -f deployment/compose.production.yaml config --quiet
+```
+
+Avoid ambient environment variables overriding Compose inputs. The Python preflight
+sanitizes matching variables for its subprocess; run eventual operational commands
+from a controlled shell. Do not use the local launcher to start production.
+
+### Remaining gates before Azure testing and public launch
+
+Preparation does not start the stack. Before Azure testing, resolve exposed
+credentials, choose a domain/certificate process, select VM capacity, and prepare
+verified database/volume restores. Permit inbound 80/443 and restrict SSH to intended
+administrators through Azure and host firewalls; do not expose internal service ports.
+Before public launch, test Laravel, all workers, scheduler, AI providers, translation,
+media uploads, Meta callbacks, email and the mobile API. Set the mobile release
+EXPO_PUBLIC_API_BASE_URL explicitly to the production HTTPS `/api` URL.
+
+Automated off-host backups, retention and restore drills still need implementation.
+Set resource limits after measuring AI, translation, video and database workloads;
+this preparation does not invent VM capacity or impose untested memory limits.
+Video temporary crop files remain container-local. Gemini reindex completion,
+native AI `.env` alignment, local LAN OAuth callback behavior, and obsolete testing
+Compose services remain unresolved and unchanged. Container liveness alone cannot
+verify any of these items. The known obsolete `compose.testing.yaml` is not part
+of production validation.

@@ -1,0 +1,197 @@
+
+name: apakhabar-production
+
+x-laravel: &laravel
+  image: apakhabar-production-app:latest
+  build:
+    context: ..
+    dockerfile: deployment/docker/laravel.Dockerfile
+    target: app
+  env_file: ./production/laravel.env
+  environment: &laravel-env
+    APP_URL: ${APP_URL:?Set production APP_URL}
+    DB_CONNECTION: mysql
+    DB_HOST: db
+    DB_PORT: "3306"
+    DB_DATABASE: ${DB_DATABASE:?Set production DB_DATABASE}
+    DB_USERNAME: ${DB_USERNAME:?Set production DB_USERNAME}
+    DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in deployment/production/.env}
+    QUEUE_CONNECTION: database
+    DB_QUEUE_RETRY_AFTER: "1500"
+    APAKHABAR_AI_URL: http://ai:8001
+    APAKHABAR_AI_API_PREFIX: ""
+    APAKHABAR_AI_PROVIDER: Google Gemini (OpenAI judge)
+    APAKHABAR_AI_SERVICE_TOKEN: ${APAKHABAR_AI_SERVICE_TOKEN:?Set a shared service token in deployment/production/.env}
+    LIBRETRANSLATE_URL: http://libretranslate:5000
+    FFMPEG_BINARY: ffmpeg
+    FFPROBE_BINARY: ffprobe
+  volumes: &laravel-volumes
+    - laravel_storage:/var/www/html/storage
+  depends_on: &laravel-depends
+    db:
+      condition: service_healthy
+    ai:
+      condition: service_healthy
+    libretranslate:
+      condition: service_healthy
+  restart: unless-stopped
+  logging: &production-logging
+    driver: json-file
+    options:
+      max-size: '10m'
+      max-file: '3'
+  stop_grace_period: 1400s
+
+services:
+  db:
+    image: mariadb:11.4
+    environment:
+      MARIADB_DATABASE: ${DB_DATABASE:?Set production DB_DATABASE}
+      MARIADB_USER: ${DB_USERNAME:?Set production DB_USERNAME}
+      MARIADB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in deployment/production/.env}
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?Set DB_ROOT_PASSWORD in deployment/production/.env}
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    healthcheck:
+      test: [CMD, healthcheck.sh, --connect, --innodb_initialized]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 40s
+    restart: unless-stopped
+    logging: *production-logging
+    networks: [internal]
+
+  ai:
+    build:
+      context: ${AI_REPO_PATH:-../../PROJECT/ApaKhabar-AI-Service}
+      dockerfile: ${AI_DOCKERFILE:-../../ApaKhabar-Intelligence-Information-News-Management-System/deployment/docker/ai.Dockerfile}
+    env_file: ./production/ai.env
+    environment:
+      APAKHABAR_AI_SERVICE_TOKEN: ${APAKHABAR_AI_SERVICE_TOKEN:?Set a shared service token in deployment/production/.env}
+      HF_HOME: /app/data/huggingface
+    volumes:
+      - ai_chroma:/app/data/chroma
+      - ai_uploads:/app/data/uploads
+      - ai_checkpoints:/app/data/agent
+      - ai_model_cache:/app/data/huggingface
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    logging: *production-logging
+    networks: [internal]
+
+  app:
+    <<: *laravel
+    healthcheck:
+      test: [CMD, php, -r, "exit(@fsockopen('127.0.0.1', 9000) ? 0 : 1);"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks: [internal]
+
+  web:
+    build:
+      context: ..
+      dockerfile: deployment/docker/laravel.Dockerfile
+      target: web
+    ports:
+      - "${WEB_BIND_HOST:-0.0.0.0}:${HTTP_PORT:-80}:80"
+      - "${WEB_BIND_HOST:-0.0.0.0}:${HTTPS_PORT:-443}:443"
+    volumes:
+      - laravel_storage:/var/www/html/storage:ro
+      - ./nginx/production.conf:/etc/nginx/conf.d/default.conf:ro
+      - type: bind
+        source: ${TLS_CERT_DIR:?Set TLS_CERT_DIR}
+        target: /etc/nginx/tls
+        read_only: true
+        bind:
+          create_host_path: false
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:8080/healthz]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    logging: *production-logging
+    networks: [internal]
+
+  worker-documents:
+    <<: *laravel
+    command: [php, artisan, queue:work, "--queue=documents,default", "--tries=5", "--timeout=1250"]
+    networks: [internal]
+
+  worker-generation:
+    <<: *laravel
+    command: [php, artisan, queue:work, "--queue=generation", "--tries=1", "--timeout=1250"]
+    networks: [internal]
+
+  worker-video:
+    <<: *laravel
+    command: [php, artisan, queue:work, "--queue=video-publishing", "--tries=1", "--timeout=90"]
+    networks: [internal]
+
+  scheduler:
+    <<: *laravel
+    command: [php, deployment/docker/scheduler.php]
+    # PHP-FPM's inherited SIGQUIT is not a scheduler shutdown protocol.
+    stop_signal: SIGTERM
+    stop_grace_period: 60s
+    # Reverse dependency order keeps workers and their DB/AI dependencies alive
+    # until the scheduler has finished dispatching/draining its current runs.
+    depends_on:
+      <<: *laravel-depends
+      worker-documents:
+        condition: service_started
+      worker-generation:
+        condition: service_started
+      worker-video:
+        condition: service_started
+    networks: [internal]
+
+  libretranslate:
+    image: libretranslate/libretranslate:v1.9.6
+    environment:
+      LT_LOAD_ONLY: en,id,ms
+      LT_CHAR_LIMIT: "12000"
+      LT_BATCH_LIMIT: "20"
+    volumes:
+      - translation_models:/home/libretranslate/.local
+    healthcheck:
+      test: [CMD-SHELL, "./venv/bin/python scripts/healthcheck.py"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    restart: unless-stopped
+    logging: *production-logging
+    networks: [internal]
+
+networks:
+  internal:
+    internal: false
+
+volumes:
+  mariadb_data:
+    name: ${MARIADB_DATA_VOLUME:?Set explicit production volume name}
+  laravel_storage:
+    name: ${LARAVEL_STORAGE_VOLUME:?Set explicit production volume name}
+  ai_chroma:
+    name: ${AI_CHROMA_VOLUME:?Set explicit production volume name}
+  ai_uploads:
+    name: ${AI_UPLOADS_VOLUME:?Set explicit production volume name}
+  ai_checkpoints:
+    name: ${AI_CHECKPOINTS_VOLUME:?Set explicit production volume name}
+  ai_model_cache:
+    name: ${AI_MODEL_CACHE_VOLUME:?Set explicit production volume name}
+  translation_models:
+    external: true
+    name: ${TRANSLATION_MODELS_VOLUME:?Set translation model volume}
