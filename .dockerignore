@@ -15,3 +15,9 @@ deployment/ai.env
 deployment/models
 deployment/runtime-test
 *.gguf
+
+# Production secrets must never enter image build contexts.
+deployment/production/*
+!deployment/production/*.example
+**/*.pem
+**/*.key
