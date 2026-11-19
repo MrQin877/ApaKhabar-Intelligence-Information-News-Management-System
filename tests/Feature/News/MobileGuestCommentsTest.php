@@ -39,11 +39,6 @@ function mobileCommentVideo(): ShortVideo
 
 beforeEach(function () {
     Http::preventStrayRequests();
-    Http::fake([
-        'api.openai.com/v1/moderations' => Http::response(['results' => [['flagged' => false, 'categories' => ['harassment' => false]]]]),
-        'api.openai.com/v1/chat/completions' => Http::response(appropriateCommentClassification()),
-    ]);
-    config(['engagement.openai_key' => 'test-key']);
 });
 
 test('mobile guest quota is persistent and shared across News Shorts and replies', function () {
@@ -125,15 +120,14 @@ test('mobile credentials cannot access private routes and invalid bearer cannot 
     expect(DB::table('guest_comment_identities')->count())->toBe(1);
 });
 
-test('pending mobile comments consume quota and stay out of the public list', function () {
+test('mobile comments publish immediately and still consume quota', function () {
     $this->withoutMiddleware(ThrottleRequests::class);
-    config(['engagement.openai_key' => '']);
     $video = mobileCommentVideo();
     $headers = mobileCommentHeaders($this);
     $challenge = mobileCommentChallenge($this, 'short', $video->id, $headers);
     $this->postJson('/api/shorts/'.$video->id.'/comments', ['content' => 'Needs moderation', 'challenge' => $challenge], $headers)
-        ->assertCreated()->assertJsonPath('status', 'pending_review')->assertJsonPath('remaining_quota', 2)->assertJsonPath('comment', null);
-    $this->getJson('/api/shorts/'.$video->id.'/comments')->assertOk()->assertJsonPath('count', 0);
+        ->assertCreated()->assertJsonPath('status', 'published')->assertJsonPath('remaining_quota', 2)->assertJsonPath('comment.content', 'Needs moderation');
+    $this->getJson('/api/shorts/'.$video->id.'/comments')->assertOk()->assertJsonPath('count', 1);
     expect(DB::table('guest_comment_days')->first()->comment_count)->toBe(1);
 });
 

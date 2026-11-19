@@ -5,21 +5,13 @@ use App\Models\Like;
 use App\Models\News;
 use App\Models\User;
 use App\Models\UserRole;
-use App\Services\News\CommentModeration;
-use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
 
 beforeEach(function () {
-    config(['engagement.openai_key' => 'test-key']);
     Http::preventStrayRequests();
-    Http::fake([
-        'api.openai.com/v1/moderations' => Http::response(['results' => [['flagged' => false, 'categories' => ['harassment' => false]]]]),
-        'api.openai.com/v1/chat/completions' => Http::response(appropriateCommentClassification()),
-    ]);
     $this->article = News::factory()->create();
     $this->url = '/news/'.$this->article->getKey();
 });
@@ -80,7 +72,7 @@ test('early forged expired and cross article views are rejected', function () {
     expect($this->article->fresh()->view)->toBe(0);
 });
 
-test('guest comments publish only after bot and moderation checks', function () {
+test('guest comments publish after bot checks', function () {
     $this->postJson($this->url.'/comment', ['content' => 'Terima kasih'])->assertUnprocessable();
     $token = agedEngagementToken($this);
     $this->postJson($this->url.'/comment', ['content' => 'Terima kasih', 'challenge' => $token, 'website' => 'spam'])->assertUnprocessable();
@@ -93,34 +85,19 @@ test('guest comments publish only after bot and moderation checks', function () 
     expect(Comment::latest('commentID')->first()->guest_name)->toMatch('/^Guest[0-9]{5}$/');
 });
 
-test('English Indonesian mixed slang and criticism are sent unchanged to moderation', function (string $content) {
+test('English Indonesian mixed slang and criticism publish without external checks', function (string $content) {
     $this->actingAs(User::factory()->create())->postJson($this->url.'/comment', ['content' => $content])->assertCreated()->assertJsonPath('status', 'published');
-    Http::assertSent(fn ($request) => $request->url() === 'https://api.openai.com/v1/moderations' && $request['input'] === $content && $request['model'] === 'omni-moderation-latest');
+    Http::assertNothingSent();
 })->with(['Thank you for the update.', 'Terima kasih atas informasinya.', 'Thanks, beritanya sangat membantu.', 'Makasih min, infonya mantap banget.', 'Saya tidak setuju dengan kebijakan ini; anggarannya perlu dijelaskan.']);
 
-test('flagged threats and offensive language are held and hidden', function (string $content) {
-    Http::swap(new Factory);
-    Http::fake(['api.openai.com/*' => Http::response(['results' => [['flagged' => true, 'categories' => ['harassment' => true]]]])]);
-    $this->actingAs(User::factory()->create())->postJson($this->url.'/comment', ['content' => $content])->assertCreated()->assertJsonPath('status', 'pending_review');
-    $this->getJson($this->url)->assertJsonPath('data.comments', 0);
-    expect(Comment::first()->ai_flagged)->toBeTrue();
-})->with(['I will hurt you.', 'Dasar bodoh, kamu tidak berguna.']);
+test('offensive comments publish for subsequent admin review', function (string $content) {
+    $this->actingAs(User::factory()->create())->postJson($this->url.'/comment', ['content' => $content])
+        ->assertCreated()->assertJsonPath('status', 'published');
+    expect(Comment::first()->ai_flagged)->toBeNull();
+    Http::assertNothingSent();
+})->with(['fuck you', 'Dasar bodoh, kamu tidak berguna.']);
 
-test('API failures timeouts malformed responses and missing key fail closed', function (string $failure) {
-    Http::swap(new Factory);
-    if ($failure === 'key') {
-        config(['engagement.openai_key' => null]);
-    } elseif ($failure === 'timeout') {
-        Http::fake(fn () => throw new ConnectionException('timeout'));
-    } elseif ($failure === 'malformed') {
-        Http::fake(['*' => Http::response(['results' => [['flagged' => false]]])]);
-    } else {
-        Http::fake(['*' => Http::response([], 503)]);
-    }
-    expect(app(CommentModeration::class)->check('Normal comment')['status'])->toBe('pending_review');
-})->with(['key', 'timeout', 'malformed', 'server']);
-
-test('links cleared by AI are published and duplicates are blocked', function () {
+test('links are published and duplicates are blocked', function () {
     $this->actingAs(User::factory()->create());
     $this->postJson($this->url.'/comment', ['content' => 'Promo murah https://example.com'])->assertCreated()->assertJsonPath('status', 'published');
     $this->postJson($this->url.'/comment', ['content' => 'Promo murah https://example.com'])->assertUnprocessable();
@@ -167,13 +144,13 @@ test('replies receive moderation and disappear when ancestor is removed', functi
     $this->postJson('/comments/'.$parent->getKey().'/replies', ['content' => 'Another'])->assertNotFound();
 });
 
-test('comment rate limiting applies before repeated moderation calls', function () {
+test('comment rate limiting still applies without AI checks', function () {
     $this->actingAs(User::factory()->create());
     for ($i = 0; $i < 5; $i++) {
         $this->postJson($this->url.'/comment', ['content' => 'Comment '.$i])->assertCreated();
     }
     $this->postJson($this->url.'/comment', ['content' => 'One too many'])->assertStatus(429);
-    Http::assertSentCount(10);
+    Http::assertNothingSent();
 });
 
 test('comment and reply likes persist with per-user counts and reject guests', function () {

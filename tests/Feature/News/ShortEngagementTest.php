@@ -6,7 +6,6 @@ use App\Models\ShortVideo;
 use App\Models\ShortVideoComment;
 use App\Models\User;
 use App\Models\UserRole;
-use Illuminate\Http\Client\Factory;
 use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
@@ -44,11 +43,6 @@ function agedShortCommentChallenge($test, ShortVideo $video): string
 beforeEach(function () {
     $this->withoutMiddleware(ThrottleRequests::class);
     Http::preventStrayRequests();
-    Http::fake([
-        'api.openai.com/v1/moderations' => Http::response(['results' => [['flagged' => false, 'categories' => ['harassment' => false]]]]),
-        'api.openai.com/v1/chat/completions' => Http::response(appropriateCommentClassification()),
-    ]);
-    config(['engagement.openai_key' => 'test-key']);
 });
 
 test('guest Shorts comments require an aged challenge and do not enter News data', function () {
@@ -63,12 +57,12 @@ test('guest Shorts comments require an aged challenge and do not enter News data
     $this->getJson($url)->assertJsonPath('count', 1)->assertJsonPath('comments.data.0.replies_count', 0);
 });
 
-test('Shorts use the moderation classification rather than matching words or links', function (string $content) {
+test('Shorts publish without matching words or calling external services', function (string $content) {
     $video = engagedShort();
     $this->actingAs(shortActor())->postJson('/shorts/'.$video->id.'/comments', ['content' => $content])
         ->assertCreated()->assertJsonPath('status', 'published')->assertJsonPath('comment.content', $content);
     $this->getJson('/shorts/'.$video->id.'/comments')->assertOk()->assertJsonPath('count', 1);
-    Http::assertSent(fn ($request) => $request->url() === 'https://api.openai.com/v1/moderations' && $request['input'] === $content);
+    Http::assertNothingSent();
 })->with(['Info diskon warga: https://example.com', 'Damn, jalan ini rusak lagi.']);
 
 test('guest identity and WIB quota are shared by News, Shorts, and replies', function () {
@@ -104,13 +98,11 @@ test('guest identity and WIB quota are shared by News, Shorts, and replies', fun
     expect(Comment::latest('commentID')->first()->guest_name)->toBe(ShortVideoComment::first()->guest_name);
 });
 
-test('pending moderation consumes guest quota while authenticated comments remain exempt', function () {
+test('published comments consume guest quota while authenticated comments remain exempt', function () {
     $video = engagedShort();
-    Http::swap(new Factory);
-    Http::fake(['api.openai.com/*' => Http::response(['results' => [['flagged' => true, 'categories' => ['harassment' => true]]]])]);
     $url = '/shorts/'.$video->id.'/comments';
     $first = $this->postJson($url, ['content' => 'Komentar ditinjau satu', 'challenge' => agedShortCommentChallenge($this, $video)])
-        ->assertCreated()->assertJsonPath('status', 'pending_review')->assertJsonPath('remaining_quota', 2);
+        ->assertCreated()->assertJsonPath('status', 'published')->assertJsonPath('remaining_quota', 2);
     $cookie = collect($first->headers->getCookies())->first(fn ($item) => $item->getName() === 'apakhabar_guest');
     $this->withUnencryptedCookie('apakhabar_guest', $cookie->getValue());
     foreach (['Komentar ditinjau dua', 'Komentar ditinjau tiga'] as $index => $content) {
@@ -119,19 +111,18 @@ test('pending moderation consumes guest quota while authenticated comments remai
     }
     $this->postJson($url, ['content' => 'Komentar ditinjau empat', 'challenge' => agedShortCommentChallenge($this, $video)])
         ->assertUnprocessable()->assertJsonPath('errors.quota.0', 'Kuota 3 komentar hari ini habis. Coba lagi besok atau masuk untuk lanjut berkomentar.');
-    expect(ShortVideoComment::where('status', 'pending_review')->count())->toBe(3);
+    expect(ShortVideoComment::where('status', 'published')->count())->toBe(3);
     $this->actingAs(shortActor())->postJson($url, ['content' => 'Komentar pengguna masuk'])->assertCreated();
 });
 
-test('short comments await review when OpenAI moderation is unavailable', function () {
-    config(['engagement.openai_key' => null]);
+test('short comments publish without OpenAI and do not enter the pending queue', function () {
     $video = engagedShort();
     $this->actingAs(shortActor())->postJson('/shorts/'.$video->id.'/comments', [
         'content' => 'Komentar saat layanan mati',
-    ])->assertCreated()->assertJsonPath('status', 'pending_review');
+    ])->assertCreated()->assertJsonPath('status', 'published');
     expect(ShortVideoComment::first()->ai_flagged)->toBeNull();
     $this->actingAs(shortActor('moderator'))->get('/admin/comments?content_type=shorts')
-        ->assertInertia(fn (Assert $page) => $page->where('counts.pending', 1));
+        ->assertInertia(fn (Assert $page) => $page->where('counts.pending', 0));
 });
 
 test('Shorts likes and one-level reply pagination use separate persistent records', function () {
