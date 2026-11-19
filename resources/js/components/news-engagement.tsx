@@ -1,5 +1,5 @@
 import { Link, router } from '@inertiajs/react';
-import { Eye, Flag, Heart, Info, Share2, ShieldCheck } from 'lucide-react';
+import { Eye, Flag, Heart, Info, Share2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import AdminCommentFlag from '@/components/admin-comment-flag';
 import { FeedbackToast } from '@/components/feedback-toast';
@@ -85,6 +85,9 @@ export default function NewsEngagement({
     const [busy, setBusy] = useState(false);
     const [liking, setLiking] = useState(false);
     const [sharing, setSharing] = useState(false);
+    const [shareOpen, setShareOpen] = useState(false);
+    const [shareUrl, setShareUrl] = useState('');
+    const [shareMessage, setShareMessage] = useState('');
     const [message, setMessage] = useState('');
     const [feedback, setFeedback] = useState<Feedback | null>(null);
     const [content, setContent] = useState('');
@@ -217,7 +220,7 @@ export default function NewsEngagement({
     }
     async function share() {
         setSharing(true);
-        setMessage(
+        setShareMessage(
             await copyArticleLink(
                 news.id,
                 window.location.origin,
@@ -660,7 +663,19 @@ export default function NewsEngagement({
                     />
                     {liked ? 'Disukai' : 'Suka'} | {likes}
                 </button>
-                <button className={button} disabled={sharing} onClick={share}>
+                <button
+                    className={button}
+                    onClick={() => {
+                        setShareUrl(
+                            new URL(
+                                `/news/${encodeURIComponent(news.id)}`,
+                                window.location.origin,
+                            ).href,
+                        );
+                        setShareMessage('');
+                        setShareOpen(true);
+                    }}
+                >
                     <Share2 className="mr-2 inline" size={16} />
                     Bagikan
                 </button>
@@ -714,16 +729,6 @@ export default function NewsEngagement({
                     onChange={(e) => setContent(e.target.value)}
                     className="min-h-28 w-full rounded-xl border-border bg-background p-4 text-sm"
                 />
-                <div className="flex items-start gap-3 rounded-xl border border-border bg-secondary/60 p-3 text-sm text-muted-foreground sm:p-4">
-                    <ShieldCheck
-                        className="mt-0.5 size-5 shrink-0"
-                        aria-hidden="true"
-                    />
-                    <p>
-                        Komentar diperiksa otomatis menggunakan OpenAI dan dapat
-                        ditinjau moderator sebelum diterbitkan.
-                    </p>
-                </div>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     {!authenticated && remainingQuota !== null && (
                         <p
@@ -765,6 +770,39 @@ export default function NewsEngagement({
                 open={quotaOpen}
                 onOpenChange={setQuotaOpen}
             />
+            <Dialog open={shareOpen} onOpenChange={setShareOpen}>
+                <DialogContent className="sm:max-w-lg">
+                    <DialogTitle>Bagikan berita</DialogTitle>
+                    <DialogDescription>
+                        Salin tautan untuk membagikan berita ini.
+                    </DialogDescription>
+                    <div className="flex min-w-0 items-center gap-2 rounded-lg border border-border bg-secondary/40 p-2">
+                        <input
+                            aria-label="Tautan berita"
+                            readOnly
+                            value={shareUrl}
+                            onFocus={(event) => event.currentTarget.select()}
+                            onClick={(event) => event.currentTarget.select()}
+                            className="min-w-0 flex-1 rounded-md bg-transparent px-2 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        />
+                        <Button
+                            type="button"
+                            disabled={sharing}
+                            onClick={() => void share()}
+                            className="shrink-0"
+                        >
+                            {sharing ? 'Menyalin...' : 'Salin tautan'}
+                        </Button>
+                    </div>
+                    <p
+                        role="status"
+                        aria-live="polite"
+                        className="text-sm break-words text-muted-foreground"
+                    >
+                        {shareMessage}
+                    </p>
+                </DialogContent>
+            </Dialog>
             <Dialog open={prompt} onOpenChange={setPrompt}>
                 <DialogContent>
                     <DialogTitle>Masuk diperlukan</DialogTitle>
