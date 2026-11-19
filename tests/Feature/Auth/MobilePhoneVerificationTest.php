@@ -125,6 +125,7 @@ test('mobile requests without a saved phone do not send SMS or consume the allow
 test('phone-only mobile registration can request and verify OTP', function () {
     $registration = $this->postJson('/api/register', [
         'name' => 'Phone Registrant', 'phone' => '+628123456789', 'password' => 'Password123!',
+        'date_of_birth' => '1990-01-01', 'citizenship' => 'wni',
         'password_confirmation' => 'Password123!',
     ])->assertCreated()->assertJsonPath('user.email', null)->assertJsonPath('user.phone_verified_at', null);
     $headers = ['Authorization' => 'Bearer '.$registration->json('token')];

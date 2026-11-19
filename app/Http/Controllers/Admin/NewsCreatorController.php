@@ -712,7 +712,7 @@ class NewsCreatorController extends Controller
         return $client;
     }
 
-    private function resolveCategoryId(array $article): int
+    private function resolveCategoryId(array $article): ?int
     {
         $categories = NewsCategory::query()->active()
             ->orderBy('display_order')->get(['categoryID', 'name', 'is_default']);
@@ -725,9 +725,9 @@ class NewsCreatorController extends Controller
             return $exact->categoryID;
         }
 
-        return (int) ($categories->firstWhere('is_default', true)?->categoryID
+        return $categories->firstWhere('is_default', true)?->categoryID
             ?? $categories->firstWhere('name', 'Lainnya')?->categoryID
-            ?? $categories->firstOrFail()->categoryID);
+            ?? $categories->first()?->categoryID;
     }
 
     private function storeDraftVersion(

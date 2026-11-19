@@ -2,6 +2,7 @@
 
 use App\Models\IntelligentNewsDraft;
 use App\Models\News;
+use App\Models\NewsCategory;
 use App\Models\SocialConnection;
 use App\Models\User;
 use App\Models\UserRole;
@@ -19,6 +20,7 @@ beforeEach(function () {
     }
     Http::preventStrayRequests();
     $this->article = ['headline' => 'Berita kegiatan warga',
+        'category_id' => NewsCategory::firstOrCreate(['name' => 'Pengumuman'])->getKey(),
         'content' => '<p>Warga mengadakan kegiatan bersama di desa hari ini.</p>', 'content_format' => 'html',
         'intent' => 'publish', 'platforms' => ['website', 'facebook', 'instagram']];
 });

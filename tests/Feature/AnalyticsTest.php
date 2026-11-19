@@ -144,7 +144,7 @@ test('admin cannot select another users meta connection', function () {
 test('broadcast detail does not leak analytics to moderators', function () {
     $admin = analyticsUser();
     $broadcast = Broadcast::create(['created_by' => $admin->getKey(), 'title' => 'Test', 'message' => 'Test message']);
-    $this->actingAs(analyticsUser('moderator'))->get('/admin/broadcasting/'.$broadcast->getKey())->assertOk()->assertInertia(fn (Assert $page) => $page->where('broadcast.stats', null));
+    $this->actingAs(analyticsUser('moderator'))->get('/admin/broadcasting/'.$broadcast->getKey())->assertRedirect(route('admin.dashboard'));
     $this->actingAs($admin)->get('/admin/broadcasting/'.$broadcast->getKey())->assertOk()->assertInertia(fn (Assert $page) => $page->has('broadcast.stats'));
 });
 test('csv exports are admin only and neutralize spreadsheet formulas', function () {

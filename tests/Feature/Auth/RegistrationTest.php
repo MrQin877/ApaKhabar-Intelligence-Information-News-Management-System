@@ -63,6 +63,7 @@ test('TC-REG-01: user can register with valid name email and password', function
 
     // Use User::where() instead of assertDatabaseHas()
     // because MongoDB uses a separate connection
+    $response->assertSessionHasNoErrors();
     $user = User::whereHas('emailRecord', fn ($query) => $query->where('email', 'ahmad@gmail.com'))->first();
     expect($user)->not->toBeNull();
 

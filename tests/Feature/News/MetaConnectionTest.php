@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\NewsCategory;
 use App\Models\SocialConnection;
 use App\Models\User;
 use App\Models\UserRole;
@@ -312,6 +313,7 @@ test('disconnect requires confirmation removes credentials and overrides environ
     expect($credentials['token'])->toBeNull()->and($credentials['status'])->toBe('disconnected');
     $this->getJson('/admin/social/connections')->assertJsonPath('platforms.'.($platform === 'facebook' ? 1 : 2).'.status', 'disconnected');
     $this->postJson('/admin/news/manual', ['headline' => 'News', 'content' => '<p>Content about village activities today.</p>',
+        'category_id' => NewsCategory::firstOrCreate(['name' => 'Pengumuman'])->getKey(),
         'content_format' => 'html', 'intent' => 'publish', 'platforms' => [$platform]])->assertUnprocessable()->assertJsonValidationErrors('platforms');
     Http::assertNothingSent();
 })->with(['facebook', 'instagram']);

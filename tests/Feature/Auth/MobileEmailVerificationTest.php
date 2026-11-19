@@ -79,6 +79,7 @@ test('mobile registration sends a browser-compatible verification link and statu
     Notification::fake();
     $this->postJson('/api/register', [
         'name' => 'Mobile User', 'email' => 'mobile@example.com', 'password' => 'Password123!',
+        'date_of_birth' => '1990-01-01', 'citizenship' => 'wni',
     ])->assertCreated()->assertJsonPath('user.email_verified_at', null)->assertJsonPath('user.phone_verified_at', null);
     Notification::assertSentTo(User::whereHas('emailRecord', fn ($query) => $query->where('email', 'mobile@example.com'))->first(), MobileVerifyEmail::class);
 });
