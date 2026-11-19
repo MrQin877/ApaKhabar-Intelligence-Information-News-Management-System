@@ -1,0 +1,66 @@
+name: Deploy ApaKhabar to Azure
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apakhabar-production
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/tests.yml
+
+  deploy:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Validate deployment tooling
+        run: |
+          python3 -m unittest discover -s deployment/cicd/tests -v
+          python3 -m py_compile deployment/cicd/*.py
+
+      - name: Build immutable application and web images
+        env:
+          RELEASE: ${{ github.sha }}
+        run: |
+          docker build --target app --label "org.opencontainers.image.revision=$RELEASE" \
+            -f deployment/docker/laravel.Dockerfile -t "apakhabar-production-app:sha-$RELEASE" .
+          docker build --target web --label "org.opencontainers.image.revision=$RELEASE" \
+            -f deployment/docker/laravel.Dockerfile -t "apakhabar-production-web:sha-$RELEASE" .
+          docker save "apakhabar-production-app:sha-$RELEASE" "apakhabar-production-web:sha-$RELEASE" \
+            | gzip -1 > "$RUNNER_TEMP/apakhabar-images.tar.gz"
+
+      - name: Configure dedicated SSH credentials
+        env:
+          VM1_KEY: ${{ secrets.APAKHABAR_VM1_DEPLOY_KEY }}
+          VM2_KEY: ${{ secrets.APAKHABAR_VM2_DEPLOY_KEY }}
+          HOST_KEYS: ${{ secrets.APAKHABAR_SSH_KNOWN_HOSTS }}
+          VM1_HOST: ${{ vars.APAKHABAR_VM1_HOST || '85.211.180.78' }}
+          VM2_HOST: ${{ vars.APAKHABAR_VM2_HOST || '172.16.0.5' }}
+          SSH_USER: ${{ vars.APAKHABAR_SSH_USER || 'apakhabaradmin' }}
+        run: python3 deployment/cicd/configure_ssh.py
+
+      - name: Deploy VM2 then VM1 and check public HTTPS
+        env:
+          RELEASE: ${{ github.sha }}
+          PUBLIC_URL: https://apakhabar.me
+        run: python3 deployment/cicd/deploy.py "$RELEASE" "$RUNNER_TEMP/apakhabar-images.tar.gz"
+
+      - name: Remove temporary credentials and image archive
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/apakhabar-vm1.key" "$RUNNER_TEMP/apakhabar-vm2.key" \
+            "$RUNNER_TEMP/apakhabar-known-hosts" "$RUNNER_TEMP/apakhabar-ssh-config" \
+            "$RUNNER_TEMP/apakhabar-images.tar.gz"

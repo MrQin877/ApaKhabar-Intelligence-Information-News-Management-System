@@ -21,3 +21,4 @@ deployment/production/*
 !deployment/production/*.example
 **/*.pem
 **/*.key
+**/__pycache__

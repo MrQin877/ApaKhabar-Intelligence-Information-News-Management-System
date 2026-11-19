@@ -127,7 +127,6 @@ test('a titled draft saves without description but publishing requires 20 charac
 });
 test('title counter stays aligned and rich content counts text instead of markup', () => {
     const v=mount({...draft,description:'<p><strong>Konten berita desa hari ini</strong></p>'});
-    let row=v.all().find(n=>n.props?.className?.includes?.('justify-between gap-3 text-xs'));
     assert.match(v.text(),/5\s*\/200/);
     assert.equal(v.input('short-title').props.maxLength,200);
     assert.equal(v.input('short-description').props.characterCount,27);
@@ -136,7 +135,6 @@ test('title counter stays aligned and rich content counts text instead of markup
     v.input('short-title').props.onChange({target:{value:' '.repeat(205)}});v.render();
     assert.equal(v.input('short-title').props.value.length,200);
     v.find('Simpan Draf').props.onClick();v.render();
-    row=v.all().find(n=>n.props?.className?.includes?.('justify-between gap-3 text-xs'));
     assert.match(v.text(),/Judul video wajib diisi/);
     assert.match(v.text(),/200\s*\/200/);
     assert.equal(v.requests.length,0);

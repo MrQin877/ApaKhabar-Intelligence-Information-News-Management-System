@@ -175,7 +175,7 @@ test('real Fit and Crop bake display matrices into upright pixels and keep audio
     $rotated = tempnam(sys_get_temp_dir(), 'fit-rotated-');
     try {
         (new Process([$binary, '-v', 'error', '-y', '-f', 'lavfi', '-i', "testsrc2=size={$width}x{$height}:rate=30", '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000', '-t', '0.4', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-f', 'mp4', $fixture]))->mustRun();
-        (new Process([$binary, '-v', 'error', '-y', '-display_rotation', (string) $rotation, '-i', $fixture, '-c', 'copy', '-f', 'mp4', $rotated]))->mustRun();
+        (new Process([$binary, '-v', 'error', '-y', '-i', $fixture, '-c', 'copy', '-metadata:s:v:0', 'rotate='.$rotation, '-f', 'mp4', $rotated]))->mustRun();
         $local = new LocalShortMedia;
         $this->app->instance(LocalShortMedia::class, $local);
         $file = new UploadedFile($rotated, 'rotated.mp4', 'video/mp4', null, true);

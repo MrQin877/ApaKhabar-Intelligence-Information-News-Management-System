@@ -16,9 +16,11 @@ function waitForVideo(
             window.clearTimeout(timer);
             video.removeEventListener(event, onReady);
             video.removeEventListener('error', onError);
-            ready
-                ? resolve()
-                : reject(new Error('Video frame timed out or failed'));
+            if (ready) {
+                resolve();
+            } else {
+                reject(new Error('Video frame timed out or failed'));
+            }
         };
         const onReady = () => finish(true);
         const onError = () => finish(false);

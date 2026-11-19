@@ -43,3 +43,5 @@ yarn-error.log
 
 /deployment/__pycache__/
 /deployment/tests/__pycache__/
+/deployment/cicd/**/__pycache__/
+/deployment/cicd/__pycache__/

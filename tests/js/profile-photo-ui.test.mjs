@@ -1,10 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import vm from 'node:vm';
 import { test } from 'node:test';
 import ts from 'typescript';
-const require = createRequire(import.meta.url);
 const compile = path => ts.transpileModule(readFileSync(new URL(path, import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
 const lib = {};
 vm.runInNewContext(compile('../../resources/js/lib/profile-photo.ts'), { exports: lib, Error });

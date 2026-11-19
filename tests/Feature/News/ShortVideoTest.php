@@ -127,10 +127,10 @@ test('local edited drafts survive reload and website publishing never uploads to
     $this->mock(CloudinaryVideoService::class)->shouldNotReceive('upload');
     $this->postJson('/admin/short-videos/'.$video->id, ['title' => 'Local edit', 'description' => 'Persisted content for publishing', 'frame_offset' => 0, 'cover_mode' => 'keep'])->assertOk();
     $this->get('/admin/short-videos/create?draft='.$video->id)->assertInertia(fn (Assert $page) => $page
-        ->where('draft.video_url', Storage::disk('public')->url($path))
+        ->where('draft.video_url', url('/storage/'.$path))
         ->where('draft.metadata.video_crop.start', 1));
     shortPublish($this, $video->fresh(), ['website'])->assertOk();
-    expect($video->fresh()->video_url)->toBe(Storage::disk('public')->url($path));
+    expect($video->fresh()->video_url)->toBe(url('/storage/'.$path));
     Storage::disk('public')->assertExists($path);
 });
 
@@ -152,7 +152,7 @@ test('each social destination receives the final local edit through one reusable
     shortPublish($this, $video, $platforms)->assertOk();
     shortPublish($this, $video->fresh(), $platforms)->assertOk();
     expect($video->fresh()->metadata['social_asset']['url'])->toBe($socialUrl);
-    expect($video->fresh()->video_url)->toBe(Storage::disk('public')->url($path));
+    expect($video->fresh()->video_url)->toBe(url('/storage/'.$path));
     Http::fake(['*/123/media' => Http::response(['id' => '456']), '*/123/video_reels' => Http::response(['video_id' => '567']),
         'https://rupload.facebook.com/*' => Http::response(['success' => true])]);
     foreach (array_diff($platforms, ['website']) as $platform) {
@@ -883,10 +883,10 @@ test('gallery covers fit locally, preserve EXIF original and restore crop settin
     unset($body['cover']);
     $body['cover_mode'] = 'keep';
     $body['cover_crop'] = ['mode' => 'crop', 'x' => '0.2', 'y' => '0.8', 'zoom' => '2'];
-    $this->postJson('/admin/short-videos/'.$video->id, $body)->assertOk()->assertJsonPath('video.metadata.cover_original', $original);
+    $this->postJson('/admin/short-videos/'.$video->id, $body)->assertOk()->assertJsonPath('video.metadata.cover_original', url($original));
     $url = $video->fresh()->thumbnail_url;
     $this->postJson('/admin/short-videos/'.$video->id, $body)->assertOk()->assertJsonPath('video.thumbnail_url', $url);
-    $this->get('/admin/short-videos/create?draft='.$video->id)->assertInertia(fn (Assert $page) => $page->where('draft.metadata.cover_crop.zoom', 2)->where('draft.metadata.cover_original', $original));
+    $this->get('/admin/short-videos/create?draft='.$video->id)->assertInertia(fn (Assert $page) => $page->where('draft.metadata.cover_crop.zoom', 2)->where('draft.metadata.cover_original', url($original)));
     $this->postJson('/admin/short-videos/'.$video->id, [...$body, 'cover_mode' => 'frame'])->assertOk();
     $this->postJson('/admin/short-videos/'.$video->id, [...$body, 'cover_mode' => 'photo'])->assertOk()->assertJsonPath('video.metadata.cover_source', 'photo');
     Storage::disk('public')->assertExists($local->pathFromUrl($original));

@@ -1,8 +1,9 @@
 name: tests
 
 on:
+  workflow_call:
   push:
-    branches: [develop, main, master, workos]
+    branches: [develop, master, workos]
   pull_request:
     branches: [develop, main, master, workos]
 
@@ -15,10 +16,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Setup PHP
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@d52fc211a0436f8839a587b3b5b8efddab4744ea # v2
         with:
           php-version: ${{ matrix.php-version }}
           tools: composer:v2
@@ -26,7 +27,7 @@ jobs:
           coverage: none
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
 
@@ -49,3 +50,6 @@ jobs:
 
       - name: Tests
         run: ./vendor/bin/pest
+
+      - name: Deployment tooling tests
+        run: python3 -m unittest discover -s deployment/cicd/tests -v
