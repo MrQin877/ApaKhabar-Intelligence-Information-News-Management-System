@@ -130,6 +130,7 @@ const sourceOptions = [
 ];
 const moderationLabels: Record<string, string> = {
     submitted: 'Diajukan',
+    manual_moderation: 'Diterbitkan; moderasi oleh admin',
     pending_review: 'Menunggu peninjauan',
     published: 'Diterbitkan',
     hidden: 'Disembunyikan',
