@@ -6,6 +6,39 @@ use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
 
+test('Azure reset emails return to an explicitly allowed Expo Go session', function () {
+    Notification::fake();
+    app()->instance('env', 'production');
+    $destination = 'exp://192.168.68.59:8081/--/reset-password';
+    config(['app.url' => 'https://apakhabar.me',
+        'services.mobile.password_reset_expo_return_urls' => [$destination]]);
+    $user = User::factory()->create();
+    $this->postJson('/api/forgot-password', ['email' => $user->email, 'return_url' => $destination])->assertOk();
+    $url = Notification::sent($user, MobileResetPassword::class)->sole()->toMail($user)->actionUrl;
+    expect($url)->toStartWith('https://apakhabar.me/mobile/reset-password?');
+    parse_str(parse_url($url, PHP_URL_QUERY), $parameters);
+    $this->get($url)->assertRedirect($destination.'?'.http_build_query([
+        'token' => $parameters['token'], 'email' => $user->email,
+    ], '', '&', PHP_QUERY_RFC3986));
+    $this->getJson(str_replace(rawurlencode($destination), rawurlencode('exp://other:8081/--/reset-password'), $url))
+        ->assertForbidden();
+    $this->postJson('/api/reset-password', ['token' => $parameters['token'], 'email' => $user->email,
+        'password' => 'NewPassword123!', 'password_confirmation' => 'NewPassword123!'])->assertOk();
+    $this->postJson('/api/login', ['email' => $user->email, 'password' => 'NewPassword123!'])->assertOk();
+});
+
+test('production Expo reset allowlist requires the exact destination', function (string $destination) {
+    Notification::fake();
+    app()->instance('env', 'production');
+    config(['services.mobile.password_reset_expo_return_urls' => ['exp://192.168.68.59:8081/--/reset-password']]);
+    $user = User::factory()->create();
+    $this->postJson('/api/forgot-password', ['email' => $user->email, 'return_url' => $destination])
+        ->assertUnprocessable()->assertJsonValidationErrors('return_url');
+    Notification::assertNothingSent();
+})->with(['exp://192.168.68.60:8081/--/reset-password', 'exp://192.168.68.59:8082/--/reset-password',
+    'exp://192.168.68.59:8081/--/reset-password?extra=value',
+    'exp://user@192.168.68.59:8081/--/reset-password', 'https://192.168.68.59:8081/--/reset-password']);
+
 test('mobile reset link uses the configured destination and preserves encoded parameters', function (string $destination) {
     config(['services.mobile.password_reset_return_url' => $destination]);
     $parameters = ['token' => 'test-reset-token', 'email' => 'person+mobile@example.com'];
