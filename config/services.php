@@ -28,6 +28,7 @@ return [
 
     'mobile' => [
         'password_reset_return_url' => env('MOBILE_PASSWORD_RESET_RETURN_URL', 'apakhabarmobileapp:///reset-password'),
+        'password_reset_expo_return_urls' => array_values(array_filter(array_map('trim', explode(',', env('MOBILE_PASSWORD_RESET_EXPO_RETURN_URLS', ''))))),
         'verification_return_url' => env('MOBILE_VERIFICATION_RETURN_URL', 'apakhabarmobileapp:///verify-email'),
     ],
 

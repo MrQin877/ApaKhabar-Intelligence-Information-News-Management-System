@@ -216,12 +216,6 @@ export default function NewsEngagement({
         }
     }
     async function share() {
-        if (!authenticated) {
-            setPrompt(true);
-
-            return;
-        }
-
         setSharing(true);
         setMessage(
             await copyArticleLink(

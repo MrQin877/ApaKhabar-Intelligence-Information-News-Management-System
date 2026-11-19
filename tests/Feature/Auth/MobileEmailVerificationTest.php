@@ -7,6 +7,45 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\URL;
 
+test('cloud verification returns to the requesting Expo Go session with a signed destination', function () {
+    Notification::fake();
+    $user = User::factory()->unverified()->create();
+    $destination = 'exp://192.168.68.59:8081/--/verify-email';
+    $this->postJson('/api/email/verification-notification', ['return_url' => $destination], [
+        'Authorization' => 'Bearer '.$user->createToken('test')->plainTextToken,
+    ])->assertOk();
+    Notification::assertSentTo($user, MobileVerifyEmail::class, function ($notification) use ($user, $destination) {
+        $url = $notification->toMail($user)->actionUrl;
+        $this->get($url)->assertOk()->assertSee('href="'.$destination.'"', false);
+        $this->get(str_replace(rawurlencode($destination), rawurlencode('exp://other:8081/--/verify-email'), $url))
+            ->assertForbidden()->assertDontSee('href="exp://other', false);
+
+        return true;
+    });
+});
+
+test('verification return URLs reject web redirects credentials and unexpected routes', function (string $destination) {
+    $user = User::factory()->unverified()->create();
+    Notification::fake();
+    $this->postJson('/api/email/verification-notification', ['return_url' => $destination], [
+        'Authorization' => 'Bearer '.$user->createToken('test')->plainTextToken,
+    ])->assertUnprocessable()->assertJsonValidationErrors('return_url');
+    Notification::assertNothingSent();
+})->with(['https://untrusted.example/verify-email', 'javascript:alert(1)',
+    'exp://user:password@host/--/verify-email', 'exp://host/--/reset-password',
+    'exp://host/--/verify-email?token=secret']);
+
+test('registration includes the requesting app destination in its first verification email', function () {
+    Notification::fake();
+    $destination = 'exp://192.168.68.59:8081/--/verify-email';
+    $this->postJson('/api/register', [
+        'name' => 'Mobile User', 'email' => 'return@example.com', 'password' => 'Password123!',
+        'date_of_birth' => '1990-01-01', 'citizenship' => 'wni', 'return_url' => $destination,
+    ])->assertCreated();
+    Notification::assertSentTo(User::whereHas('emailRecord', fn ($query) => $query->where('email', 'return@example.com'))->first(),
+        MobileVerifyEmail::class, fn ($notification) => $notification->returnUrl === $destination);
+});
+
 test('mobile profile save and resend use the saved email even with a verified phone', function () {
     Notification::fake();
     $user = User::factory()->create();
