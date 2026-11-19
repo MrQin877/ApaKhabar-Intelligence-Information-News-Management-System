@@ -53,6 +53,7 @@ class AuthController extends Controller
             'email' => ['nullable', 'required_without:phone', 'email', 'max:255', 'unique:emails,email'],
             'phone' => ['nullable', 'required_without:email', 'string', 'regex:/^\+[1-9]\d{1,14}$/', 'unique:phones,phone'],
             'password' => ['required', 'string', 'min:8'],
+            'return_url' => ['nullable', 'string', 'max:2048'],
         ]);
 
         $result = $this->authService->register(
@@ -61,6 +62,7 @@ class AuthController extends Controller
             $request->input('phone'),
             $request->password,
             $request->only(['date_of_birth', 'citizenship', 'gender', 'ethnicity']),
+            app(\App\Services\Auth\MobileVerificationLink::class)->destination($request->input('return_url')),
         );
 
         return response()->json($result, 201);

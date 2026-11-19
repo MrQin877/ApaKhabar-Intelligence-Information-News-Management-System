@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Notifications\MobileVerifyEmail;
+use App\Services\Auth\MobileVerificationLink;
 use Illuminate\Auth\Events\Verified;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -13,6 +14,8 @@ class MobileEmailVerificationController extends Controller
 {
     public function send(Request $request)
     {
+        $request->validate(['return_url' => ['nullable', 'string', 'max:2048']]);
+        $destination = app(MobileVerificationLink::class)->destination($request->input('return_url'));
         $user = $request->user();
         if (! $user->email) {
             return response()->json(['message' => 'Simpan alamat e-mail di profil terlebih dahulu.'], 422);
@@ -21,7 +24,7 @@ class MobileEmailVerificationController extends Controller
             return response()->json(['status' => 'already-verified', 'email' => $user->email]);
         }
 
-        $user->notify(new MobileVerifyEmail);
+        $user->notify(new MobileVerifyEmail($destination));
 
         return response()->json(['status' => 'verification-link-sent', 'email' => $user->email]);
     }
@@ -29,7 +32,9 @@ class MobileEmailVerificationController extends Controller
     public function verify(Request $request, string $id, string $hash)
     {
         $valid = false;
+        $appUrl = config('services.mobile.verification_return_url');
         if ($request->hasValidSignature()) {
+            $appUrl = app(MobileVerificationLink::class)->destination($request->query('return_url'));
             $valid = DB::transaction(function () use ($id, $hash) {
                 $user = User::find($id);
                 $email = $user?->emailRecord()->lockForUpdate()->first();
@@ -47,7 +52,7 @@ class MobileEmailVerificationController extends Controller
 
         return response()->view('auth.mobile-email-verification', [
             'verified' => $valid,
-            'appUrl' => config('services.mobile.verification_return_url'),
+            'appUrl' => $appUrl,
         ], $valid ? 200 : 403)->header('Referrer-Policy', 'no-referrer')
             ->header('Cache-Control', 'no-store');
     }

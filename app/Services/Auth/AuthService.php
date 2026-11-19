@@ -41,7 +41,7 @@ class AuthService
         ];
     }
 
-    public function register(string $name, ?string $email, ?string $phone, string $password, array $demographics = []): array
+    public function register(string $name, ?string $email, ?string $phone, string $password, array $demographics = [], ?string $verificationReturnUrl = null): array
     {
         if (empty($email) && empty($phone)) {
             throw new \InvalidArgumentException('Either email or phone is required.');
@@ -76,7 +76,7 @@ class AuthService
         });
 
         if ($user->email) {
-            $user->notify(new MobileVerifyEmail);
+            $user->notify(new MobileVerifyEmail($verificationReturnUrl));
         }
 
         return [
