@@ -170,6 +170,28 @@ test('user report and moderator flag enter the same admin queue with distinct co
     expect($root->fresh()->status)->toBe('published')->and(DB::table('short_video_comment_history')->where('comment_id', $root->id)->count())->toBe(2);
 });
 
+test('mobile villager report uses the video API and preserves its reason in moderation', function () {
+    $video = engagedShort();
+    $author = shortActor();
+    $reporter = shortActor();
+    $comment = ShortVideoComment::create(['short_video_id' => $video->id,
+        'user_id' => $author->getKey(), 'content' => 'Komentar video', 'status' => 'published',
+        'submission_hash' => hash('sha256', 'mobile-report')]);
+    $url = '/api/shorts/'.$video->id.'/comments/'.$comment->id.'/report';
+    $this->postJson($url, ['reason' => 'Komentar berisi penghinaan.'])->assertUnauthorized();
+    $headers = ['Authorization' => 'Bearer '.$reporter->createToken('test')->plainTextToken];
+    $this->postJson($url, ['reason' => 'Komentar berisi penghinaan.'], $headers)->assertOk();
+    $this->assertDatabaseHas('short_video_comment_reports', ['comment_id' => $comment->id,
+        'user_id' => $reporter->getKey(), 'category' => 'Lainnya', 'explanation' => 'Komentar berisi penghinaan.']);
+    expect(DB::table('comment_reports')->count())->toBe(0);
+    $this->actingAs(shortActor('admin'))->get('/admin/comments?content_type=shorts&source=reported')
+        ->assertInertia(fn (Assert $page) => $page->where('counts.reported', 1)
+            ->where('comments.data.0.content_type', 'shorts')
+            ->where('comments.data.0.reports.0.reporter_name', $reporter->name)
+            ->where('comments.data.0.reports.0.explanation', 'Komentar berisi penghinaan.')
+            ->missing('comments.data.0.ai_flagged')->missing('counts.ai'));
+});
+
 test('admin flag leaves a published video comment visible and allow resolves the flag', function () {
     $video = engagedShort();
     $reader = shortActor();

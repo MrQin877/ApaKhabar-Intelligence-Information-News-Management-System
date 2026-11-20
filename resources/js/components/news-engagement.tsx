@@ -117,6 +117,7 @@ export default function NewsEngagement({
     const submission = useRef(false);
     const likeSubmission = useRef(false);
     const canonical = `/news/${news.id}`;
+    const reportComment = comments.find((comment) => comment.id === reportId);
 
     useEffect(() => {
         let stopped = false;
@@ -833,6 +834,16 @@ export default function NewsEngagement({
                     <DialogDescription>
                         Jelaskan mengapa komentar ini perlu ditinjau.
                     </DialogDescription>
+                    {reportComment && (
+                        <div className="space-y-1 rounded-lg border p-3 text-sm">
+                            <p className="text-muted-foreground">
+                                {reportComment.author}
+                            </p>
+                            <p className="break-words whitespace-pre-wrap">
+                                {reportComment.content}
+                            </p>
+                        </div>
+                    )}
                     <form
                         className="space-y-4"
                         onSubmit={(event) => {
@@ -860,7 +871,7 @@ export default function NewsEngagement({
                             </select>
                         </label>
                         <label className="block space-y-1 text-sm">
-                            <span>Keterangan tambahan (opsional)</span>
+                            <span>Penjelasan (opsional)</span>
                             <textarea
                                 maxLength={450}
                                 rows={3}

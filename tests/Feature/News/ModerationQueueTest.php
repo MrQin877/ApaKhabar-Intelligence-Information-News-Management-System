@@ -42,12 +42,37 @@ test('pending queue excludes ordinary published comments and deduplicates multip
             DB::table('comment_reports')->insert(['comment_id' => $comment->getKey(), 'user_id' => $user->getKey(), 'category' => 'Spam', 'created_at' => now()]);
         }
     }
-    $this->get('/admin/comments')->assertInertia(fn (Assert $page) => $page->has('comments.data', 3)->where('counts.pending', 3)->where('counts.ai', 2)->where('counts.reported', 2)->where('counts.admin', 1));
-    foreach (['ai' => 2, 'reported' => 2, 'admin' => 1] as $source => $count) {
+    $this->get('/admin/comments')->assertInertia(fn (Assert $page) => $page->has('comments.data', 3)->where('counts.pending', 3)->missing('counts.ai')->missing('comments.data.0.ai_flagged')->where('counts.reported', 2)->where('counts.admin', 1));
+    foreach (['reported' => 2, 'admin' => 1] as $source => $count) {
         $this->get('/admin/comments?source='.$source)->assertInertia(fn (Assert $page) => $page->has('comments.data', $count));
     }
     $this->get('/admin/comments?tab=history')->assertInertia(fn (Assert $page) => $page->has('comments.data', 0));
+    $this->getJson('/admin/comments?source=ai')->assertUnprocessable();
 });
+
+test('villager report reaches moderation with identity reason and resolution history', function (string $channel) {
+    $author = User::factory()->create(['name' => 'Warga Penulis']);
+    $comment = queueComment($this, ['status' => 'published', 'ai_flagged' => null, 'userID' => $author->getKey(), 'guest_name' => null]);
+    $reporter = User::factory()->create(['name' => 'Warga Pelapor']);
+    $this->actingAs($reporter)->postJson(($channel === 'mobile' ? '/api' : '').'/comments/'.$comment->getKey().'/report', [
+        'category' => 'Spam', 'details' => 'Pesan promosi berulang.',
+    ], $channel === 'mobile' ? ['Authorization' => 'Bearer '.$reporter->createToken('test')->plainTextToken] : [])->assertOk();
+    $this->actingAs($this->admin)->get('/admin/comments?source=reported')
+        ->assertInertia(fn (Assert $page) => $page->has('comments.data', 1)
+            ->where('counts.reported', 1)->where('comments.data.0.reports.0.reporter_name', 'Warga Pelapor')
+            ->where('comments.data.0.user.name', 'Warga Penulis')
+            ->where('comments.data.0.reports.0.category', 'Spam')
+            ->where('comments.data.0.reports.0.explanation', 'Pesan promosi berulang.')
+            ->where('comments.data.0.reports.0.resolved_at', null));
+    $this->postJson('/admin/comments/'.$comment->getKey().'/decision', [
+        'action' => 'allow', 'expected_revision' => 0,
+    ])->assertOk();
+    $this->get('/admin/comments?source=reported')->assertInertia(fn (Assert $page) => $page->has('comments.data', 0));
+    $this->get('/admin/comments?tab=history&source=reported')
+        ->assertInertia(fn (Assert $page) => $page->has('comments.data', 1)
+            ->where('comments.data.0.reports.0.reporter_name', 'Warga Pelapor')
+            ->where('comments.data.0.reports.0.resolved_at', fn ($value) => is_string($value)));
+})->with(['web', 'mobile']);
 
 test('approving reported comments keeps them visible resolves reports and rejects duplicate decisions', function () {
     $comment = queueComment($this, ['status' => 'published']);

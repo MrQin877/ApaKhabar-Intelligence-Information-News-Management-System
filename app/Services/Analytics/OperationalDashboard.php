@@ -20,7 +20,7 @@ class OperationalDashboard
         $end = CarbonImmutable::parse($to, $zone)->endOfDay()->timezone(config('app.timezone'));
         $today = CarbonImmutable::now($zone)->startOfDay()->timezone(config('app.timezone'));
         $pending = Comment::awaitingReview();
-        $flagged = (clone $pending)->where(fn ($q) => $q->where('ai_flagged', true)->orWhereIn('commentID', DB::table('comment_reports')->whereNull('resolved_at')->select('comment_id'))->orWhereIn('commentID', DB::table('comment_flags')->whereNull('resolved_at')->select('comment_id')))->count();
+        $flagged = (clone $pending)->where(fn ($q) => $q->whereIn('commentID', DB::table('comment_reports')->whereNull('resolved_at')->select('comment_id'))->orWhereIn('commentID', DB::table('comment_flags')->whereNull('resolved_at')->select('comment_id')))->count();
         $history = DB::table('comment_moderation_history')->where('moderator_id', $actor->getKey());
         $trend = [];
         $events = (clone $history)->whereBetween('created_at', [CarbonImmutable::now($zone)->subDays(6)->startOfDay()->timezone(config('app.timezone')), $today->endOfDay()])->get();
@@ -31,8 +31,9 @@ class OperationalDashboard
         }
         $queue = (clone $pending)->with(['news:postID,title', 'author:userID,name'])
             ->withCount(['reporters as unresolved_reports_count' => fn ($q) => $q->whereNull('comment_reports.resolved_at')])
-            ->orderByDesc('ai_flagged')->orderByDesc('unresolved_reports_count')->oldest()->limit(5)->get()
-            ->map(fn ($c) => ['id' => $c->getKey(), 'title' => $c->news?->title ?? 'Berita tidak tersedia', 'author' => $c->author?->name ?? $c->guest_name ?? 'Tamu', 'registered' => $c->userID !== null, 'content' => $c->content, 'status' => $c->status, 'revision' => $c->moderation_revision, 'ai_flagged' => (bool) $c->ai_flagged, 'flags' => array_keys(array_filter($c->moderation_categories ?? [], fn ($v) => $v === true)), 'reports' => $c->unresolved_reports_count, 'created_at' => $c->created_at?->toIso8601String()])->all();
+            ->addSelect(['admin_flags_count' => DB::table('comment_flags')->selectRaw('COUNT(*)')->whereColumn('comment_id', 'comments.commentID')->whereNull('resolved_at')])
+            ->orderByDesc('unresolved_reports_count')->orderByDesc('admin_flags_count')->oldest()->limit(5)->get()
+            ->map(fn ($c) => ['id' => $c->getKey(), 'title' => $c->news?->title ?? 'Berita tidak tersedia', 'author' => $c->author?->name ?? $c->guest_name ?? 'Tamu', 'registered' => $c->userID !== null, 'content' => $c->content, 'status' => $c->status, 'revision' => $c->moderation_revision, 'admin_flags' => (int) $c->admin_flags_count, 'reports' => $c->unresolved_reports_count, 'created_at' => $c->created_at?->toIso8601String()])->all();
         $oldest = (clone $pending)->min('created_at');
         $result = ['moderation' => ['pending' => (clone $pending)->count(), 'flagged' => $flagged, 'oldest_minutes' => $oldest ? max(0, (int) CarbonImmutable::parse($oldest, config('app.timezone'))->diffInMinutes(now())) : null, 'oldest_at' => $oldest ? CarbonImmutable::parse($oldest, config('app.timezone'))->toIso8601String() : null, 'today' => (clone $history)->whereBetween('created_at', [$today, CarbonImmutable::now($zone)->endOfDay()->timezone(config('app.timezone'))])->count(), 'queue' => $queue, 'trend' => $trend], 'broadcast' => app(AnalyticsReport::class)->build(['broadcast'], $from, $to)[0]];
         // No demographic, Meta, draft, or post payload is computed for moderators.

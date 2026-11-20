@@ -1,7 +1,7 @@
 import { Flag, Heart, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { engagementPost } from '@/components/news-engagement';
 import { GuestCommentLimitDialog } from '@/components/guest-comment-limit-dialog';
+import { engagementPost } from '@/components/news-engagement';
 import type { PublicComment } from '@/components/news-engagement';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -80,6 +80,10 @@ export function ShortComments({
     const submission = useRef(false);
     const likeRequests = useRef(new Set<string>());
     const base = `/shorts/${shortId}`;
+    const reportComment = [
+        ...comments,
+        ...Object.values(replies).flatMap((page) => page.data),
+    ].find((comment) => comment.id === reportId);
 
     useEffect(() => {
         let live = true;
@@ -223,9 +227,11 @@ export function ShortComments({
                 onCountChange(count + 1);
             }
         } catch (caught) {
-            if ((caught as Error & { quotaReached?: boolean }).quotaReached)
-                setQuotaOpen(true);
-            else setError((caught as Error).message);
+            if ((caught as Error & { quotaReached?: boolean }).quotaReached) {
+setQuotaOpen(true);
+} else {
+setError((caught as Error).message);
+}
         } finally {
             submission.current = false;
             setBusy(false);
@@ -277,9 +283,11 @@ export function ShortComments({
             setReplyText('');
             setReplyTarget(null);
         } catch (caught) {
-            if ((caught as Error & { quotaReached?: boolean }).quotaReached)
-                setQuotaOpen(true);
-            else setError((caught as Error).message);
+            if ((caught as Error & { quotaReached?: boolean }).quotaReached) {
+setQuotaOpen(true);
+} else {
+setError((caught as Error).message);
+}
         } finally {
             submission.current = false;
             setBusy(false);
@@ -487,7 +495,11 @@ export function ShortComments({
                                 type="submit"
                                 size="sm"
                                 className={primary}
-                                disabled={busy || !replyText.trim() || (!authenticated && !challenge)}
+                                disabled={
+                                    busy ||
+                                    !replyText.trim() ||
+                                    (!authenticated && !challenge)
+                                }
                             >
                                 {busy ? 'Mengirim...' : 'Kirim Balasan'}
                             </Button>
@@ -704,6 +716,16 @@ export function ShortComments({
                     <DialogDescription>
                         Jelaskan mengapa komentar ini perlu ditinjau.
                     </DialogDescription>
+                    {reportComment && (
+                        <div className="space-y-1 rounded-lg border p-3 text-sm">
+                            <p className="text-muted-foreground">
+                                {reportComment.author}
+                            </p>
+                            <p className="break-words whitespace-pre-wrap">
+                                {reportComment.content}
+                            </p>
+                        </div>
+                    )}
                     <form
                         className="space-y-4"
                         onSubmit={(event) => {
@@ -743,7 +765,7 @@ export function ShortComments({
                             <span>
                                 {canFlag
                                     ? 'Penjelasan (opsional)'
-                                    : 'Keterangan tambahan (opsional)'}
+                                    : 'Penjelasan (opsional)'}
                             </span>
                             <Textarea
                                 maxLength={canFlag ? 1000 : 450}
