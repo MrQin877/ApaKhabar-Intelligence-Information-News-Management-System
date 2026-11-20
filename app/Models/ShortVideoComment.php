@@ -9,7 +9,7 @@ class ShortVideoComment extends Model
 {
     protected $guarded = ['id'];
 
-    protected $hidden = ['submission_hash', 'moderation_categories', 'moderation_reason'];
+    protected $hidden = ['ai_flagged', 'submission_hash', 'moderation_categories', 'moderation_reason'];
 
     protected $casts = ['ai_flagged' => 'boolean', 'moderation_categories' => 'array', 'moderation_revision' => 'integer'];
 

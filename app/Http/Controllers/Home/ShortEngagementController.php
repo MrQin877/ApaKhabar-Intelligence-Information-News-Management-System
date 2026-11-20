@@ -187,14 +187,15 @@ class ShortEngagementController extends Controller
         $video = $this->video($id);
         $item = $this->comment($video, $comment);
         $data = $request->validate([
-            'category' => ['required', Rule::in(config('engagement.report_categories'))],
+            'category' => ['required_without:reason', Rule::in(config('engagement.report_categories'))],
             'details' => 'nullable|string|max:450',
+            'reason' => 'required_without:category|string|max:500',
         ]);
         DB::table('short_video_comment_reports')->insertOrIgnore([
             'comment_id' => $item->id,
             'user_id' => $request->user()->getKey(),
-            'category' => $data['category'],
-            'explanation' => trim($data['details'] ?? '') ?: null,
+            'category' => $data['category'] ?? 'Lainnya',
+            'explanation' => trim($data['details'] ?? ($data['reason'] ?? '')) ?: null,
             'created_at' => now(),
         ]);
 

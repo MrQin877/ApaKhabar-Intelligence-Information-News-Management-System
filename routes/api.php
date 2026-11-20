@@ -88,6 +88,7 @@ Route::get('/shorts/{id}/comments', [\App\Http\Controllers\Home\ShortEngagementC
 Route::get('/shorts/{id}/comments/{comment}/replies', [\App\Http\Controllers\Home\ShortEngagementController::class, 'replies'])->whereNumber(['id', 'comment']);
 
 Route::post('/shorts/{id}/like', [\App\Http\Controllers\Home\ShortEngagementController::class, 'likeVideo'])->whereNumber('id')->middleware([ApiAuth::class, 'throttle:30,1']);
+Route::post('/shorts/{id}/comments/{comment}/report', [\App\Http\Controllers\Home\ShortEngagementController::class, 'report'])->whereNumber(['id', 'comment'])->middleware([ApiAuth::class, 'throttle:10,1']);
 Route::middleware([MobileCommentAccess::class, 'throttle:30,1'])->group(function () {
     Route::get('/shorts/{id}/view-token', [\App\Http\Controllers\Home\MobileShortController::class, 'token'])->whereNumber('id');
     Route::post('/shorts/{id}/view', [\App\Http\Controllers\Home\MobileShortController::class, 'view'])->whereNumber('id');

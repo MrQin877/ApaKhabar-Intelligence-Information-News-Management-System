@@ -68,7 +68,6 @@ class CommentFlagController extends Controller
         return [
             'id' => (string) $comment->getKey(), 'content' => $comment->content,
             'status' => $comment->status, 'revision' => $comment->moderation_revision,
-            'ai_flagged' => $comment->ai_flagged,
         ];
     }
 }

@@ -18,7 +18,7 @@ class CommentModerationController extends Controller
     {
         $data = $request->validate([
             'tab' => ['sometimes', Rule::in(['pending', 'history'])],
-            'source' => ['sometimes', Rule::in(['all', 'ai', 'reported', 'admin'])],
+            'source' => ['sometimes', Rule::in(['all', 'reported', 'admin'])],
             'decision' => ['sometimes', Rule::in(['all', 'approved', 'rejected', 'restored'])],
             'search' => 'nullable|string|max:200',
             'from' => 'nullable|date_format:Y-m-d',
@@ -59,9 +59,7 @@ class CommentModerationController extends Controller
             $query->whereIn('commentID', $decisions->select('comment_id'));
         }
         $applySource = function ($query, string $source, bool $pendingOnly) {
-            if ($source === 'ai') {
-                $query->where('ai_flagged', true);
-            } elseif ($source === 'reported') {
+            if ($source === 'reported') {
                 $reports = DB::table('comment_reports')->select('comment_id');
                 if ($pendingOnly) {
                     $reports->whereNull('resolved_at');
@@ -135,9 +133,6 @@ class CommentModerationController extends Controller
             'content' => $comment->content,
             'status' => $comment->status,
             'revision' => $comment->moderation_revision,
-            'ai_flagged' => $comment->ai_flagged,
-            'categories' => $comment->moderation_categories,
-            'reason' => $comment->moderation_reason,
             'created_at' => $comment->created_at?->toISOString() ?? (string) $comment->created_at,
             'reports' => $reports->get($comment->getKey(), []),
             'history' => $history->get($comment->getKey(), []),
@@ -146,7 +141,7 @@ class CommentModerationController extends Controller
         ]);
 
         $counts = ['pending' => (clone $pending)->count()];
-        foreach (['all', 'ai', 'reported', 'admin'] as $key) {
+        foreach (['all', 'reported', 'admin'] as $key) {
             $countQuery = clone $pending;
             $applySource($countQuery, $key, true);
             $counts[$key] = $countQuery->count();
@@ -196,9 +191,7 @@ class CommentModerationController extends Controller
             $query->whereIn('id', $decisions->select('comment_id'));
         }
         $applySource = function ($query, string $source, bool $pendingOnly) {
-            if ($source === 'ai') {
-                $query->where('ai_flagged', true);
-            } elseif ($source === 'reported') {
+            if ($source === 'reported') {
                 $reports = DB::table('short_video_comment_reports')->select('comment_id');
                 if ($pendingOnly) {
                     $reports->whereNull('resolved_at');
@@ -243,9 +236,6 @@ class CommentModerationController extends Controller
             'content' => $comment->content,
             'status' => $comment->status,
             'revision' => $comment->moderation_revision,
-            'ai_flagged' => $comment->ai_flagged,
-            'categories' => $comment->moderation_categories,
-            'reason' => $comment->moderation_reason,
             'created_at' => $comment->created_at?->toISOString(),
             'reports' => $reports->get($comment->id, []),
             'history' => $history->get($comment->id, []),
@@ -253,7 +243,7 @@ class CommentModerationController extends Controller
             'feedback' => [],
         ]);
         $counts = ['pending' => (clone $pending)->count()];
-        foreach (['all', 'ai', 'reported', 'admin'] as $key) {
+        foreach (['all', 'reported', 'admin'] as $key) {
             $countQuery = clone $pending;
             $applySource($countQuery, $key, true);
             $counts[$key] = $countQuery->count();
@@ -282,6 +272,7 @@ class CommentModerationController extends Controller
             ->whereIn('assessment_id', $assessments->pluck('id'))
             ->orderBy('id')->get()->groupBy('assessment_id');
         $assessments->through(function ($assessment) use ($feedback) {
+            unset($assessment->ai_flagged);
             $assessment->comment_snapshot = json_decode($assessment->comment_snapshot ?? 'null', true);
             $assessment->categories = json_decode($assessment->categories ?? 'null', true);
             $assessment->category_scores = json_decode($assessment->category_scores ?? 'null', true);

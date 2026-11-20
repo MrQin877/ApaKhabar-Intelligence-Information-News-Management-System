@@ -27,8 +27,7 @@ type QueueComment = {
     content: string;
     status: string;
     revision: number;
-    ai_flagged: boolean;
-    flags?: string[];
+    admin_flags: number;
     reports: number;
     created_at: string;
 };
@@ -391,7 +390,7 @@ export default function Dashboard({
                             note="Antrean saat ini, termasuk komentar dilaporkan."
                         />
                         <Metric
-                            label="Ditandai AI / dilaporkan"
+                            label="Ditandai admin / dilaporkan warga"
                             value={data.moderation.flagged}
                             note="Bagian dari antrean, bukan tambahan jumlah menunggu."
                         />
@@ -425,8 +424,8 @@ export default function Dashboard({
                                 Antrean prioritas
                             </CardTitle>
                             <p className="text-xs text-muted-foreground">
-                                Ditandai AI, jumlah laporan, lalu waktu terlama.
-                                Maksimal 5 komentar.
+                                Jumlah laporan warga, tanda admin, lalu waktu
+                                terlama. Maksimal 5 komentar.
                             </p>
                         </CardHeader>
                         <CardContent className="space-y-3">
@@ -454,33 +453,11 @@ export default function Dashboard({
                                             Pada: {c.title}
                                         </p>
                                         <div className="flex flex-wrap gap-2">
-                                            {c.ai_flagged && (
+                                            {c.admin_flags > 0 && (
                                                 <Badge variant="secondary">
-                                                    Ditandai AI
+                                                    {c.admin_flags} tanda admin
                                                 </Badge>
                                             )}
-                                            {c.flags?.map((flag) => (
-                                                <Badge
-                                                    variant="secondary"
-                                                    key={flag}
-                                                >
-                                                    {(
-                                                        {
-                                                            harassment:
-                                                                'Pelecehan',
-                                                            hate: 'Kebencian',
-                                                            violence:
-                                                                'Kekerasan',
-                                                            sexual: 'Seksual',
-                                                            'self-harm':
-                                                                'Menyakiti diri',
-                                                        } as Record<
-                                                            string,
-                                                            string
-                                                        >
-                                                    )[flag] ?? flag}
-                                                </Badge>
-                                            ))}
                                             {c.reports > 0 && (
                                                 <Badge variant="destructive">
                                                     {c.reports} laporan belum

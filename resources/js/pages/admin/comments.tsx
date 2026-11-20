@@ -9,7 +9,6 @@ import {
     MessageSquare,
     RotateCcw,
     Search,
-    ShieldAlert,
     X,
 } from 'lucide-react';
 import { useRef, useState } from 'react';
@@ -82,8 +81,6 @@ interface Entry {
     content: string;
     status: string;
     revision: number;
-    ai_flagged: boolean;
-    categories: Record<string, boolean> | null;
     reason: string | null;
     created_at: string;
     reports: {
@@ -124,8 +121,7 @@ interface Props {
 }
 const sourceOptions = [
     { value: 'all', label: 'Semua' },
-    { value: 'ai', label: 'Ditandai AI' },
-    { value: 'reported', label: 'Dilaporkan' },
+    { value: 'reported', label: 'Dilaporkan Warga' },
     { value: 'admin', label: 'Ditandai Admin' },
 ];
 const moderationLabels: Record<string, string> = {
@@ -136,12 +132,10 @@ const moderationLabels: Record<string, string> = {
     hidden: 'Disembunyikan',
     rejected: 'Ditolak',
     removed: 'Disembunyikan',
-    ai_flagged: 'Ditandai AI',
     moderation_unavailable: 'Layanan moderasi tidak tersedia',
     suspicious_promotion_or_link: 'Terdeteksi promosi atau tautan mencurigakan',
     checks_passed: 'Lolos pemeriksaan',
     promotional_link: 'Tautan promosi',
-    openai_service_unavailable: 'Layanan moderasi AI tidak tersedia',
     harassment: 'Pelecehan',
     profanity: 'Kata kasar / bahasa tidak pantas',
     threat: 'Ancaman / Intimidasi',
@@ -170,7 +164,7 @@ Object.assign(moderationLabels, {
     hate_speech: 'Ujaran kebencian',
     spam: 'Spam',
     other: 'Lainnya',
-    harmless_criticism: 'Kritik wajar / salah deteksi AI',
+    harmless_criticism: 'Kritik wajar',
 });
 function formatDate(value: string | null) {
     if (!value) {
@@ -208,19 +202,15 @@ function Initials({ comment }: { comment: Entry }) {
 function sources(comment: Entry) {
     const labels = [];
 
-    if (comment.ai_flagged) {
-        labels.push('Ditandai AI');
-    }
-
     if (comment.reports.length) {
-        labels.push('Dilaporkan');
+        labels.push('Dilaporkan Warga');
     }
 
     if (comment.flags.length) {
         labels.push('Ditandai Admin');
     }
 
-    return labels.length ? labels.join(' \u00b7 ') : 'Pemeriksaan otomatis';
+    return labels.length ? labels.join(' \u00b7 ') : 'Peninjauan moderator';
 }
 function decisionLabel(event?: History) {
     if (!event) {
@@ -238,6 +228,36 @@ function decisionLabel(event?: History) {
     return ['hidden', 'removed', 'rejected'].includes(event.to_status)
         ? 'Ditolak'
         : 'Disetujui';
+}
+function ReviewSignal({
+    category,
+    explanation,
+    name,
+    date,
+    resolved,
+}: {
+    category: string;
+    explanation?: string | null;
+    name: string;
+    date: string;
+    resolved: boolean;
+}) {
+    return (
+        <div className="space-y-2 rounded-lg border bg-muted/40 p-3 text-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="font-medium">{moderationLabel(category)}</p>
+                <Badge variant={resolved ? 'outline' : 'secondary'}>
+                    {resolved ? 'Selesai ditinjau' : 'Menunggu peninjauan'}
+                </Badge>
+            </div>
+            {explanation && (
+                <p className="break-words whitespace-pre-wrap">{explanation}</p>
+            )}
+            <p className="text-xs text-muted-foreground">
+                {name} &middot; {formatDate(date)}
+            </p>
+        </div>
+    );
 }
 function decisionNotes(event: History) {
     return (
@@ -802,9 +822,6 @@ function CommentDetails({
     >(null);
     const submitting = useRef(false);
     const latest = comment.history.find((event) => event.moderator_id !== null);
-    const categories = Object.entries(comment.categories ?? {})
-        .filter(([, active]) => active)
-        .map(([key]) => moderationLabel(key));
     async function decide(intent: 'approve' | 'reject' | 'restore') {
         if (submitting.current || busy) {
             return;
@@ -848,19 +865,19 @@ function CommentDetails({
                     ? `Koreksi admin oleh ${correction.administrator_name ?? 'Admin'}`
                     : event.moderator_id
                       ? `${decisionLabel(event)} oleh ${event.moderator_name ?? 'Moderator'}`
-                      : 'Pemeriksaan otomatis',
+                      : 'Komentar diajukan',
                 text: correction
                     ? `${moderationLabel(correction.category)}${correction.explanation ? ': ' + correction.explanation : ''}`
                     : event.moderator_id
                       ? decisionNotes(event)
-                      : moderationLabel(event.reason ?? 'submitted'),
+                      : 'Komentar diterima untuk moderasi.',
             };
         }),
         ...comment.reports.map((report) => ({
             key: `report-${report.id}`,
             date: report.created_at,
-            title: `Dilaporkan oleh ${report.reporter_name ?? 'Pengguna'}`,
-            text: `${report.category ?? 'Lainnya'}${report.explanation ? ': ' + report.explanation : ''}`,
+            title: `Dilaporkan warga: ${report.reporter_name ?? 'Warga'}`,
+            text: `${moderationLabel(report.category ?? 'Lainnya')}${report.explanation || report.reason ? ': ' + (report.explanation || report.reason) : ''}`,
         })),
         ...comment.flags.map((flag) => ({
             key: `flag-${flag.id}`,
@@ -952,23 +969,6 @@ function CommentDetails({
                             <dt className="text-muted-foreground">Sumber</dt>
                             <dd>{sources(comment)}</dd>
                         </div>
-                        {categories.length > 0 && (
-                            <div className="space-y-1">
-                                <dt className="flex items-center gap-2 text-muted-foreground">
-                                    <ShieldAlert className="size-4" />
-                                    Kategori AI
-                                </dt>
-                                <dd>{categories.join(', ')}</dd>
-                            </div>
-                        )}
-                        {comment.reason && (
-                            <div className="space-y-1">
-                                <dt className="text-muted-foreground">
-                                    Alasan pemeriksaan
-                                </dt>
-                                <dd>{moderationLabel(comment.reason)}</dd>
-                            </div>
-                        )}
                         {!pending && latest && (
                             <>
                                 <div className="space-y-1">
@@ -995,55 +995,62 @@ function CommentDetails({
                         )}
                     </dl>
                 </div>
-                {pending &&
-                    comment.reports.some((report) => !report.resolved_at) && (
-                        <div className="space-y-2">
-                            <h3 className="flex items-center gap-2 text-sm font-medium">
-                                <Flag className="size-4" />
-                                Laporan pengguna
-                            </h3>
-                            {comment.reports
-                                .filter((report) => !report.resolved_at)
-                                .map((report) => (
-                                    <p
-                                        key={report.id}
-                                        className="rounded-lg bg-muted/40 p-3 text-sm break-words"
-                                    >
-                                        {report.category ?? 'Lainnya'}
-                                        {report.explanation
-                                            ? `: ${report.explanation}`
-                                            : ''}{' '}
-                                        · {report.reporter_name ?? 'Pengguna'} ·{' '}
-                                        {formatDate(report.created_at)}
-                                    </p>
-                                ))}
-                        </div>
-                    )}
-                {pending && comment.flags.some((flag) => !flag.resolved_at) && (
+                {comment.reports.some(
+                    (report) => !pending || !report.resolved_at,
+                ) && (
                     <div className="space-y-2">
-                        <h3 className="text-sm font-medium">
-                            Tanda admin / moderator
+                        <h3 className="flex items-center gap-2 text-sm font-medium">
+                            <Flag className="size-4" /> Laporan warga{' '}
+                            <Badge variant="outline">
+                                {
+                                    comment.reports.filter(
+                                        (report) =>
+                                            !pending || !report.resolved_at,
+                                    ).length
+                                }
+                            </Badge>
+                        </h3>
+                        {comment.reports
+                            .filter((report) => !pending || !report.resolved_at)
+                            .map((report) => (
+                                <ReviewSignal
+                                    key={report.id}
+                                    category={report.category ?? 'Lainnya'}
+                                    explanation={
+                                        report.explanation || report.reason
+                                    }
+                                    name={report.reporter_name ?? 'Warga'}
+                                    date={report.created_at}
+                                    resolved={!!report.resolved_at}
+                                />
+                            ))}
+                    </div>
+                )}
+                {comment.flags.some(
+                    (flag) => !pending || !flag.resolved_at,
+                ) && (
+                    <div className="space-y-2">
+                        <h3 className="flex items-center gap-2 text-sm font-medium">
+                            <Flag className="size-4" /> Tanda admin / moderator{' '}
+                            <Badge variant="outline">
+                                {
+                                    comment.flags.filter(
+                                        (flag) => !pending || !flag.resolved_at,
+                                    ).length
+                                }
+                            </Badge>
                         </h3>
                         {comment.flags
-                            .filter((flag) => !flag.resolved_at)
-                            .map((item) => (
-                                <div
-                                    key={item.id}
-                                    className="rounded-lg bg-muted/40 p-3 text-sm"
-                                >
-                                    <p>{moderationLabel(item.category)}</p>
-                                    {item.explanation && (
-                                        <p className="mt-1 break-words whitespace-pre-wrap">
-                                            {item.explanation}
-                                        </p>
-                                    )}
-                                    <p className="mt-1 text-xs text-muted-foreground">
-                                        {item.moderator_name ?? 'Moderator'}{' '}
-                                        &middot; {formatDate(item.created_at)}{' '}
-                                        &middot; Status:{' '}
-                                        {moderationLabel(comment.status)}
-                                    </p>
-                                </div>
+                            .filter((flag) => !pending || !flag.resolved_at)
+                            .map((flag) => (
+                                <ReviewSignal
+                                    key={flag.id}
+                                    category={flag.category}
+                                    explanation={flag.explanation}
+                                    name={flag.moderator_name ?? 'Moderator'}
+                                    date={flag.created_at}
+                                    resolved={!!flag.resolved_at}
+                                />
                             ))}
                     </div>
                 )}
