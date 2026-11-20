@@ -56,11 +56,11 @@ Route::get('/short-media/{kind}/{file}', function (string $kind, string $file) {
 Route::get('/shorts/{id}', [ShortViewerController::class, 'show'])->whereNumber('id')->name('shorts.show');
 Route::get('/shorts/{id}/view-token', [ShortViewerController::class, 'token'])->whereNumber('id')->middleware('throttle:30,1');
 Route::post('/shorts/{id}/view', [ShortViewerController::class, 'view'])->whereNumber('id')->middleware('throttle:30,1');
-Route::get('/shorts/{id}/engagement', [ShortEngagementController::class, 'context'])->whereNumber('id')->middleware('throttle:30,1');
-Route::get('/shorts/{id}/comments', [ShortEngagementController::class, 'index'])->whereNumber('id')->middleware('throttle:60,1');
-Route::get('/shorts/{id}/comments/{comment}/replies', [ShortEngagementController::class, 'replies'])->whereNumber(['id', 'comment'])->middleware('throttle:60,1');
-Route::post('/shorts/{id}/comments', [ShortEngagementController::class, 'store'])->whereNumber('id')->middleware('throttle:5,1');
-Route::post('/shorts/{id}/comments/{comment}/replies', [ShortEngagementController::class, 'reply'])->whereNumber(['id', 'comment'])->middleware('throttle:5,1');
+Route::get('/shorts/{id}/engagement', [ShortEngagementController::class, 'context'])->whereNumber('id')->middleware('throttle:30,1,short-comment-context:');
+Route::get('/shorts/{id}/comments', [ShortEngagementController::class, 'index'])->whereNumber('id')->middleware('throttle:60,1,short-comments-read:');
+Route::get('/shorts/{id}/comments/{comment}/replies', [ShortEngagementController::class, 'replies'])->whereNumber(['id', 'comment'])->middleware('throttle:60,1,short-comments-read:');
+Route::post('/shorts/{id}/comments', [ShortEngagementController::class, 'store'])->whereNumber('id')->middleware('throttle:5,1,comment-submit:');
+Route::post('/shorts/{id}/comments/{comment}/replies', [ShortEngagementController::class, 'reply'])->whereNumber(['id', 'comment'])->middleware('throttle:5,1,comment-submit:');
 Route::middleware(['auth', 'throttle:30,1'])->group(function () {
     Route::post('/shorts/{id}/like', [ShortEngagementController::class, 'likeVideo'])->whereNumber('id');
     Route::post('/shorts/{id}/comments/{comment}/like', [ShortEngagementController::class, 'likeComment'])->whereNumber(['id', 'comment']);
@@ -72,10 +72,10 @@ Route::get('/news', [NewsController::class, 'index'])->name('news.index');
 
 Route::get('/news/{id}', [NewsController::class, 'show'])->name('news.show');
 
-Route::get('/news/{id}/engagement', [EngagementController::class, 'context'])->middleware('throttle:30,1');
+Route::get('/news/{id}/engagement', [EngagementController::class, 'context'])->middleware('throttle:30,1,news-engagement-context:');
 Route::post('/news/{id}/view', [EngagementController::class, 'view'])->middleware('throttle:30,1');
-Route::post('/news/{id}/comment', [CommentController::class, 'store'])->middleware('throttle:5,1')->name('news.comment');
-Route::post('/comments/{id}/replies', [CommentController::class, 'reply'])->middleware('throttle:5,1')->name('comments.reply');
+Route::post('/news/{id}/comment', [CommentController::class, 'store'])->middleware('throttle:5,1,comment-submit:')->name('news.comment');
+Route::post('/comments/{id}/replies', [CommentController::class, 'reply'])->middleware('throttle:5,1,comment-submit:')->name('comments.reply');
 Route::middleware(['auth', 'throttle:30,1'])->group(function () {
     Route::post('/news/{id}/like', [PostLikeController::class, 'store'])->name('news.like');
     Route::post('/comments/{id}/like', [CommentController::class, 'like'])->name('comments.like');

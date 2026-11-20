@@ -79,10 +79,10 @@ Route::post('/guest-comments/identity', [MobileGuestCommentController::class, 'i
 Route::middleware(MobileCommentAccess::class)->group(function () {
     Route::get('/news/{id}/comment-context', [MobileGuestCommentController::class, 'news'])->middleware('throttle:30,1,guest-context:');
     Route::get('/shorts/{id}/comment-context', [MobileGuestCommentController::class, 'short'])->whereNumber('id')->middleware('throttle:30,1,guest-context:');
-    Route::post('/news/{id}/comment', [CommentController::class, 'store'])->middleware('throttle:5,1');
-    Route::post('/comments/{id}/replies', [CommentController::class, 'reply'])->middleware('throttle:5,1');
-    Route::post('/shorts/{id}/comments', [\App\Http\Controllers\Home\ShortEngagementController::class, 'store'])->whereNumber('id')->middleware('throttle:5,1');
-    Route::post('/shorts/{id}/comments/{comment}/replies', [\App\Http\Controllers\Home\ShortEngagementController::class, 'reply'])->whereNumber(['id', 'comment'])->middleware('throttle:5,1');
+    Route::post('/news/{id}/comment', [CommentController::class, 'store'])->middleware('throttle:5,1,comment-submit:');
+    Route::post('/comments/{id}/replies', [CommentController::class, 'reply'])->middleware('throttle:5,1,comment-submit:');
+    Route::post('/shorts/{id}/comments', [\App\Http\Controllers\Home\ShortEngagementController::class, 'store'])->whereNumber('id')->middleware('throttle:5,1,comment-submit:');
+    Route::post('/shorts/{id}/comments/{comment}/replies', [\App\Http\Controllers\Home\ShortEngagementController::class, 'reply'])->whereNumber(['id', 'comment'])->middleware('throttle:5,1,comment-submit:');
 });
 Route::get('/shorts/{id}/comments', [\App\Http\Controllers\Home\ShortEngagementController::class, 'index'])->whereNumber('id');
 Route::get('/shorts/{id}/comments/{comment}/replies', [\App\Http\Controllers\Home\ShortEngagementController::class, 'replies'])->whereNumber(['id', 'comment']);

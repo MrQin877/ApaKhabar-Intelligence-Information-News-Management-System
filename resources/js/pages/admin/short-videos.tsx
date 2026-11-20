@@ -384,11 +384,13 @@ export function ShortVideos({
                             ? 'Judul maksimal 200 karakter.'
                             : descriptionLength < 20
                               ? 'Konten minimal 20 karakter untuk diterbitkan.'
-                              : !localFile &&
-                                  processingStatus === 'ready' &&
-                                  !current?.thumbnail_url
-                                ? 'Sampul video belum tersedia.'
-                                : '';
+                              : descriptionLength > 2000
+                                ? 'Konten maksimal 2.000 karakter.'
+                                : !localFile &&
+                                    processingStatus === 'ready' &&
+                                    !thumbnail
+                                  ? 'Sampul video belum tersedia.'
+                                  : '';
     const canPublish = !publishHint;
     function requireTitle(): boolean {
         if (title.trim()) return true;
@@ -1023,6 +1025,7 @@ export function ShortVideos({
         guard.current = true;
         setBusy(true);
         setSavingAction('publish');
+        setDialog(false);
         setError('');
         const pendingId = -Date.now();
         window.dispatchEvent(
@@ -1384,6 +1387,9 @@ export function ShortVideos({
                                                     }
                                                 }}
                                                 onLoadedData={(event) => {
+                                                    if (localFile) {
+                                                        setLocalVideoError(false);
+                                                    }
                                                     if (
                                                         !localFile ||
                                                         coverMode !== 'frame' ||
