@@ -56,10 +56,11 @@ class CommentFlagController extends Controller
                     'created_at' => now(),
                 ]);
             }
+            $item->update(['status' => 'pending_review']);
         });
 
         return response()->json([
-            'message' => 'Komentar ditandai untuk ditinjau.',
+            'message' => 'Komentar berhasil dikirim untuk ditinjau dan disembunyikan sementara.',
         ])->header('Cache-Control', 'private, no-store');
     }
 

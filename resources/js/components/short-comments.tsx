@@ -1,5 +1,7 @@
 import { Flag, Heart, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { FeedbackToast } from '@/components/feedback-toast';
+import type { Feedback } from '@/components/feedback-toast';
 import { GuestCommentLimitDialog } from '@/components/guest-comment-limit-dialog';
 import { engagementPost } from '@/components/news-engagement';
 import type { PublicComment } from '@/components/news-engagement';
@@ -77,6 +79,7 @@ export function ShortComments({
     const [category, setCategory] = useState('');
     const [explanation, setExplanation] = useState('');
     const [reported, setReported] = useState<string[]>([]);
+    const [feedback, setFeedback] = useState<Feedback | null>(null);
     const submission = useRef(false);
     const likeRequests = useRef(new Set<string>());
     const base = `/shorts/${shortId}`;
@@ -228,10 +231,10 @@ export function ShortComments({
             }
         } catch (caught) {
             if ((caught as Error & { quotaReached?: boolean }).quotaReached) {
-setQuotaOpen(true);
-} else {
-setError((caught as Error).message);
-}
+                setQuotaOpen(true);
+            } else {
+                setError((caught as Error).message);
+            }
         } finally {
             submission.current = false;
             setBusy(false);
@@ -284,10 +287,10 @@ setError((caught as Error).message);
             setReplyTarget(null);
         } catch (caught) {
             if ((caught as Error & { quotaReached?: boolean }).quotaReached) {
-setQuotaOpen(true);
-} else {
-setError((caught as Error).message);
-}
+                setQuotaOpen(true);
+            } else {
+                setError((caught as Error).message);
+            }
         } finally {
             submission.current = false;
             setBusy(false);
@@ -342,7 +345,27 @@ setError((caught as Error).message);
             setReportId(null);
             setCategory('');
             setExplanation('');
-            setNotice(result.message);
+            setNotice('');
+            setFeedback({ variant: 'success', message: result.message });
+            if (canFlag) {
+                setComments((items) =>
+                    items.filter((item) => item.id !== reportId),
+                );
+                setReplies((threads) =>
+                    Object.fromEntries(
+                        Object.entries(threads).map(([id, thread]) => [
+                            id,
+                            {
+                                ...thread,
+                                data: thread.data.filter(
+                                    (item) => item.id !== reportId,
+                                ),
+                            },
+                        ]),
+                    ),
+                );
+                setLoadAttempt((attempt) => attempt + 1);
+            }
         } catch (caught) {
             setError((caught as Error).message);
         } finally {
@@ -582,6 +605,11 @@ setError((caught as Error).message);
             aria-label="Komentar video pendek"
             className={`flex h-full min-h-0 flex-col overflow-hidden bg-card ${fullScreen ? 'w-full' : 'rounded-xl border'}`}
         >
+            <FeedbackToast
+                feedback={feedback}
+                onDismiss={() => setFeedback(null)}
+                duration={5000}
+            />
             <header
                 className={`flex shrink-0 items-center justify-between border-b px-4 py-3 ${fullScreen ? 'pt-[calc(0.75rem+env(safe-area-inset-top))]' : ''}`}
             >

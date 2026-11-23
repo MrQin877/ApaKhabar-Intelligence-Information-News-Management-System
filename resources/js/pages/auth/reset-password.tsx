@@ -1,5 +1,4 @@
-import { router } from '@inertiajs/react';
-import { Form, Head } from '@inertiajs/react';
+import { Head, router } from '@inertiajs/react';
 import type { FormEvent } from 'react';
 import { useRef, useState } from 'react';
 import InputError from '@/components/input-error';
@@ -10,6 +9,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import AuthLayout from '@/layouts/auth-layout';
+import { csrfPost } from '@/lib/csrf-request';
+import {
+    PasswordResetError,
+    readPasswordResetResponse,
+} from '@/lib/password-reset-response';
 import { phoneResetRequest, PhoneResetError } from '@/lib/phone-password-reset';
 import { update } from '@/routes/password';
 
@@ -28,11 +32,12 @@ export default function ResetPassword({
 }: Props) {
     const [busy, setBusy] = useState(false);
     const pending = useRef(false);
+    const [succeeded, setSucceeded] = useState(false);
     const [phoneErrors, setPhoneErrors] = useState<Record<string, string>>({});
-    async function submitPhone(event: FormEvent<HTMLFormElement>) {
+    async function submit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
 
-        if (pending.current || !challenge) {
+        if (pending.current) {
             return;
         }
 
@@ -42,39 +47,62 @@ export default function ResetPassword({
         setPhoneErrors({});
 
         try {
-            await phoneResetRequest('reset', {
-                challenge,
+            const payload = {
                 token,
+                email,
                 password: String(form.get('password') ?? ''),
                 password_confirmation: String(
                     form.get('password_confirmation') ?? '',
                 ),
-            });
-            router.visit('/login');
+            };
+
+            if (challenge) {
+                await phoneResetRequest('reset', { ...payload, challenge });
+            } else {
+                await readPasswordResetResponse(
+                    await csrfPost(update.url(), payload),
+                );
+            }
+
+            setSucceeded(true);
+            router.visit('/login', { replace: true });
         } catch (err) {
-            setPhoneErrors(
-                err instanceof PhoneResetError
-                    ? {
-                          general: err.message,
-                          ...Object.fromEntries(
-                              Object.entries(err.data.errors ?? {}).map(
-                                  ([key, messages]) => [key, messages[0]],
-                              ),
-                          ),
-                      }
-                    : {
-                          general:
-                              'Tidak dapat menghubungi pelayan. Sila cuba lagi.',
-                      },
-            );
-        } finally {
             pending.current = false;
             setBusy(false);
+            setPhoneErrors(
+                err instanceof PasswordResetError
+                    ? { general: err.message, ...err.errors }
+                    : err instanceof PhoneResetError
+                      ? {
+                            general: err.message,
+                            ...Object.fromEntries(
+                                Object.entries(err.data.errors ?? {}).map(
+                                    ([key, messages]) => [key, messages[0]],
+                                ),
+                            ),
+                        }
+                      : {
+                            general:
+                                err instanceof Error
+                                    ? err.message
+                                    : 'Status perubahan kata sandi belum dapat dipastikan. Coba masuk sebelum mengirim ulang.',
+                        },
+            );
         }
     }
 
     const fields = (processing: boolean, errors: Record<string, string>) => (
-        <div className="grid gap-6">
+        <div className="grid gap-6" aria-busy={processing}>
+            {processing && (
+                <p role="status" className="text-sm text-muted-foreground">
+                    {succeeded
+                        ? 'Kata sandi berhasil diubah. Mengarahkan ke halaman masuk…'
+                        : 'Sedang mengubah kata sandi. Mohon tunggu dan jangan kirim ulang.'}
+                </p>
+            )}
+            {succeeded && (
+                <TextLink href="/login">Lanjut ke halaman masuk</TextLink>
+            )}
             <InputError message={errors.general} />
             <div className="grid gap-2">
                 <Label htmlFor="email">
@@ -100,6 +128,8 @@ export default function ResetPassword({
                     autoComplete="new-password"
                     className="mt-1 block w-full"
                     autoFocus
+                    required
+                    disabled={processing}
                     placeholder="Kata laluan"
                 />
                 <InputError message={errors.password} />
@@ -113,6 +143,8 @@ export default function ResetPassword({
                     id="password_confirmation"
                     name="password_confirmation"
                     autoComplete="new-password"
+                    required
+                    disabled={processing}
                     className="mt-1 block w-full"
                     placeholder="Sahkan kata laluan"
                 />
@@ -129,7 +161,11 @@ export default function ResetPassword({
                 data-test="reset-password-button"
             >
                 {processing && <Spinner />}
-                Tetapkan semula kata laluan
+                {succeeded
+                    ? 'Kata sandi berhasil diubah'
+                    : processing
+                      ? 'Memproses…'
+                      : 'Tetapkan semula kata laluan'}
             </Button>
         </div>
     );
@@ -141,17 +177,7 @@ export default function ResetPassword({
         >
             <Head title="Tetapkan semula kata laluan" />
 
-            {challenge ? (
-                <form onSubmit={submitPhone}>{fields(busy, phoneErrors)}</form>
-            ) : (
-                <Form
-                    {...update.form()}
-                    transform={(data) => ({ ...data, token, email })}
-                    resetOnSuccess={['password', 'password_confirmation']}
-                >
-                    {({ processing, errors }) => fields(processing, errors)}
-                </Form>
-            )}
+            <form onSubmit={submit}>{fields(busy, phoneErrors)}</form>
             {challenge && (
                 <TextLink
                     href="/forgot-password"

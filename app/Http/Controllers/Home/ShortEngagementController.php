@@ -213,7 +213,7 @@ class ShortEngagementController extends Controller
             'explanation' => 'nullable|string|max:1000',
         ]);
         DB::transaction(function () use ($item, $request, $data) {
-            ShortVideoComment::whereKey($item->id)->lockForUpdate()->firstOrFail();
+            $current = ShortVideoComment::whereKey($item->id)->lockForUpdate()->firstOrFail();
             $exists = DB::table('short_video_comment_flags')->where('comment_id', $item->id)
                 ->where('moderator_id', $request->user()->getKey())->whereNull('resolved_at')->exists();
             if (! $exists) {
@@ -225,8 +225,9 @@ class ShortEngagementController extends Controller
                     'created_at' => now(),
                 ]);
             }
+            $current->update(['status' => 'pending_review']);
         });
 
-        return response()->json(['message' => 'Komentar ditandai untuk ditinjau.']);
+        return response()->json(['message' => 'Komentar berhasil dikirim untuk ditinjau dan disembunyikan sementara.']);
     }
 }

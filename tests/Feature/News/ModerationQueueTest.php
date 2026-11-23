@@ -89,7 +89,7 @@ test('approving reported comments keeps them visible resolves reports and reject
 test('admin flags can be hidden and restored without losing prior history', function () {
     $comment = queueComment($this, ['status' => 'published']);
     flagQueueComment($this, $comment);
-    expect($comment->fresh()->status)->toBe('published');
+    expect($comment->fresh()->status)->toBe('pending_review');
     $flag = DB::table('comment_flags')->first();
     $url = '/admin/comments/'.$comment->getKey().'/decision';
     $this->postJson($url, ['action' => 'hide', 'reason' => 'Ditolak setelah ditinjau', 'expected_revision' => 0])->assertOk();

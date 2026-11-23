@@ -68,7 +68,7 @@ test('TC-UC7-05 flags a comment and filters the admin queue', function () {
     $comment = uc7Comment($this);
     uc7Flag($this, $comment);
     $this->get('/admin/comments?source=admin')->assertInertia(fn (Assert $page) => $page->has('comments.data', 1)->where('counts.admin', 1));
-    expect($comment->fresh()->status)->toBe('published')->and(DB::table('comment_flags')->count())->toBe(1);
+    expect($comment->fresh()->status)->toBe('pending_review')->and(DB::table('comment_flags')->count())->toBe(1);
 });
 
 test('TC-UC7-06 filters reported comments with reporter details', function () {

@@ -103,7 +103,7 @@ interface Filters {
     search: string;
     from: string;
     until: string;
-    content_type?: 'news' | 'shorts';
+    content_type?: 'all' | 'news' | 'shorts';
 }
 interface Props {
     comments: {
@@ -269,9 +269,12 @@ function decisionNotes(event: History) {
 }
 
 export default function Comments({ comments, filters, counts }: Props) {
-    const [selectedId, setSelectedId] = useState<number | null>(null);
+    const [selectedId, setSelectedId] = useState<string | null>(null);
     const selected =
-        comments.data.find((item) => item.id === selectedId) ?? null;
+        comments.data.find(
+            (item) =>
+                `${item.content_type ?? 'news'}:${item.id}` === selectedId,
+        ) ?? null;
     const [search, setSearch] = useState(filters.search);
     const [from, setFrom] = useState(filters.from);
     const [until, setUntil] = useState(filters.until);
@@ -416,9 +419,17 @@ export default function Comments({ comments, filters, counts }: Props) {
                                 </TabsTrigger>
                             </TabsList>
                         </Tabs>
-                        <div className="flex gap-2" aria-label="Jenis konten">
+                        <div
+                            className={cn(
+                                tabsListVariants(),
+                                'h-auto max-w-full flex-wrap justify-start gap-1',
+                            )}
+                            role="group"
+                            aria-label="Jenis konten"
+                        >
                             {(
                                 [
+                                    ['all', 'Semua'],
                                     ['news', 'Berita'],
                                     ['shorts', 'Video Pendek'],
                                 ] as const
@@ -426,12 +437,8 @@ export default function Comments({ comments, filters, counts }: Props) {
                                 <Button
                                     key={value}
                                     size="sm"
-                                    variant={
-                                        (filters.content_type ?? 'news') ===
-                                        value
-                                            ? 'secondary'
-                                            : 'outline'
-                                    }
+                                    variant="ghost"
+                                    className="h-8 rounded-md border border-transparent px-3 aria-pressed:border-neutral-300/70 aria-pressed:bg-card aria-pressed:text-foreground aria-pressed:shadow-xs dark:aria-pressed:border-neutral-600 dark:aria-pressed:bg-neutral-700"
                                     aria-pressed={
                                         (filters.content_type ?? 'news') ===
                                         value
@@ -634,15 +641,20 @@ export default function Comments({ comments, filters, counts }: Props) {
                         ) : (
                             <ul className="space-y-2">
                                 {comments.data.map((comment) => (
-                                    <li key={comment.id}>
+                                    <li
+                                        key={`${comment.content_type ?? 'news'}:${comment.id}`}
+                                    >
                                         <button
                                             type="button"
                                             disabled={busy || loading}
                                             aria-pressed={
-                                                selected?.id === comment.id
+                                                selectedId ===
+                                                `${comment.content_type ?? 'news'}:${comment.id}`
                                             }
                                             onClick={() => {
-                                                setSelectedId(comment.id);
+                                                setSelectedId(
+                                                    `${comment.content_type ?? 'news'}:${comment.id}`,
+                                                );
 
                                                 if (
                                                     window.matchMedia(
@@ -662,7 +674,8 @@ export default function Comments({ comments, filters, counts }: Props) {
                                             }}
                                             className={cn(
                                                 'flex w-full gap-3 rounded-xl border bg-card p-4 text-left transition-colors hover:bg-accent/50 focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-60',
-                                                selected?.id === comment.id &&
+                                                selectedId ===
+                                                    `${comment.content_type ?? 'news'}:${comment.id}` &&
                                                     'border-primary bg-accent/40 ring-1 ring-primary/30',
                                             )}
                                         >
@@ -778,10 +791,10 @@ export default function Comments({ comments, filters, counts }: Props) {
                     {selected && (
                         <div
                             ref={detail}
-                            className="min-w-0 scroll-mt-4 lg:sticky lg:top-4"
+                            className="min-w-0 scroll-mt-20 lg:sticky lg:top-20"
                         >
                             <CommentDetails
-                                key={`${selected.id}-${selected.revision}`}
+                                key={`${selected.content_type ?? 'news'}-${selected.id}-${selected.revision}`}
                                 comment={selected}
                                 pending={filters.tab === 'pending'}
                                 busy={busy || loading}
@@ -889,10 +902,10 @@ function CommentDetails({
 
     return (
         <section
-            className="overflow-hidden rounded-xl border bg-card"
+            className="flex min-h-0 flex-col overflow-hidden rounded-xl border bg-card lg:h-[calc(100dvh-12rem)]"
             aria-label="Detail komentar"
         >
-            <div className="flex items-center justify-between border-b px-5 py-4">
+            <div className="flex shrink-0 items-center justify-between border-b px-5 py-4">
                 <h2 className="font-semibold">
                     {pending ? 'Detail Komentar' : 'Riwayat Keputusan'}
                 </h2>
@@ -906,7 +919,7 @@ function CommentDetails({
                     <X className="size-4" />
                 </Button>
             </div>
-            <div className="space-y-5 p-5">
+            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5">
                 <div className="flex items-center gap-3">
                     <Initials comment={comment} />
                     <div className="min-w-0">
@@ -1077,6 +1090,8 @@ function CommentDetails({
                         </ol>
                     </div>
                 )}
+            </div>
+            <div className="shrink-0 bg-card px-5 pb-5">
                 {(pending ||
                     ['hidden', 'removed', 'rejected'].includes(
                         comment.status,
@@ -1089,7 +1104,7 @@ function CommentDetails({
                             id="decision-notes"
                             placeholder="Tambahkan catatan untuk riwayat moderasi..."
                             maxLength={500}
-                            rows={3}
+                            rows={2}
                             value={notes}
                             disabled={busy}
                             onChange={(event) => setNotes(event.target.value)}

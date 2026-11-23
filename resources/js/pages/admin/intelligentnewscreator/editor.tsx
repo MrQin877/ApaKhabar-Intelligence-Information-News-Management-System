@@ -245,6 +245,7 @@ export default function ManualEditor({
             // Keep it locked through completion, including an uncertain network outcome.
             publishStarted.current = true;
             setPublishing(true);
+            setConfirmPublish(false);
             form.clearErrors();
             const body = new FormData();
 
@@ -289,7 +290,6 @@ export default function ManualEditor({
                         unsaved.allowLeave();
                     }
 
-                    setConfirmPublish(false);
                     window.dispatchEvent(
                         new CustomEvent('news-publication', {
                             detail: {
@@ -300,6 +300,10 @@ export default function ManualEditor({
                             },
                         }),
                     );
+
+                    if (result.success) {
+                        router.visit('/admin/news', { replace: true });
+                    }
                 })
                 .finally(() => setPublishing(false));
 
