@@ -12,6 +12,7 @@ import {
     X,
 } from 'lucide-react';
 import { useRef, useState } from 'react';
+import { FeedbackToast } from '@/components/feedback-toast';
 import { engagementPost } from '@/components/news-engagement';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -366,14 +367,18 @@ export default function Comments({ comments, filters, counts }: Props) {
                         Lihat arsip moderasi lama
                     </Link>
                 </header>
-                {notice && (
-                    <Alert
-                        variant={notice.error ? 'destructive' : 'default'}
-                        role={notice.error ? 'alert' : 'status'}
-                    >
-                        <AlertDescription>{notice.text}</AlertDescription>
-                    </Alert>
-                )}
+                <FeedbackToast
+                    feedback={
+                        notice
+                            ? {
+                                  variant: notice.error ? 'error' : 'success',
+                                  message: notice.text,
+                              }
+                            : null
+                    }
+                    onDismiss={() => setNotice(null)}
+                    duration={5000}
+                />
                 <div
                     className={cn(
                         'grid min-w-0 items-start gap-6',
@@ -801,6 +806,9 @@ export default function Comments({ comments, filters, counts }: Props) {
                                 onBusy={setBusy}
                                 onClose={() => setSelectedId(null)}
                                 onSuccess={refresh}
+                                onFailure={(message) =>
+                                    setNotice({ error: true, text: message })
+                                }
                             />
                         </div>
                     )}
@@ -820,6 +828,7 @@ function CommentDetails({
     onBusy,
     onClose,
     onSuccess,
+    onFailure,
 }: {
     comment: Entry;
     pending: boolean;
@@ -827,6 +836,7 @@ function CommentDetails({
     onBusy: (value: boolean) => void;
     onClose: () => void;
     onSuccess: (message: string) => void;
+    onFailure: (message: string) => void;
 }) {
     const [notes, setNotes] = useState('');
     const [error, setError] = useState('');
@@ -846,19 +856,25 @@ function CommentDetails({
         const action = intent === 'reject' ? 'hide' : 'allow';
 
         try {
-            const result = await engagementPost(
-                `/admin/comments/${comment.id}/decision`,
-                {
-                    action,
-                    reason: notes.trim() || undefined,
-                    expected_revision: comment.revision,
-                    content_type: comment.content_type ?? 'news',
-                },
-            );
+            await engagementPost(`/admin/comments/${comment.id}/decision`, {
+                action,
+                reason: notes.trim() || undefined,
+                expected_revision: comment.revision,
+                content_type: comment.content_type ?? 'news',
+            });
             setConfirmation(null);
-            onSuccess(result.message);
+            onSuccess(
+                intent === 'reject'
+                    ? 'Komentar berhasil disembunyikan.'
+                    : intent === 'restore'
+                      ? 'Komentar berhasil dipulihkan dan ditampilkan kembali.'
+                      : 'Komentar berhasil diizinkan dan ditampilkan kembali.',
+            );
         } catch (caught) {
             setError((caught as Error).message);
+            onFailure(
+                'Perubahan komentar belum berhasil dikonfirmasi. Muat ulang daftar untuk memeriksa status komentar, lalu coba lagi jika diperlukan.',
+            );
             onBusy(false);
             setConfirmation(null);
         } finally {
