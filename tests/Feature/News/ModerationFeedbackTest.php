@@ -19,12 +19,12 @@ beforeEach(function () {
     $this->flagUrl = '/admin/news/'.$this->article->getKey().'/moderation-comments/'.$this->comment->getKey().'/flag';
 });
 
-test('admin and moderator flags leave published news comments visible and enter the queue once', function () {
+test('admin and moderator flags temporarily hide news comments and enter the queue once', function () {
     $this->actingAs($this->reader)->postJson($this->flagUrl, ['category' => 'spam'])->assertForbidden();
     $this->actingAs($this->admin)->postJson($this->flagUrl, ['category' => 'spam', 'explanation' => 'Tautan mencurigakan'])->assertOk();
     $this->postJson($this->flagUrl, ['category' => 'spam'])->assertOk();
     $this->actingAs($this->moderator)->postJson($this->flagUrl, ['category' => 'indirect_insult'])->assertOk();
-    expect($this->comment->fresh()->status)->toBe('published')
+    expect($this->comment->fresh()->status)->toBe('pending_review')
         ->and(DB::table('comment_flags')->count())->toBe(2);
     $this->get('/admin/comments')->assertInertia(fn (Assert $page) => $page
         ->has('comments.data', 1)->where('counts.pending', 1)
@@ -32,10 +32,10 @@ test('admin and moderator flags leave published news comments visible and enter 
 });
 
 test('allow resolves flags and reports with a recorded moderator and action', function () {
-    $this->actingAs($this->admin)->postJson($this->flagUrl, ['category' => 'spam'])->assertOk();
     $this->actingAs($this->reader)->postJson('/comments/'.$this->comment->getKey().'/report', [
         'category' => 'Spam', 'details' => 'Berulang',
     ])->assertOk();
+    $this->actingAs($this->admin)->postJson($this->flagUrl, ['category' => 'spam'])->assertOk();
     $this->assertDatabaseHas('comment_reports', ['category' => 'Spam', 'explanation' => 'Berulang']);
     $this->actingAs($this->moderator)->postJson('/admin/comments/'.$this->comment->getKey().'/decision', [
         'action' => 'allow', 'reason' => 'Aman', 'expected_revision' => 0,
@@ -45,7 +45,7 @@ test('allow resolves flags and reports with a recorded moderator and action', fu
         ->and(DB::table('comment_reports')->whereNull('resolved_at')->count())->toBe(0);
     $this->assertDatabaseHas('comment_moderation_history', [
         'comment_id' => $this->comment->getKey(), 'moderator_id' => $this->moderator->getKey(),
-        'action' => 'allow', 'from_status' => 'published', 'to_status' => 'published', 'reason' => 'Aman',
+        'action' => 'allow', 'from_status' => 'pending_review', 'to_status' => 'published', 'reason' => 'Aman',
     ]);
 });
 

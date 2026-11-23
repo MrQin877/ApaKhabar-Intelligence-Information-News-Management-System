@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -29,10 +29,12 @@ export default function AdminCommentFlag({
     newsId,
     selectedId,
     onSelect,
+    onSubmitted,
 }: {
     newsId: number;
     selectedId: string | null;
     onSelect: (id: string | null) => void;
+    onSubmitted: (message: string) => void;
 }) {
     const base = `/admin/news/${newsId}/moderation-comments`;
     const [comment, setComment] = useState<ReviewComment | null>(null);
@@ -40,7 +42,7 @@ export default function AdminCommentFlag({
     const [explanation, setExplanation] = useState('');
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
-    const [message, setMessage] = useState('');
+    const pending = useRef(false);
 
     useEffect(() => {
         setComment(null);
@@ -67,7 +69,8 @@ export default function AdminCommentFlag({
     }, [base, selectedId]);
 
     async function submit() {
-        if (!selectedId || !category || busy) return;
+        if (!selectedId || !category || pending.current) return;
+        pending.current = true;
         setBusy(true);
         setError('');
         try {
@@ -84,8 +87,8 @@ export default function AdminCommentFlag({
                         body.message ||
                         'Gagal menandai komentar.',
                 );
-            setMessage(body.message);
             onSelect(null);
+            onSubmitted(body.message);
         } catch (failure) {
             setError(
                 failure instanceof Error
@@ -93,20 +96,13 @@ export default function AdminCommentFlag({
                     : 'Gagal menandai komentar.',
             );
         } finally {
+            pending.current = false;
             setBusy(false);
         }
     }
 
     return (
         <>
-            {message && (
-                <p
-                    role="status"
-                    className="rounded-lg bg-secondary p-3 text-sm"
-                >
-                    {message}
-                </p>
-            )}
             <Dialog
                 open={selectedId !== null}
                 onOpenChange={(open) => {
@@ -119,8 +115,9 @@ export default function AdminCommentFlag({
                             Tandai komentar untuk moderasi
                         </DialogTitle>
                         <DialogDescription>
-                            Komentar yang sudah terbit tetap terlihat sampai
-                            reviewer memilih Sembunyikan.
+                            Komentar akan disembunyikan sementara hingga admin
+                            menyetujui atau menyembunyikannya melalui Kelola
+                            Komentar.
                         </DialogDescription>
                     </DialogHeader>
                     {comment && (

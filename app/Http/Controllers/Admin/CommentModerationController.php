@@ -23,11 +23,20 @@ class CommentModerationController extends Controller
             'search' => 'nullable|string|max:200',
             'from' => 'nullable|date_format:Y-m-d',
             'until' => ['nullable', 'date_format:Y-m-d', ...($request->filled('from') ? ['after_or_equal:from'] : [])],
-            'content_type' => ['sometimes', Rule::in(['news', 'shorts'])],
+            'content_type' => ['sometimes', Rule::in(['all', 'news', 'shorts'])],
         ]);
-        if (($data['content_type'] ?? 'news') === 'shorts') {
-            return $this->shorts($request, $data);
+        if (($data['content_type'] ?? 'news') === 'all') {
+            return $this->all($request, $data);
         }
+        if (($data['content_type'] ?? 'news') === 'shorts') {
+            return Inertia::render('admin/comments', $this->shorts($request, $data));
+        }
+
+        return Inertia::render('admin/comments', $this->news($request, $data));
+    }
+
+    private function news(Request $request, array $data, bool $queryOnly = false, ?array $pageIds = null)
+    {
         $tab = $data['tab'] ?? 'pending';
         $source = $data['source'] ?? ($request->query('status') === 'reported' ? 'reported' : 'all');
         $decision = $data['decision'] ?? 'all';
@@ -85,7 +94,13 @@ class CommentModerationController extends Controller
         }
 
         $query->orderByDesc($tab === 'history' ? 'moderated_at' : 'created_at')->orderByDesc('commentID');
-        $comments = $query->paginate(20)->withQueryString();
+        if ($queryOnly) {
+            return $query;
+        }
+        if ($pageIds !== null) {
+            $query->whereIn('commentID', $pageIds);
+        }
+        $comments = $query->paginate(20, ['*'], 'page', $pageIds !== null ? 1 : null)->withQueryString();
         $ids = $comments->pluck('commentID');
 
         $reports = DB::table('comment_reports')
@@ -147,7 +162,7 @@ class CommentModerationController extends Controller
             $counts[$key] = $countQuery->count();
         }
 
-        return Inertia::render('admin/comments', [
+        return [
             'comments' => $comments,
             'counts' => $counts,
             'filters' => [
@@ -155,10 +170,10 @@ class CommentModerationController extends Controller
                 'search' => $search, 'from' => $data['from'] ?? '', 'until' => $data['until'] ?? '',
                 'content_type' => 'news',
             ],
-        ]);
+        ];
     }
 
-    private function shorts(Request $request, array $data)
+    private function shorts(Request $request, array $data, bool $queryOnly = false, ?array $pageIds = null)
     {
         $tab = $data['tab'] ?? 'pending';
         $source = $data['source'] ?? 'all';
@@ -214,8 +229,14 @@ class CommentModerationController extends Controller
                     ->orWhereHas('video', fn ($video) => $video->where('title', 'like', "%{$search}%"));
             });
         }
-        $comments = $query->orderByDesc($tab === 'history' ? 'moderated_at' : 'created_at')->orderByDesc('id')
-            ->paginate(20)->withQueryString();
+        $query->orderByDesc($tab === 'history' ? 'moderated_at' : 'created_at')->orderByDesc('id');
+        if ($queryOnly) {
+            return $query;
+        }
+        if ($pageIds !== null) {
+            $query->whereIn('id', $pageIds);
+        }
+        $comments = $query->paginate(20, ['*'], 'page', $pageIds !== null ? 1 : null)->withQueryString();
         $ids = $comments->pluck('id');
         $reports = DB::table('short_video_comment_reports')->leftJoin('users', 'short_video_comment_reports.user_id', '=', 'users.userID')
             ->whereIn('comment_id', $ids)->select('short_video_comment_reports.*', 'users.name as reporter_name')->get()->groupBy('comment_id');
@@ -249,7 +270,7 @@ class CommentModerationController extends Controller
             $counts[$key] = $countQuery->count();
         }
 
-        return Inertia::render('admin/comments', [
+        return [
             'comments' => $comments,
             'counts' => $counts,
             'filters' => [
@@ -257,6 +278,31 @@ class CommentModerationController extends Controller
                 'search' => $search, 'from' => $data['from'] ?? '', 'until' => $data['until'] ?? '',
                 'content_type' => 'shorts',
             ],
+        ];
+    }
+
+    private function all(Request $request, array $data)
+    {
+        $sort = ($data['tab'] ?? 'pending') === 'history' ? 'moderated_at' : 'created_at';
+        $newsQuery = $this->news($request, $data, true)->reorder()
+            ->selectRaw("commentID as id, 'news' as content_type, {$sort} as sort_at")->toBase();
+        $shortsQuery = $this->shorts($request, $data, true)->reorder()
+            ->selectRaw("id, 'shorts' as content_type, {$sort} as sort_at")->toBase();
+        $page = DB::query()->fromSub($newsQuery->unionAll($shortsQuery), 'moderation_items')
+            ->orderByDesc('sort_at')->orderBy('content_type')->orderByDesc('id')->paginate(20)->withQueryString();
+        $news = $this->news($request, $data, false, $page->getCollection()->where('content_type', 'news')->pluck('id')->all());
+        $shorts = $this->shorts($request, $data, false, $page->getCollection()->where('content_type', 'shorts')->pluck('id')->all());
+        $items = $news['comments']->getCollection()->concat($shorts['comments']->getCollection())
+            ->keyBy(fn ($item) => $item['content_type'].':'.$item['id']);
+        $page->setCollection($page->getCollection()->map(fn ($row) => $items[$row->content_type.':'.$row->id]));
+        $counts = [];
+        foreach ($news['counts'] as $key => $value) {
+            $counts[$key] = $value + $shorts['counts'][$key];
+        }
+
+        return Inertia::render('admin/comments', [
+            'comments' => $page, 'counts' => $counts,
+            'filters' => [...$news['filters'], 'content_type' => 'all'],
         ]);
     }
 

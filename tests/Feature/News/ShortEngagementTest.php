@@ -192,7 +192,7 @@ test('mobile villager report uses the video API and preserves its reason in mode
             ->missing('comments.data.0.ai_flagged')->missing('counts.ai'));
 });
 
-test('admin flag leaves a published video comment visible and allow resolves the flag', function () {
+test('admin flag temporarily hides a video comment and allow resolves the flag', function () {
     $video = engagedShort();
     $reader = shortActor();
     $admin = shortActor('admin');
@@ -205,9 +205,9 @@ test('admin flag leaves a published video comment visible and allow resolves the
     $this->actingAs($reader)->postJson($flag, ['category' => 'spam'])->assertForbidden();
     $this->actingAs($admin)->postJson($flag, ['category' => 'spam', 'explanation' => 'Periksa'])->assertOk();
     $this->postJson($flag, ['category' => 'spam'])->assertOk();
-    expect($comment->fresh()->status)->toBe('published')
+    expect($comment->fresh()->status)->toBe('pending_review')
         ->and(DB::table('short_video_comment_flags')->count())->toBe(1);
-    $this->getJson('/shorts/'.$video->id.'/comments')->assertJsonPath('count', 1);
+    $this->getJson('/shorts/'.$video->id.'/comments')->assertJsonPath('count', 0);
     $this->get('/admin/comments?content_type=shorts')->assertInertia(fn (Assert $page) => $page
         ->has('comments.data', 1)->where('counts.pending', 1)
         ->where('comments.data.0.flags.0.moderator_name', $admin->name));
@@ -218,6 +218,6 @@ test('admin flag leaves a published video comment visible and allow resolves the
         ->and(DB::table('short_video_comment_flags')->whereNull('resolved_at')->count())->toBe(0);
     $this->assertDatabaseHas('short_video_comment_history', [
         'comment_id' => $comment->id, 'moderator_id' => $admin->getKey(),
-        'action' => 'allow', 'from_status' => 'published', 'to_status' => 'published',
+        'action' => 'allow', 'from_status' => 'pending_review', 'to_status' => 'published',
     ]);
 });

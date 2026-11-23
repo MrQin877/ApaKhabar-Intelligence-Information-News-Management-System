@@ -362,7 +362,11 @@ export default function NewsEngagement({
             setReported((ids) => [...ids, reportId!]);
             setReportId(null);
             setReportReason('');
-            setMessage(data.message);
+            setMessage('');
+            setFeedback({
+                variant: 'success',
+                message: data.message ?? 'Laporan diterima. Terima kasih.',
+            });
         } catch (error) {
             setReportError((error as Error).message);
         } finally {
@@ -694,6 +698,11 @@ export default function NewsEngagement({
                     newsId={news.id}
                     selectedId={moderationCommentId}
                     onSelect={setModerationCommentId}
+                    onSubmitted={(message) => {
+                        setMessage('');
+                        setFeedback({ variant: 'success', message });
+                        router.reload({ only: ['comments'] });
+                    }}
                 />
             )}
             <h2 className="text-lg font-semibold">

@@ -97,7 +97,8 @@ function readDrafts(key: string): DraftJob[] {
             ? value.filter(
                   (draft) =>
                       typeof draft?.id === 'number' &&
-                      (draft.title === null || typeof draft.title === 'string') &&
+                      (draft.title === null ||
+                          typeof draft.title === 'string') &&
                       ['queued', 'processing', 'ready', 'failed'].includes(
                           draft.status,
                       ),
@@ -124,7 +125,27 @@ export function ShortPublicationPanel() {
         readDrafts(draftStorageKey),
     );
     const [draftToasts, setDraftToasts] = useState<Feedback[]>([]);
-    const [selected, setSelected] = useState<string | null>(null);
+    const selectionStorageKey = `${storageKey}:selected`;
+    const [selected, setSelected] = useState<string | null>(() => {
+        try {
+            return sessionStorage.getItem(selectionStorageKey);
+        } catch {
+            return null;
+        }
+    });
+    const selectJob = (key: string | null) => {
+        try {
+            if (key) {
+                sessionStorage.setItem(selectionStorageKey, key);
+            } else {
+                sessionStorage.removeItem(selectionStorageKey);
+            }
+        } catch {
+            /* The dialog still works in memory. */
+        }
+
+        setSelected(key);
+    };
     const [minimized, setMinimized] = useState(false);
     const [error, setError] = useState('');
     const [retrying, setRetrying] = useState(false);
@@ -145,6 +166,15 @@ export function ShortPublicationPanel() {
     };
     const remove = (key: string) => {
         update((previous) => previous.filter((job) => job.key !== key));
+
+        try {
+            if (sessionStorage.getItem(selectionStorageKey) === key) {
+                sessionStorage.removeItem(selectionStorageKey);
+            }
+        } catch {
+            /* The dialog still works in memory. */
+        }
+
         setSelected((current) => (current === key ? null : current));
     };
     const updateDrafts = (apply: (previous: DraftJob[]) => DraftJob[]) => {
@@ -209,7 +239,9 @@ export function ShortPublicationPanel() {
                     },
                 ];
             });
-            if (detail.open) setSelected(key);
+            if (detail.open) {
+                selectJob(key);
+            }
         };
         const news = (event: Event) => {
             const detail = (
@@ -237,7 +269,9 @@ export function ShortPublicationPanel() {
                     result: detail.result,
                 },
             ]);
-            if (detail.open) setSelected(key);
+            if (detail.open) {
+                selectJob(key);
+            }
         };
         const draftSaved = (event: Event) => {
             const detail = (event as CustomEvent<Omit<DraftJob, 'notified'>>)
@@ -545,7 +579,8 @@ export function ShortPublicationPanel() {
                                 )}
                                 <div className="min-w-0 flex-1 space-y-2">
                                     <p className="line-clamp-2 text-sm font-semibold">
-                                        Draf Video: {draft.title || 'Belum ada judul'}
+                                        Draf Video:{' '}
+                                        {draft.title || 'Belum ada judul'}
                                     </p>
                                     <p
                                         role={
@@ -653,7 +688,7 @@ export function ShortPublicationPanel() {
                                                 variant="ghost"
                                                 size="sm"
                                                 onClick={() =>
-                                                    setSelected(job.key)
+                                                    selectJob(job.key)
                                                 }
                                             >
                                                 Lihat Detail
@@ -706,7 +741,7 @@ export function ShortPublicationPanel() {
                               }
                             : undefined
                     }
-                    onDismiss={() => setSelected(null)}
+                    onDismiss={() => selectJob(null)}
                     statusError={error}
                     onRefreshStatus={() => setRefresh((value) => value + 1)}
                     retrying={retrying}
@@ -749,7 +784,7 @@ export function ShortPublicationPanel() {
                         Menunggu hasil publikasi{' '}
                         {chosen.kind === 'news' ? 'berita' : 'video'}...
                     </p>
-                    <Button variant="ghost" onClick={() => setSelected(null)}>
+                    <Button variant="ghost" onClick={() => selectJob(null)}>
                         Tutup
                     </Button>
                     <Link
