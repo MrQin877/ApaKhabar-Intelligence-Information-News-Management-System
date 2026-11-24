@@ -62,6 +62,7 @@ Route::middleware(ApiAuth::class)->group(function () {
     Route::post('/profile/photo', [ProfilePhotoController::class, 'store'])->middleware('throttle:10,1');
     Route::delete('/profile/photo', [ProfilePhotoController::class, 'destroy'])->middleware('throttle:10,1');
     Route::patch('/profile', [AuthController::class, 'updateProfile']);
+    Route::patch('/profile/name', [AuthController::class, 'updateName'])->middleware('throttle:10,1');
     Route::post('/email/verification-notification', [MobileEmailVerificationController::class, 'send'])
         ->middleware('throttle:1,1')->name('api.verification.send');
     Route::get('/notifications', [NotificationController::class, 'index']);

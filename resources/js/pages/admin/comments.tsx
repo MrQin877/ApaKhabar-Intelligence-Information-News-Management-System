@@ -356,12 +356,6 @@ export default function Comments({ comments, filters, counts }: Props) {
                             ? 'Tinjau komentar yang perlu keputusan admin.'
                             : 'Lihat keputusan moderasi yang telah diselesaikan.'}
                     </p>
-                    <Link
-                        href="/admin/comments/legacy-history"
-                        className="mt-2 inline-block text-sm font-medium text-primary underline-offset-4 hover:underline"
-                    >
-                        Lihat arsip moderasi lama
-                    </Link>
                 </header>
                 {notice && (
                     <Alert
