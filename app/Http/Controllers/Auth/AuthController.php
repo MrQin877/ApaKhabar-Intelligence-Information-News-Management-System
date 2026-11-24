@@ -87,6 +87,17 @@ class AuthController extends Controller
         return response()->json($this->authService->profile($request->user()->refresh()));
     }
 
+    public function updateName(Request $request)
+    {
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+        ]);
+
+        $request->user()->forceFill(['name' => $validated['name']])->save();
+
+        return response()->json($this->authService->profile($request->user()->refresh()));
+    }
+
     public function savePushToken(Request $request)
     {
         $request->validate([

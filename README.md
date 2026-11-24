@@ -176,7 +176,7 @@ Uploading does not automatically authorize news generation. AI results remain dr
 - [AI Assistant UI architecture](docs/NEWS_CREATOR_UI_ARCHITECTURE.md)
 - [Local development and mobile URLs](docs/local-development.md)
 - [Upload limits](docs/upload-limits.md)
-- [Meta connections](docs/meta-connections.md) and [integration setup](docs/meta-integrations.md)
+- [Meta connections and integration setup](docs/meta-connections.md)
 - [Instagram publishing](docs/instagram-manual-publishing.md)
 - [Website translation](docs/website-translation.md)
 - [Mobile email verification](docs/mobile-email-verification.md), [password reset](docs/mobile-password-reset.md)
@@ -195,3 +195,4 @@ npm run build
 ## News engagement and moderation
 
 See [news engagement setup, retention, moderation, and testing](docs/news-engagement.md). Run the new migrations before serving the updated UI. Configure server-side `OPENAI_API_KEY`; without it, comments remain pending for admin review.
+
